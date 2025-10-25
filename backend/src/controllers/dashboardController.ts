@@ -1,0 +1,541 @@
+/**
+ * Copyright (c) 2025 SruRaj IT Solutions. All rights reserved.
+ */
+
+import { Response } from 'express';
+import { AuthRequest, JobStatus, ApplicationStatus, InterviewStatus } from '../types';
+import { sendSuccess, sendError } from '../utils/response';
+import { Job, Application, Interview, User, ProctoringEvent } from '../models';
+import logger from '../utils/logger';
+
+/**
+ * @desc    Get employer dashboard statistics
+ * @route   GET /api/v1/dashboard/employer
+ * @access  Private (Employer/HR/Admin)
+ */
+export const getEmployerDashboard = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const companyId = req.user?.companyId;
+    const isAdmin = req.user?.role === 'admin';
+
+    // Build query filter
+    const jobFilter: any = { deletedAt: null };
+    const applicationFilter: any = {};
+    const interviewFilter: any = {};
+
+    if (!isAdmin && companyId) {
+      jobFilter.companyId = companyId;
+    }
+
+    // Get jobs statistics
+    const totalJobs = await Job.countDocuments(jobFilter);
+    const activeJobs = await Job.countDocuments({
+      ...jobFilter,
+      status: JobStatus.PUBLISHED,
+    });
+    const draftJobs = await Job.countDocuments({ ...jobFilter, status: JobStatus.DRAFT });
+    const closedJobs = await Job.countDocuments({ ...jobFilter, status: JobStatus.CLOSED });
+
+    // Get job IDs for filtering applications and interviews
+    const jobs = await Job.find(jobFilter, '_id');
+    const jobIds = jobs.map((j) => j._id);
+
+    if (jobIds.length > 0) {
+      applicationFilter.jobId = { $in: jobIds };
+      interviewFilter.jobId = { $in: jobIds };
+    }
+
+    // Get applications statistics
+    const totalApplications = await Application.countDocuments(applicationFilter);
+    const pendingApplications = await Application.countDocuments({
+      ...applicationFilter,
+      status: ApplicationStatus.APPLIED,
+    });
+    const reviewedApplications = await Application.countDocuments({
+      ...applicationFilter,
+      status: ApplicationStatus.IN_PROGRESS,
+    });
+    const shortlistedApplications = await Application.countDocuments({
+      ...applicationFilter,
+      status: ApplicationStatus.SHORTLISTED,
+    });
+    const selectedApplications = await Application.countDocuments({
+      ...applicationFilter,
+      status: ApplicationStatus.SELECTED,
+    });
+
+    // Get interviews statistics
+    const totalInterviews = await Interview.countDocuments(interviewFilter);
+    const scheduledInterviews = await Interview.countDocuments({
+      ...interviewFilter,
+      status: InterviewStatus.SCHEDULED,
+      scheduledTime: { $gte: new Date() },
+    });
+    const completedInterviews = await Interview.countDocuments({
+      ...interviewFilter,
+      status: InterviewStatus.COMPLETED,
+    });
+    const upcomingInterviews = await Interview.find({
+      ...interviewFilter,
+      status: { $in: [InterviewStatus.SCHEDULED, InterviewStatus.CONFIRMED] },
+      scheduledTime: { $gte: new Date() },
+    })
+      .limit(5)
+      .sort({ scheduledTime: 1 })
+      .populate('candidateId', 'firstName lastName email')
+      .populate('jobId', 'title');
+
+    // Recent applications
+    const recentApplications = await Application.find(applicationFilter)
+      .limit(10)
+      .sort({ createdAt: -1 })
+      .populate('candidateId', 'firstName lastName email')
+      .populate('jobId', 'title');
+
+    // Top performing jobs (by application count)
+    const topJobs = await Application.aggregate([
+      { $match: applicationFilter },
+      { $group: { _id: '$jobId', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: 'jobs',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'job',
+        },
+      },
+      { $unwind: '$job' },
+      {
+        $project: {
+          _id: 1,
+          count: 1,
+          title: '$job.title',
+          status: '$job.status',
+        },
+      },
+    ]);
+
+    // Applications by status (for chart)
+    const applicationsByStatus = await Application.aggregate([
+      { $match: applicationFilter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $project: { status: '$_id', count: 1, _id: 0 } },
+    ]);
+
+    // Applications trend (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const applicationsTrend = await Application.aggregate([
+      {
+        $match: {
+          ...applicationFilter,
+          createdAt: { $gte: sixMonthsAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]);
+
+    // Interviews by status
+    const interviewsByStatus = await Interview.aggregate([
+      { $match: interviewFilter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $project: { status: '$_id', count: 1, _id: 0 } },
+    ]);
+
+    // Calculate conversion rates
+    const conversionRate = {
+      applicationToShortlist:
+        totalApplications > 0
+          ? Math.round((shortlistedApplications / totalApplications) * 100)
+          : 0,
+      shortlistToInterview:
+        shortlistedApplications > 0
+          ? Math.round((totalInterviews / shortlistedApplications) * 100)
+          : 0,
+      interviewToSelection:
+        totalInterviews > 0
+          ? Math.round((selectedApplications / totalInterviews) * 100)
+          : 0,
+      overallConversion:
+        totalApplications > 0
+          ? Math.round((selectedApplications / totalApplications) * 100)
+          : 0,
+    };
+
+    const dashboardData = {
+      overview: {
+        totalJobs,
+        activeJobs,
+        draftJobs,
+        closedJobs,
+        totalApplications,
+        pendingApplications,
+        reviewedApplications,
+        shortlistedApplications,
+        selectedApplications,
+        totalInterviews,
+        scheduledInterviews,
+        completedInterviews,
+      },
+      conversionRate,
+      recentApplications,
+      upcomingInterviews,
+      topJobs,
+      charts: {
+        applicationsByStatus,
+        applicationsTrend,
+        interviewsByStatus,
+      },
+    };
+
+    return sendSuccess(res, dashboardData, 'Dashboard data retrieved successfully');
+  } catch (error: any) {
+    logger.error('Error in getEmployerDashboard:', error);
+    return sendError(res, error.message || 'Error fetching dashboard data', 500);
+  }
+};
+
+/**
+ * @desc    Get candidate dashboard statistics
+ * @route   GET /api/v1/dashboard/candidate
+ * @access  Private (Candidate)
+ */
+export const getCandidateDashboard = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const candidateId = req.user?._id;
+
+    // Get applications statistics
+    const totalApplications = await Application.countDocuments({ candidateId });
+    const pendingApplications = await Application.countDocuments({
+      candidateId,
+      status: ApplicationStatus.APPLIED,
+    });
+    const underReviewApplications = await Application.countDocuments({
+      candidateId,
+      status: ApplicationStatus.IN_PROGRESS,
+    });
+    const shortlistedApplications = await Application.countDocuments({
+      candidateId,
+      status: ApplicationStatus.SHORTLISTED,
+    });
+    const rejectedApplications = await Application.countDocuments({
+      candidateId,
+      status: ApplicationStatus.REJECTED,
+    });
+
+    // Get interviews statistics
+    const totalInterviews = await Interview.countDocuments({ candidateId });
+    const upcomingInterviews = await Interview.find({
+      candidateId,
+      status: { $in: [InterviewStatus.SCHEDULED, InterviewStatus.CONFIRMED] },
+      scheduledTime: { $gte: new Date() },
+    })
+      .sort({ scheduledTime: 1 })
+      .populate('jobId', 'title location workMode')
+      .populate('companyId', 'name');
+
+    const completedInterviews = await Interview.countDocuments({
+      candidateId,
+      status: InterviewStatus.COMPLETED,
+    });
+
+    // Recent applications
+    const recentApplications = await Application.find({ candidateId })
+      .limit(10)
+      .sort({ createdAt: -1 })
+      .populate('jobId', 'title location workMode salary Min salaryMax currency');
+
+    // Application status breakdown
+    const applicationsByStatus = await Application.aggregate([
+      { $match: { candidateId } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $project: { status: '$_id', count: 1, _id: 0 } },
+    ]);
+
+    // Recommended jobs (based on candidate's applications)
+    let recommendedJobs: any[] = [];
+
+    // Get jobs matching candidate's previous applications
+    const appliedJobIds = recentApplications.map(app => app.jobId);
+    if (appliedJobIds.length > 0) {
+      // Find similar jobs (same company or similar criteria)
+      recommendedJobs = await Job.find({
+        status: JobStatus.PUBLISHED,
+        deletedAt: null,
+        _id: { $nin: appliedJobIds }, // Exclude already applied jobs
+      })
+        .limit(5)
+        .select('title location workMode skills experienceMin experienceMax salaryMin salaryMax');
+    }
+
+    const dashboardData = {
+      overview: {
+        totalApplications,
+        pendingApplications,
+        underReviewApplications,
+        shortlistedApplications,
+        rejectedApplications,
+        totalInterviews,
+        upcomingInterviews: upcomingInterviews.length,
+        completedInterviews,
+      },
+      upcomingInterviews,
+      recentApplications,
+      applicationsByStatus,
+      recommendedJobs,
+    };
+
+    return sendSuccess(res, dashboardData, 'Dashboard data retrieved successfully');
+  } catch (error: any) {
+    logger.error('Error in getCandidateDashboard:', error);
+    return sendError(res, error.message || 'Error fetching dashboard data', 500);
+  }
+};
+
+/**
+ * @desc    Get recruitment analytics
+ * @route   GET /api/v1/dashboard/analytics
+ * @access  Private (Employer/HR/Admin)
+ */
+export const getRecruitmentAnalytics = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const companyId = req.user?.companyId;
+    const isAdmin = req.user?.role === 'admin';
+    const { startDate, endDate } = req.query;
+
+    // Build date filter
+    const dateFilter: any = {};
+    if (startDate) {
+      dateFilter.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      dateFilter.$lte = new Date(endDate as string);
+    }
+
+    // Build query filter
+    const jobFilter: any = { deletedAt: null };
+    if (!isAdmin && companyId) {
+      jobFilter.companyId = companyId;
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      jobFilter.createdAt = dateFilter;
+    }
+
+    // Get job IDs
+    const jobs = await Job.find(jobFilter, '_id');
+    const jobIds = jobs.map((j) => j._id);
+
+    const applicationFilter: any = jobIds.length > 0 ? { jobId: { $in: jobIds } } : {};
+    const interviewFilter: any = jobIds.length > 0 ? { jobId: { $in: jobIds } } : {};
+
+    // Time to hire (average days from application to selection)
+    const timeToHireData = await Application.aggregate([
+      {
+        $match: {
+          ...applicationFilter,
+          status: ApplicationStatus.SELECTED,
+          selectionDate: { $exists: true },
+        },
+      },
+      {
+        $project: {
+          daysToHire: {
+            $divide: [
+              { $subtract: ['$selectionDate', '$createdAt'] },
+              1000 * 60 * 60 * 24,
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avgTimeToHire: { $avg: '$daysToHire' },
+          minTimeToHire: { $min: '$daysToHire' },
+          maxTimeToHire: { $max: '$daysToHire' },
+        },
+      },
+    ]);
+
+    // Source of applications
+    const sourceAnalytics = await Application.aggregate([
+      { $match: applicationFilter },
+      { $group: { _id: '$source', count: { $sum: 1 } } },
+      { $project: { source: '$_id', count: 1, _id: 0 } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Top skills in demand
+    const topSkills = await Job.aggregate([
+      { $match: jobFilter },
+      { $unwind: '$skills' },
+      { $group: { _id: '$skills', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      { $project: { skill: '$_id', count: 1, _id: 0 } },
+    ]);
+
+    // Interview completion rate
+    const interviewStats = await Interview.aggregate([
+      { $match: interviewFilter },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const totalScheduled = interviewStats.reduce((sum, stat) => sum + stat.count, 0);
+    const completed =
+      interviewStats.find((s) => s._id === InterviewStatus.COMPLETED)?.count || 0;
+    const interviewCompletionRate =
+      totalScheduled > 0 ? Math.round((completed / totalScheduled) * 100) : 0;
+
+    // Proctoring violations summary
+    const proctoringViolations = await ProctoringEvent.aggregate([
+      { $match: { severity: { $in: ['critical', 'high'] } } },
+      { $group: { _id: '$eventType', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      { $project: { eventType: '$_id', count: 1, _id: 0 } },
+    ]);
+
+    // Department-wise hiring
+    const departmentHiring = await Job.aggregate([
+      { $match: jobFilter },
+      {
+        $group: {
+          _id: '$department',
+          jobsPosted: { $sum: 1 },
+          totalPositions: { $sum: '$positions' },
+        },
+      },
+      { $sort: { jobsPosted: -1 } },
+    ]);
+
+    const analytics = {
+      timeToHire: timeToHireData[0] || {
+        avgTimeToHire: 0,
+        minTimeToHire: 0,
+        maxTimeToHire: 0,
+      },
+      sourceAnalytics,
+      topSkills,
+      interviewCompletionRate,
+      proctoringViolations,
+      departmentHiring,
+    };
+
+    return sendSuccess(res, analytics, 'Analytics retrieved successfully');
+  } catch (error: any) {
+    logger.error('Error in getRecruitmentAnalytics:', error);
+    return sendError(res, error.message || 'Error fetching analytics', 500);
+  }
+};
+
+/**
+ * @desc    Export recruitment report
+ * @route   GET /api/v1/dashboard/export
+ * @access  Private (Employer/HR/Admin)
+ */
+export const exportReport = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { format = 'json', reportType = 'summary' } = req.query;
+    const companyId = req.user?.companyId;
+    const isAdmin = req.user?.role === 'admin';
+
+    // Build query filter
+    const jobFilter: any = { deletedAt: null };
+    if (!isAdmin && companyId) {
+      jobFilter.companyId = companyId;
+    }
+
+    let reportData: any = {};
+
+    if (reportType === 'summary') {
+      // Summary report
+      const jobs = await Job.find(jobFilter);
+      const jobIds = jobs.map((j) => j._id);
+
+      const applications = await Application.countDocuments({
+        jobId: { $in: jobIds },
+      });
+      const interviews = await Interview.countDocuments({ jobId: { $in: jobIds } });
+
+      reportData = {
+        reportType: 'Summary Report',
+        generatedAt: new Date(),
+        totalJobs: jobs.length,
+        totalApplications: applications,
+        totalInterviews: interviews,
+        jobs: jobs.map((j) => ({
+          title: j.title,
+          status: j.status,
+          location: j.location,
+          applications: j.applicationCount,
+          createdAt: j.createdAt,
+        })),
+      };
+    } else if (reportType === 'detailed') {
+      // Detailed report with all data
+      const jobs = await Job.find(jobFilter).populate('createdBy', 'firstName lastName');
+      const jobIds = jobs.map((j) => j._id);
+
+      const applications = await Application.find({ jobId: { $in: jobIds } })
+        .populate('candidateId', 'firstName lastName email')
+        .populate('jobId', 'title');
+
+      const interviews = await Interview.find({ jobId: { $in: jobIds } })
+        .populate('candidateId', 'firstName lastName email')
+        .populate('jobId', 'title');
+
+      reportData = {
+        reportType: 'Detailed Report',
+        generatedAt: new Date(),
+        jobs,
+        applications,
+        interviews,
+      };
+    }
+
+    if (format === 'csv') {
+      // For CSV format, you would need to implement CSV generation
+      // Using a library like json2csv
+      return sendSuccess(
+        res,
+        { message: 'CSV export not yet implemented' },
+        'CSV export coming soon'
+      );
+    }
+
+    return sendSuccess(res, reportData, 'Report generated successfully');
+  } catch (error: any) {
+    logger.error('Error in exportReport:', error);
+    return sendError(res, error.message || 'Error exporting report', 500);
+  }
+};

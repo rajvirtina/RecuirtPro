@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>RecuirtPro Interview Monitor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      padding: 20px;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 40px;
+      max-width: 600px;
+      width: 100%;
+    }
+
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .status {
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+
+    .status.inactive {
+      background: #f3f4f6;
+      color: #6b7280;
+    }
+
+    .status.active {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .button.primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .button.primary:hover {
+      background: #5568d3;
+    }
+
+    .button.danger {
+      background: #ef4444;
+      color: white;
+      margin-top: 10px;
+    }
+
+    .button.danger:hover {
+      background: #dc2626;
+    }
+
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .system-info {
+      margin-top: 30px;
+      padding: 15px;
+      background: #f9fafb;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #6b7280;
+    }
+
+    .system-info p {
+      margin-bottom: 5px;
+    }
+
+    .violations {
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .violation-item {
+      padding: 10px;
+      background: #fef2f2;
+      border-left: 4px solid #ef4444;
+      margin-bottom: 10px;
+      border-radius: 4px;
+    }
+
+    .violation-time {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+
+    #configForm {
+      display: none;
+    }
+
+    #monitoringControls {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔒 RecuirtPro Monitor</h1>
+    <p class="subtitle">Interview Monitoring Application</p>
+
+    <div id="status" class="status inactive">
+      Status: Not Configured
+    </div>
+
+    <!-- Configuration Form -->
+    <div id="configForm">
+      <div class="form-group">
+        <label for="apiUrl">API URL</label>
+        <input type="text" id="apiUrl" value="http://localhost:5001/api/v1" />
+      </div>
+
+      <div class="form-group">
+        <label for="token">Auth Token</label>
+        <input type="password" id="token" placeholder="Enter your authentication token" />
+      </div>
+
+      <div class="form-group">
+        <label for="interviewId">Interview ID</label>
+        <input type="text" id="interviewId" placeholder="Enter interview ID" />
+      </div>
+
+      <div class="form-group">
+        <label for="candidateId">Candidate ID</label>
+        <input type="text" id="candidateId" placeholder="Enter candidate ID" />
+      </div>
+
+      <button id="startBtn" class="button primary">Start Monitoring</button>
+    </div>
+
+    <!-- Monitoring Controls -->
+    <div id="monitoringControls">
+      <p style="margin-bottom: 15px;">Monitoring is active. All prohibited applications will be detected.</p>
+      <button id="stopBtn" class="button danger">Stop Monitoring</button>
+
+      <div id="violations" class="violations"></div>
+    </div>
+
+    <!-- System Info -->
+    <div class="system-info">
+      <p><strong>System Information</strong></p>
+      <p id="systemInfo">Loading...</p>
+    </div>
+  </div>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>
