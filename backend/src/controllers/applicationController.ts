@@ -173,11 +173,17 @@ export const getApplicationById = async (
 
     // Authorization check
     const isOwner = application.candidateId._id.toString() === req.user?._id;
-    const isEmployer = req.user?.role === 'employer';
-    const isHR = req.user?.role === 'hr';
     const isAdmin = req.user?.role === 'admin';
+    
+    // HR/Employer can only view applications for their company's jobs
+    let isAuthorizedHROrEmployer = false;
+    if (req.user?.role === 'hr' || req.user?.role === 'employer') {
+      if (req.user?.companyId && application.companyId) {
+        isAuthorizedHROrEmployer = application.companyId.toString() === req.user.companyId.toString();
+      }
+    }
 
-    if (!isOwner && !isEmployer && !isHR && !isAdmin) {
+    if (!isOwner && !isAuthorizedHROrEmployer && !isAdmin) {
       return sendError(res, 'Not authorized to view this application', 403);
     }
 
@@ -425,5 +431,38 @@ export const downloadResume = async (
   } catch (error: any) {
     logger.error('Error in downloadResume:', error);
     return sendError(res, error.message || 'Error downloading resume', 500);
+  }
+};
+
+/**
+ * @desc    Check if candidate has applied to a job
+ * @route   GET /api/v1/applications/check/:jobId
+ * @access  Private (Candidate)
+ */
+export const checkApplicationStatus = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { jobId } = req.params;
+    const userId = req.user?._id;
+
+    const application = await Application.findOne({
+      jobId,
+      candidateId: userId,
+      deletedAt: null,
+    });
+
+    return sendSuccess(res, {
+      hasApplied: !!application,
+      application: application ? {
+        _id: application._id,
+        status: application.status,
+        appliedAt: application.createdAt,
+      } : null,
+    }, 'Application status retrieved');
+  } catch (error: any) {
+    logger.error('Error in checkApplicationStatus:', error);
+    return sendError(res, error.message || 'Error checking application status', 500);
   }
 };

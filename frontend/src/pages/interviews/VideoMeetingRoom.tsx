@@ -13,6 +13,12 @@ interface Interview {
   status: string;
   round?: string;
   proctoringEnabled?: boolean;
+  metadata?: {
+    systemCheckCompleted?: boolean;
+    systemCheckTimestamp?: string;
+    systemCheckPassed?: boolean;
+    systemCheckViolations?: string[];
+  };
 }
 
 interface Participant {
@@ -91,7 +97,22 @@ export default function VideoMeetingRoom() {
       // Fetch interview details
       const response = await apiClient.get(`/interviews/${id}`);
       if (response.success && response.data) {
-        setInterview(response.data);
+        const interviewData = response.data;
+        setInterview(interviewData);
+        
+        // Check if proctoring is enabled and system check is required
+        if (interviewData.proctoringEnabled && user?.role === 'candidate') {
+          const systemCheckCompleted = interviewData.metadata?.systemCheckCompleted;
+          
+          if (!systemCheckCompleted) {
+            console.log('⚠️ Proctoring enabled but system check not completed. Redirecting...');
+            alert('You must complete the system check before joining this interview.');
+            navigate(`/proctoring-check/${id}`, { replace: true });
+            return;
+          }
+          
+          console.log('✅ System check completed. Proceeding to meeting room...');
+        }
       }
 
       // Get user media
@@ -319,24 +340,32 @@ export default function VideoMeetingRoom() {
   };
 
   const createPeerConnection = (socketId: string, isInitiator: boolean): RTCPeerConnection => {
+    console.log(`🔌 Creating peer connection for ${socketId}, isInitiator: ${isInitiator}`);
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionsRef.current.set(socketId, pc);
 
     // Add local stream tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
+        console.log(`➕ Adding local track: ${track.kind} (${track.label})`);
         pc.addTrack(track, localStreamRef.current!);
       });
     }
 
     // Handle incoming stream
     pc.ontrack = (event) => {
-      console.log('Received remote track from:', socketId);
+      console.log(`📥 Received remote track from ${socketId}:`, event.track.kind);
+      console.log('Remote stream ID:', event.streams[0]?.id);
+      console.log('Remote stream tracks:', event.streams[0]?.getTracks().map(t => `${t.kind} - ${t.enabled}`));
+      
       setParticipants((prev) => {
         const newMap = new Map(prev);
         const participant = newMap.get(socketId);
         if (participant) {
+          console.log(`✅ Updating participant ${participant.userName} with stream`);
           newMap.set(socketId, { ...participant, stream: event.streams[0] });
+        } else {
+          console.warn(`⚠️ Received track for unknown participant: ${socketId}`);
         }
         return newMap;
       });
@@ -345,6 +374,7 @@ export default function VideoMeetingRoom() {
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
+        console.log(`🧊 Sending ICE candidate to ${socketId}`);
         socketRef.current.emit('ice-candidate', {
           to: socketId,
           candidate: event.candidate,
@@ -353,12 +383,29 @@ export default function VideoMeetingRoom() {
       }
     };
 
+    // Monitor connection state
+    pc.onconnectionstatechange = () => {
+      console.log(`🔗 Connection state for ${socketId}: ${pc.connectionState}`);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.error(`❌ Connection ${pc.connectionState} for ${socketId}`);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`❄️ ICE connection state for ${socketId}: ${pc.iceConnectionState}`);
+    };
+
     // If initiator, create and send offer
     if (isInitiator) {
+      console.log(`📤 Creating offer for ${socketId}`);
       pc.createOffer()
-        .then((offer) => pc.setLocalDescription(offer))
+        .then((offer) => {
+          console.log(`📝 Setting local description for ${socketId}`);
+          return pc.setLocalDescription(offer);
+        })
         .then(() => {
           if (socketRef.current) {
+            console.log(`📨 Sending offer to ${socketId}`);
             socketRef.current.emit('webrtc-offer', {
               to: socketId,
               offer: pc.localDescription,
@@ -366,7 +413,7 @@ export default function VideoMeetingRoom() {
             });
           }
         })
-        .catch((err) => console.error('Error creating offer:', err));
+        .catch((err) => console.error('❌ Error creating offer:', err));
     }
 
     return pc;
@@ -741,22 +788,54 @@ export default function VideoMeetingRoom() {
 // Remote Video Component
 function RemoteVideo({ participant }: { participant: Participant }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
 
   useEffect(() => {
     if (videoRef.current && participant.stream) {
+      console.log(`📹 Setting stream for participant: ${participant.userName}`);
+      console.log('Stream tracks:', participant.stream.getTracks().map(t => `${t.kind} - ${t.label} - ${t.enabled ? 'enabled' : 'disabled'}`));
+      
       videoRef.current.srcObject = participant.stream;
+      
+      // Ensure video plays
+      videoRef.current.play().catch(err => {
+        console.error('Error playing remote video:', err);
+      });
     }
-  }, [participant.stream]);
+  }, [participant.stream, participant.userName]);
+
+  const handleLoadedMetadata = () => {
+    console.log(`✅ Video metadata loaded for ${participant.userName}`);
+    setIsVideoReady(true);
+  };
+
+  const handleCanPlay = () => {
+    console.log(`▶️ Video can play for ${participant.userName}`);
+  };
 
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden">
       {participant.stream ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          className="w-full h-full object-cover"
-        />
+        <>
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover"
+            onLoadedMetadata={handleLoadedMetadata}
+            onCanPlay={handleCanPlay}
+          />
+          
+          {/* Loading indicator while video is initializing */}
+          {!isVideoReady && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-2"></div>
+                <p className="text-gray-300 text-sm">Loading video...</p>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-700">
           <div className="text-center">
