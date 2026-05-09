@@ -50,7 +50,7 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
 export const getJobsByCompanySlug = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
-    const { page = 1, limit = 10, status } = req.query;
+    const { page = 1, limit = 10 } = req.query;
     
     // Find company by slug
     const company = await Company.findOne({ slug, deletedAt: null });
@@ -59,11 +59,11 @@ export const getJobsByCompanySlug = async (req: AuthRequest, res: Response, next
       return;
     }
     
-    // Build query for jobs belonging to this company
+    // Build query for jobs belonging to this company — public endpoint, only published jobs
     const query: any = { 
       companyId: company._id,
       deletedAt: null,
-      status: status || 'published'  // Default to published jobs for public access
+      status: 'published'
     };
     
     const { pageNum, limitNum } = clampPagination(page, limit);
@@ -217,7 +217,8 @@ export const deleteJob = async (req: AuthRequest, res: Response, next: NextFunct
       }
     }
     
-    await Job.findByIdAndDelete(req.params.id);
+    job.deletedAt = new Date();
+    await job.save();
     sendSuccess(res, null, "Job deleted");
   } catch (error) { next(error); }
 };

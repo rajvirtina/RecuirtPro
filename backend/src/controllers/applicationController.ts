@@ -229,6 +229,30 @@ export const updateApplicationStatus = async (
       );
     }
 
+    // Status transition validation (NEW-03)
+    const validTransitions: Record<string, string[]> = {
+      [ApplicationStatus.APPLIED]: [ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.SHORTLISTED]: [ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.INTERVIEW_SCHEDULED]: [ApplicationStatus.IN_PROGRESS, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.IN_PROGRESS]: [ApplicationStatus.SELECTED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.SELECTED]: [ApplicationStatus.OFFER_RELEASED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD],
+      [ApplicationStatus.OFFER_RELEASED]: [ApplicationStatus.HIRED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD],
+      [ApplicationStatus.ON_HOLD]: [ApplicationStatus.SHORTLISTED, ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.HIRED]: [],
+      [ApplicationStatus.REJECTED]: [],
+      [ApplicationStatus.WITHDRAWN]: [],
+    };
+
+    const currentStatus = application.status;
+    const allowedNext = validTransitions[currentStatus] || [];
+    if (!allowedNext.includes(status)) {
+      return sendError(
+        res,
+        `Cannot transition from '${currentStatus}' to '${status}'. Allowed: ${allowedNext.join(', ') || 'none (terminal state)'}`,
+        400
+      );
+    }
+
     // Update status
     application.status = status;
     
