@@ -34,13 +34,25 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
     const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
     
-    const jobs = await Job.find(query)
+    // Single query using $facet to avoid separate countDocuments scan (PERF)
+    const pipeline: any[] = [{ $match: query }];
+    const facetResult = await Job.aggregate([
+      ...pipeline,
+      {
+        $facet: {
+          data: [{ $sort: { createdAt: -1 } }, { $skip: skip }, { $limit: limitNum }],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
+    ]);
+
+    const jobIds = facetResult[0]?.data?.map((j: any) => j._id) || [];
+    const total = facetResult[0]?.totalCount?.[0]?.count || 0;
+
+    // Populate after aggregation
+    const jobs = await Job.find({ _id: { $in: jobIds } })
       .populate('companyId', 'name logo slug')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-      
-    const total = await Job.countDocuments(query);
+      .sort({ createdAt: -1 });
     
     logger.info(`Found ${total} jobs matching query. Returning ${jobs.length} jobs for page ${pageNum}`);
     sendPaginatedResponse(res, jobs, pageNum, limitNum, total, "Jobs retrieved");

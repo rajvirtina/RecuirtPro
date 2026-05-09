@@ -6,10 +6,14 @@ import { AuthRequest, UserRole } from '../types';
 import { sendError } from '../utils/response';
 
 /**
- * Check if user is a Super Admin (admin role without companyId)
+ * Check if user is a Super Admin.
+ * Primary: explicit isSuperAdminUser flag.
+ * Fallback: admin role without companyId (backward compatibility).
  */
 export const isSuperAdmin = (user: AuthRequest['user']): boolean => {
-  return user?.role === UserRole.ADMIN && !user?.companyId;
+  if (!user) return false;
+  if ((user as any).isSuperAdminUser === true) return true;
+  return user.role === UserRole.ADMIN && !user.companyId;
 };
 
 /**

@@ -120,20 +120,45 @@ export const initializeSocket = (server: HTTPServer) => {
       }
     });
 
-    // WebRTC Signaling - Offer
+    // Helper: verify target socket is in the same meeting room (GAP-04)
+    const isInSameRoom = (targetSocketId: string): boolean => {
+      const senderRooms = socket.rooms;
+      const targetSocket = io.sockets.sockets.get(targetSocketId);
+      if (!targetSocket) return false;
+      for (const room of senderRooms) {
+        if (room.startsWith('meeting-') && targetSocket.rooms.has(room)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // WebRTC Signaling - Offer (with room validation)
     socket.on('webrtc-offer', ({ to, offer, from }) => {
+      if (!isInSameRoom(to)) {
+        logger.warn(`WebRTC offer blocked: ${socket.id} → ${to} (not in same room)`);
+        return;
+      }
       logger.debug(`WebRTC offer from ${from} to ${to}`);
       io.to(to).emit('webrtc-offer', { from, offer });
     });
 
-    // WebRTC Signaling - Answer
+    // WebRTC Signaling - Answer (with room validation)
     socket.on('webrtc-answer', ({ to, answer, from }) => {
+      if (!isInSameRoom(to)) {
+        logger.warn(`WebRTC answer blocked: ${socket.id} → ${to} (not in same room)`);
+        return;
+      }
       logger.debug(`WebRTC answer from ${from} to ${to}`);
       io.to(to).emit('webrtc-answer', { from, answer });
     });
 
-    // WebRTC Signaling - ICE Candidate
+    // WebRTC Signaling - ICE Candidate (with room validation)
     socket.on('ice-candidate', ({ to, candidate, from }) => {
+      if (!isInSameRoom(to)) {
+        logger.warn(`ICE candidate blocked: ${socket.id} → ${to} (not in same room)`);
+        return;
+      }
       logger.debug(`ICE candidate from ${from} to ${to}`);
       io.to(to).emit('ice-candidate', { from, candidate });
     });

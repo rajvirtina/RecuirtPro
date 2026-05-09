@@ -1,0 +1,40 @@
+module.exports = {
+  apps: [
+    {
+      name: 'recruitpro-backend',
+      script: 'dist/server.js',
+      cwd: '/home/ubuntu/recruitpro/backend',
+      instances: 2,
+      exec_mode: 'cluster',
+      env_production: {
+        NODE_ENV: 'production',
+        PORT: 5001,
+      },
+      max_memory_restart: '512M',
+      error_file: './logs/pm2-error.log',
+      out_file: './logs/pm2-out.log',
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      watch: false,
+      max_restarts: 10,
+      restart_delay: 5000,
+    },
+    {
+      name: 'recruitpro-llm',
+      script: 'uvicorn',
+      args: 'app:app --host 0.0.0.0 --port 8001 --workers 2',
+      cwd: '/home/ubuntu/recruitpro/llm-service',
+      interpreter: 'python3',
+      env_production: {
+        APP_ENV: 'production',
+      },
+      max_memory_restart: '1G',
+      error_file: './logs/pm2-llm-error.log',
+      out_file: './logs/pm2-llm-out.log',
+      merge_logs: true,
+      watch: false,
+      max_restarts: 5,
+      restart_delay: 10000,
+    },
+  ],
+};

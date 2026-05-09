@@ -154,6 +154,34 @@ export enum AuditAction {
   STATUS_CHANGE = 'status_change',
 }
 
+// Sourcing Platform
+export enum SourcingPlatform {
+  LINKEDIN = 'linkedin',
+  NAUKRI = 'naukri',
+  GITHUB = 'github',
+}
+
+// Sourcing Integration Status
+export enum IntegrationStatus {
+  CONNECTED = 'connected',
+  DISCONNECTED = 'disconnected',
+  EXPIRED = 'expired',
+  ERROR = 'error',
+}
+
+// Offer Status
+export enum OfferStatus {
+  DRAFT = 'draft',
+  PENDING_APPROVAL = 'pending_approval',
+  APPROVED = 'approved',
+  SENT = 'sent',
+  ACCEPTED = 'accepted',
+  REJECTED = 'rejected',
+  NEGOTIATING = 'negotiating',
+  WITHDRAWN = 'withdrawn',
+  EXPIRED = 'expired',
+}
+
 // User Interface
 export interface IUser {
   _id: string;
@@ -166,6 +194,7 @@ export interface IUser {
   phone?: string;
   timezone: string;
   companyId?: string;
+  isSuperAdminUser?: boolean;
   profileImage?: string;
   emailVerified: boolean;
   phoneVerified: boolean;

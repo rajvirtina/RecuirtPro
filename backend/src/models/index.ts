@@ -14,3 +14,7 @@ export { CalendarIntegration, ICalendarIntegrationDocument } from './CalendarInt
 export { RateLimitLog, IRateLimitLog } from './RateLimitLog';
 export { default as ConsentLog, IConsentLog } from './ConsentLog';
 export { Invitation, IInvitationDocument } from './Invitation';
+export { SourcingIntegration, ISourcingIntegrationDocument } from './SourcingIntegration';
+export { SourcedCandidate, ISourcedCandidateDocument } from './SourcedCandidate';
+export { SourcingSearch, ISourcingSearchDocument } from './SourcingSearch';
+export { Offer, IOfferDocument } from './Offer';
