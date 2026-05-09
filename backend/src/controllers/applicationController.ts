@@ -3,6 +3,7 @@ import { Application, Job, CandidateProfile, User } from '../models';
 import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Submit a job application
@@ -109,10 +110,11 @@ export const getApplications = async (
     if (req.user?.role === 'candidate') {
       // Candidates can only see their own applications
       query.candidateId = req.user._id;
-    } else if (req.user?.role === 'employer' || req.user?.role === 'hr') {
-      // Employers/HR see applications for their company's jobs
-      if (req.user.companyId) {
-        query.companyId = req.user.companyId;
+    } else {
+      // TENANT ISOLATION: All non-candidate, non-super-admin users are scoped to their company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId) {
+        query.companyId = tenantId;
       }
     }
 
@@ -172,17 +174,16 @@ export const getApplicationById = async (
 
     // Authorization check
     const isOwner = application.candidateId._id.toString() === req.user?._id;
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
+    const isSuperAdminUser = isSuperAdmin(req.user);
     
-    // HR/Employer can only view applications for their company's jobs
-    let isAuthorizedHROrEmployer = false;
-    if (req.user?.role === 'hr' || req.user?.role === 'employer') {
-      if (req.user?.companyId && application.companyId) {
-        isAuthorizedHROrEmployer = application.companyId.toString() === req.user.companyId.toString();
-      }
+    // Company members can only view applications for their company's jobs
+    let isAuthorizedCompanyMember = false;
+    if (tenantId && application.companyId) {
+      isAuthorizedCompanyMember = application.companyId.toString() === tenantId;
     }
 
-    if (!isOwner && !isAuthorizedHROrEmployer && !isAdmin) {
+    if (!isOwner && !isAuthorizedCompanyMember && !isSuperAdminUser) {
       return sendError(res, 'Not authorized to view this application', 403);
     }
 
@@ -213,15 +214,14 @@ export const updateApplicationStatus = async (
     }
 
     // Authorization check — company isolation (SEC-15/B-16)
-    const isAdmin = req.user?.role === 'admin';
-    let isAuthorizedHROrEmployer = false;
-    if (req.user?.role === 'hr' || req.user?.role === 'employer') {
-      if (req.user?.companyId && application.companyId) {
-        isAuthorizedHROrEmployer = application.companyId.toString() === req.user.companyId.toString();
-      }
+    const tenantId = getTenantCompanyId(req.user);
+    const isSuperAdminUser = isSuperAdmin(req.user);
+    let isAuthorizedCompanyMember = false;
+    if (tenantId && application.companyId) {
+      isAuthorizedCompanyMember = application.companyId.toString() === tenantId;
     }
 
-    if (!isAdmin && !isAuthorizedHROrEmployer) {
+    if (!isSuperAdminUser && !isAuthorizedCompanyMember) {
       return sendError(
         res,
         'Not authorized to update this application',
@@ -298,17 +298,8 @@ export const withdrawApplication = async (
       );
     }
 
-    // Soft delete
-    application.status = ApplicationStatus.WITHDRAWN;
-    application.deletedAt = new Date();
-    application.statusHistory.push({
-      status: ApplicationStatus.WITHDRAWN,
-      changedAt: new Date(),
-      changedBy: req.user?._id! as any,
-      remarks: 'Application withdrawn by candidate',
-    });
-
-    await application.save();
+    // Hard delete
+    await Application.findByIdAndDelete(id);
 
     // Decrement application count on job
     await Job.findByIdAndUpdate(application.jobId, {
@@ -339,9 +330,11 @@ export const getApplicationStats = async (
     const matchQuery: any = { deletedAt: null };
 
     // Role-based filtering
-    if (req.user?.role === 'employer' || req.user?.role === 'hr') {
-      if (req.user.companyId) {
-        matchQuery.companyId = req.user.companyId;
+    if (req.user?.role === 'employer' || req.user?.role === 'hr' || req.user?.role === 'admin') {
+      // TENANT ISOLATION: Scope to company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId) {
+        matchQuery.companyId = tenantId;
       }
     }
 
@@ -400,10 +393,11 @@ export const downloadResume = async (
 
     // Check authorization
     const isOwner = application.candidateId.toString() === req.user?._id;
-    const isCompanyHR = req.user?.companyId === application.companyId?.toString();
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
+    const isCompanyMember = tenantId ? application.companyId?.toString() === tenantId : false;
+    const isSuperAdminUser = isSuperAdmin(req.user);
 
-    if (!isOwner && !isCompanyHR && !isAdmin) {
+    if (!isOwner && !isCompanyMember && !isSuperAdminUser) {
       return sendError(res, 'Not authorized to download this resume', 403);
     }
 

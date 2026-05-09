@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import apiClient from '../../services/api';
+import { useAuthStore } from '../../store/authStore';
 
 interface HRUser {
   _id: string;
@@ -29,6 +30,8 @@ export default function AdminHRManagement() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [emailDomainError, setEmailDomainError] = useState('');
+  const currentUser = useAuthStore((state) => state.user);
   const [formData, setFormData] = useState({
     email: '',
     firstName: '',
@@ -87,6 +90,24 @@ export default function AdminHRManagement() {
 
   const handleInviteHR = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Email domain validation
+    const publicDomains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com',
+      'icloud.com', 'mail.com', 'protonmail.com', 'zoho.com', 'yandex.com', 'live.com',
+      'msn.com', 'rediffmail.com', 'google.com'];
+    const invitedDomain = formData.email.toLowerCase().split('@')[1];
+    const adminDomain = currentUser?.email?.toLowerCase().split('@')[1];
+
+    if (adminDomain) {
+      if (invitedDomain !== adminDomain) {
+        setEmailDomainError(
+          `Email domain "@${invitedDomain}" does not match your company domain "@${adminDomain}". HR users must use a company email.`
+        );
+        return;
+      }
+    }
+    setEmailDomainError('');
+
     try {
       await apiClient.post('/admin/invite-hr', formData);
       alert('HR invitation sent successfully!');
@@ -340,9 +361,12 @@ export default function AdminHRManagement() {
                     type="email"
                     required
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setEmailDomainError(''); }}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   />
+                  {emailDomainError && (
+                    <p className="mt-1 text-sm text-red-600">{emailDomainError}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">First Name *</label>

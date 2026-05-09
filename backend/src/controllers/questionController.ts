@@ -3,6 +3,7 @@ import { Question, InterviewTemplate } from '../models';
 import { AuthRequest, QuestionDifficulty } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
 import logger from '../utils/logger';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Create a new question
@@ -67,11 +68,11 @@ export const getQuestions = async (
 
     const query: any = { isActive: true };
 
-    // Filter by company for non-admin users
-    if (req.user?.role !== 'admin') {
-      query.$or = [
-        { companyId: req.user?.companyId },
-        { companyId: null }, // Global questions
+    // TENANT ISOLATION: Scope questions to company (super admin sees all)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      query.$and = [
+        { $or: [{ companyId: tenantId }, { companyId: null }] },
       ];
     }
 
@@ -83,10 +84,16 @@ export const getQuestions = async (
       query.skills = { $in: skillsArray };
     }
     if (search) {
-      query.$or = [
+      const searchFilter = [
         { question: { $regex: search, $options: 'i' } },
         { skills: { $regex: search, $options: 'i' } },
       ];
+      // Combine search with existing $and to avoid overwriting company filter
+      if (query.$and) {
+        query.$and.push({ $or: searchFilter });
+      } else {
+        query.$or = searchFilter;
+      }
     }
 
     const pageNum = parseInt(page as string, 10);
@@ -227,17 +234,18 @@ export const deleteQuestion = async (
       return sendError(res, 'Question not found', 404);
     }
 
-    // Check authorization
+    // Check authorization — must be creator or company admin of same company
+    const tenantId = getTenantCompanyId(req.user);
     const isAuthorized =
-      req.user?.role === 'admin' ||
-      question.createdBy.toString() === req.user?._id;
+      isSuperAdmin(req.user) ||
+      question.createdBy.toString() === req.user?._id ||
+      (tenantId && question.companyId?.toString() === tenantId);
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to delete this question', 403);
     }
 
-    question.isActive = false;
-    await question.save();
+    await Question.findByIdAndDelete(id);
 
     logger.info(`Question ${id} deleted`);
 
@@ -264,6 +272,12 @@ export const autoGenerateQuestions = async (
       isActive: true,
       skills: { $in: skills },
     };
+
+    // TENANT ISOLATION: Only return company's own questions + global
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      query.$or = [{ companyId: tenantId }, { companyId: null }];
+    }
 
     if (difficulty) {
       query.difficulty = difficulty;
@@ -298,9 +312,11 @@ export const getQuestionStats = async (
   try {
     const query: any = { isActive: true };
 
-    if (req.user?.role !== 'admin') {
+    // TENANT ISOLATION: Scope question stats to company
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
       query.$or = [
-        { companyId: req.user?.companyId },
+        { companyId: tenantId },
         { companyId: null },
       ];
     }

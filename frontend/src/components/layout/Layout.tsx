@@ -24,14 +24,12 @@ export default function Layout() {
     : user?.role === 'admin' && !user?.companyId
     ? [
         // Super Admin (no companyId)
-        { name: 'Dashboard', href: '/dashboard', icon: '📊' },
         { name: 'Super Admin', href: '/superadmin', icon: '👑' },
         { name: 'Profile', href: '/profile', icon: '👤' },
       ]
     : user?.role === 'admin'
     ? [
         // Company Admin (has companyId)
-        { name: 'Dashboard', href: '/dashboard', icon: '📊' },
         { name: 'Admin Portal', href: '/admin', icon: '⚙️' },
         { name: 'HR Management', href: '/admin/hr-management', icon: '👥' },
         { name: 'Jobs', href: '/jobs', icon: '💼' },

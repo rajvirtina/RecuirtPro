@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import axios from 'axios';
 import config from '../config';
 import { decrypt } from '../utils/encryption';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Initiate OAuth flow for calendar integration
@@ -216,11 +217,11 @@ export const createCalendarEvent = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Check authorization
+    // Check authorization — TENANT ISOLATION
+    const tenantId = getTenantCompanyId(req.user);
     const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
+      isSuperAdmin(req.user) ||
+      (tenantId && interview.companyId?.toString() === tenantId);
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized', 403);

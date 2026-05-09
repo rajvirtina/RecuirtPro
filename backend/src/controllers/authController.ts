@@ -96,35 +96,45 @@ export const register = async (
     const emailVerificationEnabled = config.features.emailVerification;
     
     if (emailVerificationEnabled) {
-      // Generate email verification token
-      const verificationToken = crypto.randomBytes(32).toString('hex');
-      user.emailVerificationToken = crypto
-        .createHash('sha256')
-        .update(verificationToken)
-        .digest('hex');
-      user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-      
-      // Send verification email
-      const verificationUrl = `${config.frontendUrl}/verify-email?token=${verificationToken}`;
-      try {
-        await sendEmail({
-          to: user.email,
-          subject: 'Verify Your Email - RecuirtPro',
-          template: 'emailVerification',
-          data: {
-            name: user.firstName,
-            verificationUrl,
-          },
-        });
+      const skipEmail = process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true';
+
+      if (skipEmail) {
+        // Dev mode with SKIP_EMAIL: auto-activate since no real email is sent
+        logger.info('Development mode (SKIP_EMAIL): Auto-activating user');
+        user.status = UserStatus.ACTIVE;
+        user.emailVerified = true;
         await user.save();
-      } catch (emailError) {
-        logger.error('Failed to send verification email:', emailError);
-        // In development, auto-activate if email fails
-        if (config.env === 'development') {
-          logger.info('Development mode: Auto-activating user due to email failure');
-          user.status = UserStatus.ACTIVE;
-          user.emailVerified = true;
+      } else {
+        // Generate email verification token
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        user.emailVerificationToken = crypto
+          .createHash('sha256')
+          .update(verificationToken)
+          .digest('hex');
+        user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      
+        // Send verification email
+        const verificationUrl = `${config.frontendUrl}/verify-email?token=${verificationToken}`;
+        try {
+          await sendEmail({
+            to: user.email,
+            subject: 'Verify Your Email - RecuirtPro',
+            template: 'emailVerification',
+            data: {
+              name: user.firstName,
+              verificationUrl,
+            },
+          });
           await user.save();
+        } catch (emailError) {
+          logger.error('Failed to send verification email:', emailError);
+          // In development, auto-activate if email fails
+          if (config.env === 'development') {
+            logger.info('Development mode: Auto-activating user due to email failure');
+            user.status = UserStatus.ACTIVE;
+            user.emailVerified = true;
+            await user.save();
+          }
         }
       }
     } else {
@@ -600,6 +610,28 @@ export const changePassword = async (
 ): Promise<void> => {
   try {
     const { currentPassword, newPassword } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+
+    if (!currentPassword || !newPassword) {
+      sendError(res, 'Current password and new password are required', 400);
+      return;
+    }
+
+    // Password policy validation
+    if (newPassword.length < 8) {
+      sendError(res, 'Password must be at least 8 characters long', 400);
+      return;
+    }
+
+    const hasUpperCase = /[A-Z]/.test(newPassword);
+    const hasLowerCase = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumber || !hasSpecial) {
+      sendError(res, 'Password must contain uppercase, lowercase, number, and special character', 400);
+      return;
+    }
 
     const user = await User.findById(req.user?._id);
 
@@ -619,9 +651,40 @@ export const changePassword = async (
     user.password = newPassword;
     await user.save();
 
+    // Invalidate all existing sessions/refresh tokens
+    await user.invalidateRefreshTokens();
+
+    // Create audit log
+    await AuditLog.create({
+      userId: user._id,
+      action: AuditAction.PASSWORD_CHANGE,
+      resource: 'User',
+      resourceId: user._id.toString(),
+      description: `Password changed by user: ${user.email}`,
+      metadata: { action: 'password_changed' },
+      ipAddress,
+      userAgent: req.get('user-agent'),
+    });
+
+    // Send confirmation email
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Password Changed Successfully - RecuirtPro',
+        template: 'passwordChanged',
+        data: {
+          name: user.firstName,
+          timestamp: new Date().toLocaleString(),
+          ipAddress,
+        },
+      });
+    } catch (emailError) {
+      logger.error('Failed to send password changed email:', emailError);
+    }
+
     logger.info(`Password changed: ${user.email}`);
 
-    sendSuccess(res, null, 'Password changed successfully');
+    sendSuccess(res, null, 'Password changed successfully. Please login again.');
   } catch (error) {
     next(error);
   }

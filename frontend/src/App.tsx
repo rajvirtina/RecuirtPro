@@ -42,6 +42,18 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
+// Dashboard redirect - admin roles skip dashboard
+const DashboardRedirect = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'admin' && !user?.companyId) {
+    return <Navigate to="/superadmin" replace />;
+  }
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  return <Dashboard />;
+};
+
 function App() {
   const { setUser, token, isAuthenticated } = useAuthStore();
 
@@ -83,8 +95,8 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/" element={<DashboardRedirect />} />
+        <Route path="/dashboard" element={<DashboardRedirect />} />
         <Route path="/candidate/jobs" element={<CandidateJobs />} />
         <Route path="/jobs/:id/apply" element={<ApplyJob />} />
         <Route path="/jobs" element={<Jobs />} />
