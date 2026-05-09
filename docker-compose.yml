@@ -6,11 +6,11 @@ services:
     container_name: recruitpro-mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT:-27017}:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
-      MONGO_INITDB_DATABASE: recruitpro
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?MONGO_INITDB_ROOT_PASSWORD must be set in .env}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-recruitpro}
     volumes:
       - mongodb_data:/data/db
       - mongodb_config:/data/configdb
@@ -49,6 +49,30 @@ services:
   #     - /app/node_modules
   #   networks:
   #     - recruitpro-network
+
+  llm-service:
+    build:
+      context: ./llm-service
+      dockerfile: Dockerfile
+    container_name: recruitpro-llm-service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      API_SECRET_KEY: ${LLM_API_SECRET_KEY:-default-secret-key}
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost:5000
+      SERVICE_PORT: 8001
+      LOG_LEVEL: INFO
+    networks:
+      - recruitpro-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   mongodb_data:

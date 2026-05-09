@@ -185,8 +185,8 @@ export const login = async (
       return;
     }
 
-    // Check if user is active
-    if (!user.deletedAt === null) {
+    // Check if user is soft-deleted
+    if (user.deletedAt) {
       sendError(res, 'Your account has been deactivated. Please contact support.', 403);
       return;
     }
@@ -288,7 +288,7 @@ export const refresh = async (
     
     const user = await User.findById(decoded.id);
     
-    if (!user || !user.deletedAt === null) {
+    if (!user || user.deletedAt) {
       sendError(res, 'Invalid refresh token', 401);
       return;
     }

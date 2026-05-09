@@ -409,9 +409,16 @@ export const downloadResume = async (
       return sendError(res, 'No resume uploaded for this application', 404);
     }
 
-    // Get file path
+    // Prevent path traversal (SEC-04/B-05)
     const path = require('path');
-    const filePath = path.join(__dirname, '../../', application.resumeUrl);
+    const uploadsDir = path.resolve(__dirname, '../../uploads');
+    const filePath = path.resolve(__dirname, '../../', application.resumeUrl);
+
+    // Ensure resolved path stays within the uploads directory
+    if (!filePath.startsWith(uploadsDir)) {
+      logger.warn(`[downloadResume] Path traversal attempt blocked: ${application.resumeUrl}`);
+      return sendError(res, 'Invalid resume path', 400);
+    }
 
     // Check if file exists
     const fs = require('fs');
