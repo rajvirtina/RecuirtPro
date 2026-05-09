@@ -157,6 +157,19 @@ export const config = {
   // Encryption
   encryptionKey: process.env.ENCRYPTION_KEY || 'default-encryption-key-change-me',
   
+  // LLM Service
+  llm: {
+    serviceUrl: process.env.LLM_SERVICE_URL || 'http://localhost:8001',
+    apiSecretKey: process.env.LLM_API_SECRET_KEY || 'default-secret-key',
+  },
+
+  // GitHub
+  github: {
+    clientId: process.env.GITHUB_CLIENT_ID || '',
+    clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
+    token: process.env.GITHUB_TOKEN || '',
+  },
+
   // Data Retention (in days)
   retention: {
     resumes: parseInt(process.env.RESUME_RETENTION_DAYS || '365', 10),

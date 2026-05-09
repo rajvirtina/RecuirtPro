@@ -20,6 +20,8 @@ import questionRoutes from './routes/questions';
 import sourcingRoutes from './routes/sourcing';
 import dashboardRoutes from './routes/dashboard';
 import adminRoutes from './routes/admin';
+import offerRoutes from './routes/offers';
+import notificationRoutes from './routes/notifications';
 import hrRoutes from './routes/hr';
 import gdprRoutes from './routes/gdprRoutes';
 import invitationRoutes from './routes/invitations';
@@ -145,8 +147,9 @@ app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/hr', hrRoutes);
 app.use('/api/v1/gdpr', gdprRoutes);
 app.use('/api/v1/invitations', invitationRoutes);
+app.use('/api/v1/offers', offerRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 // app.use('/api/v1/users', userRoutes);
-// app.use('/api/v1/notifications', notificationRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 
 // Root route
