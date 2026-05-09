@@ -4,6 +4,7 @@ import connectDB from './config/database';
 import logger from './utils/logger';
 import { createServer } from 'http';
 import { initializeSocket } from './socket/socketController';
+import { closeQueues } from './services/queueProcessors';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error: Error) => {
@@ -27,6 +28,9 @@ const startServer = async () => {
     // Initialize Socket.IO
     initializeSocket(httpServer);
     logger.info('Socket.IO initialized successfully');
+    
+    // Initialize Bull queue processors
+    logger.info('Bull queue processors initialized (email, cross-portal)');
     
     // Then start the server
     server = httpServer.listen(config.port, () => {
@@ -56,8 +60,9 @@ process.on('unhandledRejection', (error: Error) => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   logger.info('👋 SIGTERM RECEIVED. Shutting down gracefully');
+  await closeQueues();
   if (server) {
     server.close(() => {
       logger.info('💥 Process terminated!');

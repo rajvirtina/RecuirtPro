@@ -5,6 +5,7 @@ import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import axios from 'axios';
 import config from '../config';
+import { decrypt } from '../utils/encryption';
 
 /**
  * @desc    Initiate OAuth flow for calendar integration
@@ -334,10 +335,13 @@ async function exchangeZohoToken(code: string, redirectUri: string) {
 async function refreshAccessToken(integration: any) {
   let newToken: any;
 
+  // SEC-11: Decrypt refresh token before sending to OAuth provider
+  const decryptedRefreshToken = integration.getDecryptedRefreshToken?.() || integration.refreshToken;
+
   switch (integration.provider) {
     case CalendarProvider.GOOGLE:
       newToken = await axios.post('https://oauth2.googleapis.com/token', {
-        refresh_token: integration.refreshToken,
+        refresh_token: decryptedRefreshToken,
         client_id: config.google.clientId,
         client_secret: config.google.clientSecret,
         grant_type: 'refresh_token',
@@ -348,7 +352,7 @@ async function refreshAccessToken(integration: any) {
       newToken = await axios.post(
         'https://login.microsoftonline.com/common/oauth2/v2.0/token',
         new URLSearchParams({
-          refresh_token: integration.refreshToken!,
+          refresh_token: decryptedRefreshToken!,
           client_id: config.microsoft.clientId!,
           client_secret: config.microsoft.clientSecret!,
           grant_type: 'refresh_token',
@@ -360,7 +364,7 @@ async function refreshAccessToken(integration: any) {
       newToken = await axios.post(
         'https://accounts.zoho.com/oauth/v2/token',
         new URLSearchParams({
-          refresh_token: integration.refreshToken!,
+          refresh_token: decryptedRefreshToken!,
           client_id: config.zoho.clientId!,
           client_secret: config.zoho.clientSecret!,
           grant_type: 'refresh_token',
@@ -377,6 +381,8 @@ async function refreshAccessToken(integration: any) {
 }
 
 async function createGoogleCalendarEvent(interview: any, integration: any): Promise<string> {
+  // SEC-11: Decrypt access token for API call
+  const accessToken = integration.getDecryptedAccessToken?.() || integration.accessToken;
   const event = {
     summary: `Interview - ${interview.jobId.title}`,
     description: `Interview with ${interview.candidateId.firstName} ${interview.candidateId.lastName}\nMeeting Link: ${interview.meetingLink || 'TBD'}`,
@@ -399,13 +405,15 @@ async function createGoogleCalendarEvent(interview: any, integration: any): Prom
   const response = await axios.post(
     'https://www.googleapis.com/calendar/v3/calendars/primary/events',
     event,
-    { headers: { Authorization: `Bearer ${integration.accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   return response.data.id;
 }
 
 async function createMicrosoftCalendarEvent(interview: any, integration: any): Promise<string> {
+  // SEC-11: Decrypt access token for API call
+  const accessToken = integration.getDecryptedAccessToken?.() || integration.accessToken;
   const event = {
     subject: `Interview - ${interview.jobId.title}`,
     body: {
@@ -437,13 +445,15 @@ async function createMicrosoftCalendarEvent(interview: any, integration: any): P
   const response = await axios.post(
     'https://graph.microsoft.com/v1.0/me/events',
     event,
-    { headers: { Authorization: `Bearer ${integration.accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   return response.data.id;
 }
 
 async function createZohoCalendarEvent(interview: any, integration: any): Promise<string> {
+  // SEC-11: Decrypt access token for API call
+  const accessToken = integration.getDecryptedAccessToken?.() || integration.accessToken;
   const event = {
     title: `Interview - ${interview.jobId.title}`,
     description: `Interview with ${interview.candidateId.firstName} ${interview.candidateId.lastName}\nMeeting Link: ${interview.meetingLink || 'TBD'}`,
@@ -460,7 +470,7 @@ async function createZohoCalendarEvent(interview: any, integration: any): Promis
   const response = await axios.post(
     'https://calendar.zoho.com/api/v1/calendars/primary/events',
     event,
-    { headers: { Authorization: `Bearer ${integration.accessToken}` } }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   return response.data.events[0].uid;

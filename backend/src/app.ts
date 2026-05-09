@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import mongoSanitize from 'express-mongo-sanitize';
 import config from './config';
-import { errorHandler, notFound, limiter } from './middleware';
+import { errorHandler, notFound, limiter, xssSanitize } from './middleware';
 import { stream } from './utils/logger';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
@@ -105,6 +105,7 @@ app.use(
   })
 );
 app.use(mongoSanitize());
+app.use(xssSanitize);
 app.use(compression());
 
 // Rate limiting
