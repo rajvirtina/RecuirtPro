@@ -39,6 +39,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "default-secret-key")
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+APP_ENV = os.getenv("APP_ENV", "development")
+
+# SEC-14/B-19: Reject default secret key in production
+if APP_ENV == "production" and API_SECRET_KEY == "default-secret-key":
+    raise RuntimeError("FATAL: API_SECRET_KEY must be set to a secure value in production. Do not use default-secret-key.")
 
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY not set. LLM calls will fail.")

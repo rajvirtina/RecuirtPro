@@ -1,7 +1,7 @@
 import { Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { Job, Application, Company } from "../models";
-import { sendSuccess, sendError, sendPaginatedResponse } from "../utils/response";
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from "../utils/response";
 import logger from "../utils/logger";
 import { JobStatus, AuthRequest } from "../types";
 
@@ -27,8 +27,7 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
       logger.info(`[getJobs] ❌ NO company filter applied - Role: ${userRole}, HasCompanyId: ${!!req.user?.companyId}`);
     }
     
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
     
     const jobs = await Job.find(query)
@@ -63,8 +62,7 @@ export const getJobsByCompanySlug = async (req: AuthRequest, res: Response, next
       status: status || 'published'  // Default to published jobs for public access
     };
     
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
     
     const jobs = await Job.find(query)
@@ -132,6 +130,16 @@ export const createJob = async (req: AuthRequest, res: Response, next: NextFunct
     jobData.createdBy = req.user?._id;
     jobData.status = JobStatus.DRAFT; // New jobs always start as draft
 
+    // Cross-field validation (EC-01/EC-02)
+    if (jobData.experienceMin != null && jobData.experienceMax != null && jobData.experienceMin > jobData.experienceMax) {
+      sendError(res, 'experienceMin cannot be greater than experienceMax', 400);
+      return;
+    }
+    if (jobData.salaryMin != null && jobData.salaryMax != null && jobData.salaryMin > jobData.salaryMax) {
+      sendError(res, 'salaryMin cannot be greater than salaryMax', 400);
+      return;
+    }
+
     const job = await Job.create(jobData);
     sendSuccess(res, { job }, "Job created", 201);
   } catch (error) { 
@@ -166,6 +174,20 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
       if (req.body[field] !== undefined) {
         sanitizedUpdate[field] = req.body[field];
       }
+    }
+
+    // Cross-field validation (EC-01/EC-02)
+    const checkExpMin = sanitizedUpdate.experienceMin ?? (job as any).experienceMin;
+    const checkExpMax = sanitizedUpdate.experienceMax ?? (job as any).experienceMax;
+    if (checkExpMin != null && checkExpMax != null && checkExpMin > checkExpMax) {
+      sendError(res, 'experienceMin cannot be greater than experienceMax', 400);
+      return;
+    }
+    const checkSalMin = sanitizedUpdate.salaryMin ?? (job as any).salaryMin;
+    const checkSalMax = sanitizedUpdate.salaryMax ?? (job as any).salaryMax;
+    if (checkSalMin != null && checkSalMax != null && checkSalMin > checkSalMax) {
+      sendError(res, 'salaryMin cannot be greater than salaryMax', 400);
+      return;
     }
     
     const updatedJob = await Job.findByIdAndUpdate(req.params.id, sanitizedUpdate, { new: true, runValidators: true });

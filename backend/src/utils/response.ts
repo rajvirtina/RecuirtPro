@@ -2,6 +2,18 @@ import { Response } from 'express';
 import { ApiResponse } from '../types';
 
 /**
+ * Clamp pagination params to safe bounds (B-14)
+ */
+export const clampPagination = (page: any, limit: any): { pageNum: number; limitNum: number } => {
+  let pageNum = parseInt(page as string, 10);
+  let limitNum = parseInt(limit as string, 10);
+  if (isNaN(pageNum) || pageNum < 1) pageNum = 1;
+  if (isNaN(limitNum) || limitNum < 1) limitNum = 10;
+  if (limitNum > 100) limitNum = 100;
+  return { pageNum, limitNum };
+};
+
+/**
  * Send success response
  */
 export const sendSuccess = <T>(

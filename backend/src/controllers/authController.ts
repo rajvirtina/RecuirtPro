@@ -255,8 +255,12 @@ export const logout = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // In a more advanced implementation, you would invalidate the refresh token
-    // For now, we'll just send a success response
+    // Invalidate all refresh tokens for this user (B-06/SEC-07)
+    const user = await User.findById(req.user?._id);
+    if (user) {
+      await user.invalidateRefreshTokens();
+    }
+    
     logger.info(`User logged out: ${req.user?.email}`);
     
     sendSuccess(res, null, 'Logout successful');

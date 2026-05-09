@@ -4,7 +4,7 @@
 
 import { Response } from 'express';
 import { AuthRequest, UserRole, UserStatus, AuditAction } from '../types';
-import { sendSuccess, sendError } from '../utils/response';
+import { sendSuccess, sendError, clampPagination } from '../utils/response';
 import { User } from '../models';
 import { AuditLog } from '../models/AuditLog';
 import { sendEmail } from '../services/emailService';
@@ -192,13 +192,14 @@ export const getHRUsers = async (
       ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const { pageNum, limitNum } = clampPagination(page, limit);
+    const skip = (pageNum - 1) * limitNum;
 
     const [users, total] = await Promise.all([
       User.find(query)
         .select('-password -mfaSecret -emailVerificationToken -passwordResetToken')
         .skip(skip)
-        .limit(Number(limit))
+        .limit(limitNum)
         .sort({ createdAt: -1 }),
       User.countDocuments(query),
     ]);
@@ -206,8 +207,8 @@ export const getHRUsers = async (
     sendSuccess(res, {
       users,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
         totalPages: Math.ceil(total / Number(limit)),
       },
