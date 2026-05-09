@@ -405,11 +405,18 @@ export const cancelInterview = async (
       return sendError(res, 'Not authorized to cancel this interview', 403);
     }
 
-    await Interview.findByIdAndDelete(id);
+    // Soft cancel — set status to CANCELLED instead of hard delete (GAP-03)
+    interview.status = InterviewStatus.CANCELLED;
+    if (reason) {
+      interview.cancellationReason = reason;
+    }
+    interview.cancelledBy = req.user?._id as any;
+    interview.cancelledAt = new Date();
+    await interview.save();
 
-    logger.info(`Interview ${id} deleted by ${req.user?._id}`);
+    logger.info(`Interview ${id} cancelled by ${req.user?._id}. Reason: ${reason || 'N/A'}`);
 
-    return sendSuccess(res, null, 'Interview deleted successfully');
+    return sendSuccess(res, interview, 'Interview cancelled successfully');
   } catch (error: any) {
     logger.error('Error in cancelInterview:', error);
     return sendError(res, error.message || 'Error cancelling interview', 500);

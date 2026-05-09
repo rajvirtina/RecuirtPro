@@ -494,8 +494,10 @@ export const deleteHRUser = async (
     const deletedEmail = user.email;
     const deletedRole = user.role;
 
-    // Hard delete
-    await User.findByIdAndDelete(id);
+    // Soft delete — preserve audit trail (GAP-02)
+    user.deletedAt = new Date();
+    user.status = UserStatus.INACTIVE;
+    await user.save();
 
     // Create audit log
     await AuditLog.create({
@@ -503,7 +505,7 @@ export const deleteHRUser = async (
       action: AuditAction.DELETE,
       resource: 'User',
       resourceId: user._id.toString(),
-      description: `HR user deleted: ${deletedEmail} (${deletedRole})`,
+      description: `HR user soft-deleted: ${deletedEmail} (${deletedRole})`,
       metadata: {
         deletedUser: deletedEmail,
         role: user.role,
@@ -778,23 +780,34 @@ export const deleteCompany = async (
 
     const companyName = company.name;
 
-    // Hard delete all users belonging to this company
-    await User.deleteMany({ companyId: id });
+    // Soft-delete the company
+    company.deletedAt = new Date();
+    (company as any).status = 'inactive';
+    await company.save();
 
-    // Hard delete the company
-    await Company.findByIdAndDelete(id);
+    // Soft-delete all users belonging to this company
+    await User.updateMany(
+      { companyId: id, deletedAt: null },
+      { $set: { deletedAt: new Date(), status: 'inactive' } }
+    );
+
+    // Soft-delete all jobs belonging to this company
+    await Job.updateMany(
+      { companyId: id, deletedAt: null },
+      { $set: { deletedAt: new Date() } }
+    );
 
     await AuditLog.create({
       userId: req.user?._id,
       action: AuditAction.DELETE,
       resource: 'Company',
       resourceId: company._id.toString(),
-      description: `Deleted company: ${companyName}`,
+      description: `Soft-deleted company: ${companyName} (cascaded to users and jobs)`,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     });
 
-    logger.info(`Company deleted: ${companyName} by ${req.user?.email}`);
+    logger.info(`Company soft-deleted: ${companyName} by ${req.user?.email}`);
     sendSuccess(res, null, 'Company deleted successfully');
   } catch (error: any) {
     logger.error('Error deleting company:', error);

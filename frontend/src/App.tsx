@@ -28,6 +28,7 @@ import InterviewDetail from './pages/interviews/InterviewDetail';
 import VideoMeetingRoom from './pages/interviews/VideoMeetingRoom';
 import Questions from './pages/questions/Questions';
 import CandidateSourcing from './pages/sourcing/CandidateSourcing';
+import OfferManagement from './pages/offers/OfferManagement';
 import HRManagement from './pages/admin/HRManagement';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import SuperAdminPanel from './pages/superadmin/SuperAdminPanel';
@@ -119,6 +120,7 @@ function App() {
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
         <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
         <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
+        <Route path="/offers" element={<RoleGuard roles={['admin', 'hr', 'employer']}><OfferManagement /></RoleGuard>} />
         <Route path="/proctoring/monitor" element={<RoleGuard roles={['admin', 'hr', 'employer']}><ProctoringDashboard /></RoleGuard>} />
         <Route path="/admin" element={<RoleGuard roles={['admin']}><AdminDashboard /></RoleGuard>} />
         <Route path="/admin/hr-management" element={<RoleGuard roles={['admin']}><HRManagement /></RoleGuard>} />

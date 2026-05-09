@@ -245,9 +245,11 @@ export const deleteQuestion = async (
       return sendError(res, 'Not authorized to delete this question', 403);
     }
 
-    await Question.findByIdAndDelete(id);
+    // Soft delete via isActive flag (GAP-05 — comment said soft delete but was hard delete)
+    question.isActive = false;
+    await question.save();
 
-    logger.info(`Question ${id} deleted`);
+    logger.info(`Question ${id} soft-deleted (isActive=false)`);
 
     return sendSuccess(res, null, 'Question deleted successfully');
   } catch (error: any) {
