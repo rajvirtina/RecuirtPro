@@ -35,8 +35,6 @@ export const getEmployerDashboard = async (
     const jobs = await Job.find(jobFilter, '_id');
     const jobIds = jobs.map((j) => j._id);
 
-    const applicationFilter: any = {};
-    const interviewFilter: any = {};
     if (jobIds.length > 0) {
       applicationFilter.jobId = { $in: jobIds };
       interviewFilter.jobId = { $in: jobIds };
