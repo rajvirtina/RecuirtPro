@@ -148,6 +148,26 @@ router.put(
 
 /**
  * @swagger
+ * /api/v1/interviews/{id}/start:
+ *   post:
+ *     summary: Start an interview (mark as in progress)
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Interview started successfully
+ */
+router.post(
+  '/:id/start',
+  protect,
+  [param('id').isMongoId().withMessage('Valid interview ID is required')],
+  validate,
+  interviewController.startInterview
+);
+
+/**
+ * @swagger
  * /api/v1/interviews/{id}/feedback:
  *   post:
  *     summary: Submit interview feedback and next round decision

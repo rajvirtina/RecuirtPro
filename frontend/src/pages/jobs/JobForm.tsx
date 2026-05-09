@@ -328,8 +328,8 @@ export default function JobForm() {
             <input
               type="number"
               min="0"
-              value={formData.experienceMin}
-              onChange={(e) => setFormData({ ...formData, experienceMin: parseInt(e.target.value) || 0 })}
+              value={formData.experienceMin || ''}
+              onChange={(e) => setFormData({ ...formData, experienceMin: e.target.value === '' ? 0 : parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
@@ -341,8 +341,8 @@ export default function JobForm() {
             <input
               type="number"
               min="0"
-              value={formData.experienceMax}
-              onChange={(e) => setFormData({ ...formData, experienceMax: parseInt(e.target.value) || 0 })}
+              value={formData.experienceMax || ''}
+              onChange={(e) => setFormData({ ...formData, experienceMax: e.target.value === '' ? 0 : parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
@@ -355,8 +355,8 @@ export default function JobForm() {
             <input
               type="number"
               min="0"
-              value={formData.salaryMin}
-              onChange={(e) => setFormData({ ...formData, salaryMin: parseInt(e.target.value) || 0 })}
+              value={formData.salaryMin || ''}
+              onChange={(e) => setFormData({ ...formData, salaryMin: e.target.value === '' ? 0 : parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>
@@ -366,8 +366,8 @@ export default function JobForm() {
             <input
               type="number"
               min="0"
-              value={formData.salaryMax}
-              onChange={(e) => setFormData({ ...formData, salaryMax: parseInt(e.target.value) || 0 })}
+              value={formData.salaryMax || ''}
+              onChange={(e) => setFormData({ ...formData, salaryMax: e.target.value === '' ? 0 : parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
           </div>

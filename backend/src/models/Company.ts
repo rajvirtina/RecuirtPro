@@ -23,7 +23,10 @@ export interface ICompanyDocument extends Document {
     enableLinkedInIntegration?: boolean;
     dataRetentionDays?: number;
   };
-  status: 'active' | 'inactive' | 'suspended';
+  emailVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
+  status: 'active' | 'inactive' | 'suspended' | 'pending_verification';
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
@@ -98,8 +101,20 @@ const companySchema = new Schema<ICompanyDocument>(
     },
     status: {
       type: String,
-      enum: ['active', 'inactive', 'suspended'],
-      default: 'active',
+      enum: ['active', 'inactive', 'suspended', 'pending_verification'],
+      default: 'pending_verification',
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    emailVerificationToken: {
+      type: String,
+      select: false,
+    },
+    emailVerificationExpires: {
+      type: Date,
+      select: false,
     },
     deletedAt: {
       type: Date,

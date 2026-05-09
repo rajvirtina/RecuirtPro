@@ -8,6 +8,7 @@ import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
 import logger from '../utils/logger';
 import { config } from '../config';
+import { Interview } from '../models';
 
 let io: Server;
 
@@ -32,6 +33,7 @@ export const initializeSocket = (server: HTTPServer) => {
       const decoded = jwt.verify(token, config.jwt.secret) as any;
       socket.data.userId = decoded.id;
       socket.data.role = decoded.role;
+      socket.data.companyId = decoded.companyId;
       next();
     } catch (error) {
       logger.error('Socket authentication failed:', error);
@@ -44,9 +46,36 @@ export const initializeSocket = (server: HTTPServer) => {
 
     // ============ VIDEO CONFERENCING EVENTS ============
     
-    // Join video meeting room
-    socket.on('join-meeting', ({ interviewId, userName, userRole }) => {
-      socket.join(`meeting-${interviewId}`);
+    // Join video meeting room — with authorization (SEC-13/B-18)
+    socket.on('join-meeting', async ({ interviewId, userName, userRole }) => {
+      try {
+        const interview = await Interview.findById(interviewId);
+        if (!interview) {
+          socket.emit('error', { message: 'Interview not found' });
+          return;
+        }
+
+        const userId = socket.data.userId;
+        const role = socket.data.role;
+        const userCompanyId = socket.data.companyId;
+
+        const isCandidate = interview.candidateId?.toString() === userId;
+        const isPanelMember = (interview.panel as any[]).some(
+          (member: any) => (member.userId?.toString?.() || member.userId) === userId
+        );
+        const isAdmin = role === 'admin';
+        let isCompanyMember = false;
+        if ((role === 'employer' || role === 'hr') && userCompanyId && interview.companyId) {
+          isCompanyMember = interview.companyId.toString() === userCompanyId.toString();
+        }
+
+        if (!isCandidate && !isPanelMember && !isAdmin && !isCompanyMember) {
+          logger.warn(`Socket ${socket.id} unauthorized join-meeting attempt for ${interviewId}`);
+          socket.emit('error', { message: 'Not authorized to join this meeting' });
+          return;
+        }
+
+        socket.join(`meeting-${interviewId}`);
       logger.info(`User ${userName} (${userRole}) joined meeting room: ${interviewId}`);
       
       // Store participant info in socket data
@@ -85,6 +114,10 @@ export const initializeSocket = (server: HTTPServer) => {
         userRole,
         timestamp: Date.now(),
       });
+      } catch (error) {
+        logger.error(`Error in join-meeting for ${interviewId}:`, error);
+        socket.emit('error', { message: 'Failed to join meeting room' });
+      }
     });
 
     // WebRTC Signaling - Offer
@@ -180,10 +213,41 @@ export const initializeSocket = (server: HTTPServer) => {
 
     // ============ PROCTORING EVENTS ============
 
-    // Join interview-specific rooms (for HR monitoring)
-    socket.on('join-interview', (interviewId: string) => {
-      socket.join(`interview-${interviewId}`);
-      logger.info(`Socket ${socket.id} joined interview room: ${interviewId}`);
+    // Join interview-specific rooms (for HR monitoring) — room-level auth (SEC-13/B-18)
+    socket.on('join-interview', async (interviewId: string) => {
+      try {
+        const interview = await Interview.findById(interviewId);
+        if (!interview) {
+          socket.emit('error', { message: 'Interview not found' });
+          return;
+        }
+
+        const userId = socket.data.userId;
+        const role = socket.data.role;
+        const userCompanyId = socket.data.companyId;
+
+        const isCandidate = interview.candidateId?.toString() === userId;
+        const isPanelMember = (interview.panel as any[]).some(
+          (member: any) => (member.userId?.toString?.() || member.userId) === userId
+        );
+        const isAdmin = role === 'admin';
+        let isCompanyMember = false;
+        if ((role === 'employer' || role === 'hr') && userCompanyId && interview.companyId) {
+          isCompanyMember = interview.companyId.toString() === userCompanyId.toString();
+        }
+
+        if (!isCandidate && !isPanelMember && !isAdmin && !isCompanyMember) {
+          logger.warn(`Socket ${socket.id} unauthorized join-interview attempt for ${interviewId}`);
+          socket.emit('error', { message: 'Not authorized to join this interview room' });
+          return;
+        }
+
+        socket.join(`interview-${interviewId}`);
+        logger.info(`Socket ${socket.id} joined interview room: ${interviewId}`);
+      } catch (error) {
+        logger.error(`Error in join-interview for ${interviewId}:`, error);
+        socket.emit('error', { message: 'Failed to join interview room' });
+      }
     });
 
     // Leave interview room

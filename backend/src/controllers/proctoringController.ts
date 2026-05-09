@@ -4,6 +4,7 @@ import { AuthRequest, ProctoringEventType, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import { emitViolation, emitInterviewTermination, emitWarning } from '../socket/socketController';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Verify system readiness for proctored interview
@@ -259,13 +260,9 @@ export const getProctoringEvents = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
-
-    if (!isAuthorized) {
+    // Authorization check — tenant isolation (NEW-05)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && interview.companyId?.toString() !== tenantId) {
       return sendError(res, 'Not authorized to view proctoring events', 403);
     }
 
@@ -318,13 +315,9 @@ export const reviewProctoringEvent = async (
 
     const interview = event.interviewId as any;
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
-
-    if (!isAuthorized) {
+    // Authorization check — tenant isolation (NEW-05)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && interview.companyId?.toString() !== tenantId) {
       return sendError(res, 'Not authorized to review this event', 403);
     }
 
@@ -502,6 +495,44 @@ export const reportDesktopEvent = async (
   }
 };
 
+// PERF-04: In-memory heartbeat tracking to avoid DB write per interval
+const heartbeatCache = new Map<string, { candidateId: any; lastSeen: number; count: number }>();
+const HEARTBEAT_FLUSH_INTERVAL = 60_000; // Flush to DB every 60 seconds
+
+// Periodically flush heartbeat summaries to DB
+setInterval(async () => {
+  const now = Date.now();
+  const staleThreshold = 2 * 60_000; // 2 minutes
+  const toFlush: Array<{ interviewId: string; candidateId: any; count: number; lastSeen: number }> = [];
+
+  for (const [interviewId, data] of heartbeatCache.entries()) {
+    toFlush.push({ interviewId, ...data });
+    // Remove stale entries
+    if (now - data.lastSeen > staleThreshold) {
+      heartbeatCache.delete(interviewId);
+    } else {
+      // Reset counter after flush
+      data.count = 0;
+    }
+  }
+
+  if (toFlush.length > 0) {
+    try {
+      const docs = toFlush.map((h) => ({
+        interviewId: h.interviewId,
+        candidateId: h.candidateId,
+        eventType: ProctoringEventType.SESSION_ACTIVE,
+        severity: 'low' as const,
+        description: `Heartbeat summary: ${h.count} beats in last interval`,
+        metadata: { heartbeatCount: h.count, sourceType: 'desktop-app' },
+      }));
+      await ProctoringEvent.insertMany(docs);
+    } catch (err) {
+      logger.error('Error flushing heartbeat cache:', err);
+    }
+  }
+}, HEARTBEAT_FLUSH_INTERVAL);
+
 /**
  * @desc    Desktop app heartbeat
  * @route   POST /api/v1/proctoring/heartbeat
@@ -519,19 +550,18 @@ export const sendHeartbeat = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Log heartbeat event (low severity, won't clutter event log)
-    await ProctoringEvent.create({
-      interviewId,
-      candidateId: interview.candidateId,
-      eventType: ProctoringEventType.SESSION_ACTIVE,
-      severity: 'low',
-      description: 'Desktop app heartbeat',
-      metadata: {
-        status,
-        ipAddress: req.ip,
-        sourceType: 'desktop-app',
-      },
-    });
+    // PERF-04: Track heartbeat in memory instead of writing to DB every interval
+    const existing = heartbeatCache.get(interviewId);
+    if (existing) {
+      existing.lastSeen = Date.now();
+      existing.count += 1;
+    } else {
+      heartbeatCache.set(interviewId, {
+        candidateId: interview.candidateId,
+        lastSeen: Date.now(),
+        count: 1,
+      });
+    }
 
     // Check if interview has been terminated
     if (interview.status === InterviewStatus.CANCELLED) {

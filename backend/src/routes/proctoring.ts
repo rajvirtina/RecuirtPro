@@ -16,16 +16,15 @@ import { UserRole } from '../types';
 const router = express.Router();
 
 /**
- * Public routes (accessible with interview link)
+ * All proctoring routes require authentication (SEC-02/B-03 fix)
+ * Previously these were public, allowing arbitrary event injection.
  */
+router.use(protect);
+
+// Candidate-accessible routes (any authenticated user with a valid interview)
 router.post('/verify/:interviewId', verifySystemReadiness);
 router.post('/event', logProctoringEvent);
 router.get('/system-check/:interviewId', getSystemCheckStatus);
-
-/**
- * Protected routes (require authentication)
- */
-router.use(protect);
 
 // Desktop app routes
 router.post('/desktop-event', reportDesktopEvent);
