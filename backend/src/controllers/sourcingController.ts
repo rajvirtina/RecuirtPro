@@ -281,13 +281,13 @@ export const searchCandidatesForJob = async (req: AuthRequest, res: Response): P
       platforms as SourcingPlatform[], criteria, tokens
     );
 
-    const withJobScores = candidates.map(c => {
-      const matchDetails = sourcingService.calculateMatchForJob(c, {
+    const withJobScores = await Promise.all(candidates.map(async c => {
+      const matchDetails = await sourcingService.calculateMatchForJob(c, {
         title: job.title, description: job.description, skills: job.skills || [],
         experienceMin: job.experienceMin || 0, experienceMax: job.experienceMax || 10, location: job.location,
       });
       return { ...c, matchScore: matchDetails.overallScore, matchDetails };
-    });
+    }));
 
     withJobScores.sort((a, b) => b.matchScore - a.matchScore);
     const qualified = withJobScores.filter(c => c.matchScore >= (criteria.minMatchScore || 85));

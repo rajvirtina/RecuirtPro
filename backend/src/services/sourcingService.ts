@@ -151,11 +151,11 @@ class LinkedInService {
     }
   }
 
-  private mapLinkedInResults(data: any, criteria: SourcingCriteria): CandidateProfile[] {
+  private async mapLinkedInResults(data: any, criteria: SourcingCriteria): Promise<CandidateProfile[]> {
     if (!data?.elements) return [];
-    return data.elements.map((el: any, i: number) => {
+    return Promise.all(data.elements.map(async (el: any, i: number) => {
       const skills = el.skills?.map((s: any) => s.name) || [];
-      const matchDetails = AIMatchingEngine.calculateMatch(skills, el.experience || 0, el.location || '', criteria, []);
+      const matchDetails = await AIMatchingEngine.calculateMatch(skills, el.experience || 0, el.location || '', criteria, []);
       return {
         platform: SourcingPlatform.LINKEDIN,
         externalId: el.id || `linkedin_${i}`,
@@ -171,10 +171,10 @@ class LinkedInService {
         matchScore: matchDetails.overallScore,
         matchDetails,
       };
-    });
+    }));
   }
 
-  private getSimulatedResults(criteria: SourcingCriteria): CandidateProfile[] {
+  private async getSimulatedResults(criteria: SourcingCriteria): Promise<CandidateProfile[]> {
     const pool = [
       { name: 'Rahul Sharma', company: 'Tech Corp India', position: 'Senior Software Engineer', exp: 5, skills: ['React', 'Node.js', 'MongoDB', 'AWS', 'TypeScript'], location: 'Bangalore, India', edu: ['B.Tech CS - IIT Delhi'] },
       { name: 'Priya Patel', company: 'Digital Solutions', position: 'Full Stack Developer', exp: 3, skills: ['Angular', 'Node.js', 'PostgreSQL', 'Docker', 'Kubernetes'], location: 'Mumbai, India', edu: ['M.Tech SE - BITS Pilani'] },
@@ -183,8 +183,8 @@ class LinkedInService {
       { name: 'Karan Singh', company: 'AI Ventures', position: 'ML Engineer', exp: 4, skills: ['Python', 'TensorFlow', 'PyTorch', 'AWS SageMaker', 'Docker'], location: 'Hyderabad, India', edu: ['M.Sc AI - IIIT Hyderabad'] },
     ];
 
-    return pool.map((p, i) => {
-      const matchDetails = AIMatchingEngine.calculateMatch(p.skills, p.exp, p.location, criteria, []);
+    const results = await Promise.all(pool.map(async (p, i) => {
+      const matchDetails = await AIMatchingEngine.calculateMatch(p.skills, p.exp, p.location, criteria, []);
       return {
         platform: SourcingPlatform.LINKEDIN,
         externalId: `linkedin_${i + 1}`,
@@ -201,7 +201,8 @@ class LinkedInService {
         matchScore: matchDetails.overallScore,
         matchDetails,
       };
-    }).filter(c => c.matchScore >= (criteria.minMatchScore || 0));
+    }));
+    return results.filter(c => c.matchScore >= (criteria.minMatchScore || 0));
   }
 }
 
@@ -241,11 +242,11 @@ class NaukriService {
     }
   }
 
-  private mapNaukriResults(data: any, criteria: SourcingCriteria): CandidateProfile[] {
+  private async mapNaukriResults(data: any, criteria: SourcingCriteria): Promise<CandidateProfile[]> {
     if (!data?.candidates) return [];
-    return data.candidates.map((c: any, i: number) => {
+    return Promise.all(data.candidates.map(async (c: any, i: number) => {
       const skills = c.skills || [];
-      const matchDetails = AIMatchingEngine.calculateMatch(skills, c.experience || 0, c.location || '', criteria, []);
+      const matchDetails = await AIMatchingEngine.calculateMatch(skills, c.experience || 0, c.location || '', criteria, []);
       return {
         platform: SourcingPlatform.NAUKRI,
         externalId: c.id || `naukri_${i}`,
@@ -264,10 +265,10 @@ class NaukriService {
         matchScore: matchDetails.overallScore,
         matchDetails,
       };
-    });
+    }));
   }
 
-  private getSimulatedResults(criteria: SourcingCriteria): CandidateProfile[] {
+  private async getSimulatedResults(criteria: SourcingCriteria): Promise<CandidateProfile[]> {
     const pool = [
       { name: 'Sneha Reddy', company: 'InfoTech Solutions', position: 'Java Developer', exp: 6, skills: ['Java', 'Spring Boot', 'Microservices', 'MySQL', 'Redis'], location: 'Hyderabad, India', edu: ['B.Tech IT - JNTU'] },
       { name: 'Vikram Singh', company: 'E-commerce Giants', position: 'Frontend Developer', exp: 4, skills: ['React', 'Vue.js', 'JavaScript', 'HTML5', 'CSS3', 'Webpack'], location: 'Delhi, India', edu: ['MCA - Delhi University'] },
@@ -276,8 +277,8 @@ class NaukriService {
       { name: 'Meera Krishnan', company: 'SecureNet', position: 'Security Engineer', exp: 7, skills: ['Python', 'AWS', 'Penetration Testing', 'OWASP', 'Docker'], location: 'Bangalore, India', edu: ['M.Tech InfoSec - IIIT'] },
     ];
 
-    return pool.map((p, i) => {
-      const matchDetails = AIMatchingEngine.calculateMatch(p.skills, p.exp, p.location, criteria, []);
+    const results = await Promise.all(pool.map(async (p, i) => {
+      const matchDetails = await AIMatchingEngine.calculateMatch(p.skills, p.exp, p.location, criteria, []);
       return {
         platform: SourcingPlatform.NAUKRI,
         externalId: `naukri_${i + 1}`,
@@ -295,7 +296,8 @@ class NaukriService {
         matchScore: matchDetails.overallScore,
         matchDetails,
       };
-    }).filter(c => c.matchScore >= (criteria.minMatchScore || 0));
+    }));
+    return results.filter(c => c.matchScore >= (criteria.minMatchScore || 0));
   }
 }
 
@@ -411,7 +413,7 @@ class GitHubService {
 
       const techStackScore = this.calculateTechStackScore(topLanguages, criteria.skills || []);
       const skills = topLanguages;
-      const matchDetails = AIMatchingEngine.calculateMatch(skills, 0, profile.location || '', criteria, topLanguages);
+      const matchDetails = await AIMatchingEngine.calculateMatch(skills, 0, profile.location || '', criteria, topLanguages);
 
       const githubData: GitHubProfile = {
         username: user.login,
@@ -453,15 +455,15 @@ class GitHubService {
     return Math.round((matchedCount / requiredSkills.length) * 100);
   }
 
-  private getSimulatedResults(criteria: SourcingCriteria): CandidateProfile[] {
+  private async getSimulatedResults(criteria: SourcingCriteria): Promise<CandidateProfile[]> {
     const pool = [
       { name: 'Arjun Dev', login: 'arjundev', repos: 45, followers: 320, langs: ['TypeScript', 'React', 'Node.js', 'Python'], location: 'Bangalore', bio: 'Full-stack developer | Open source contributor', company: 'TechStartup' },
       { name: 'Nisha Gupta', login: 'nishag', repos: 32, followers: 180, langs: ['Python', 'Go', 'Docker', 'Kubernetes'], location: 'Mumbai', bio: 'Cloud & DevOps engineer | GDE', company: 'CloudFirst' },
       { name: 'Raj Mehta', login: 'rajmehta', repos: 28, followers: 150, langs: ['Java', 'Spring Boot', 'Kafka', 'React'], location: 'Pune', bio: 'Backend engineer specializing in distributed systems', company: 'ScaleUp Labs' },
     ];
 
-    return pool.map((p, i) => {
-      const matchDetails = AIMatchingEngine.calculateMatch(p.langs, 0, p.location, criteria, p.langs);
+    const results = await Promise.all(pool.map(async (p, i) => {
+      const matchDetails = await AIMatchingEngine.calculateMatch(p.langs, 0, p.location, criteria, p.langs);
       const techStackScore = this.calculateTechStackScore(p.langs, criteria.skills || []);
       return {
         platform: SourcingPlatform.GITHUB,
@@ -492,7 +494,8 @@ class GitHubService {
           techStackScore,
         },
       };
-    }).filter(c => c.matchScore >= (criteria.minMatchScore || 0));
+    }));
+    return results.filter(c => c.matchScore >= (criteria.minMatchScore || 0));
   }
 }
 
@@ -504,17 +507,17 @@ export class AIMatchingEngine {
    * Multi-dimensional match scoring with semantic similarity.
    * Weights: Skills(40%) + Experience(20%) + Location(10%) + Semantic(20%) + Recency(10%)
    */
-  static calculateMatch(
+  static async calculateMatch(
     candidateSkills: string[],
     candidateExperience: number,
     candidateLocation: string,
     criteria: SourcingCriteria,
     techStack: string[]
-  ): MatchDetails {
+  ): Promise<MatchDetails> {
     const skillScore = this.calcSkillScore(candidateSkills, criteria.skills || [], criteria.techStack || []);
     const experienceScore = this.calcExperienceScore(candidateExperience, criteria.experienceMin, criteria.experienceMax);
     const locationScore = this.calcLocationScore(candidateLocation, criteria.location);
-    const semanticScore = this.calcSemanticScore(candidateSkills, criteria.keywords || [], techStack);
+    const semanticScore = await this.calcSemanticScore(candidateSkills, criteria.keywords || [], techStack);
     const recencyScore = 80; // Default — real implementation uses lastActive date
 
     // Weighted composite
@@ -659,12 +662,24 @@ export class AIMatchingEngine {
   }
 
   /**
-   * Semantic score using keyword overlap + context matching.
-   * In production, replace with embedding-based similarity via OpenAI/Cohere.
+   * Semantic score using LLM embeddings when available, keyword overlap as fallback.
    */
-  private static calcSemanticScore(candidateSkills: string[], keywords: string[], techStack: string[]): number {
+  private static async calcSemanticScore(candidateSkills: string[], keywords: string[], techStack: string[]): Promise<number> {
     if (keywords.length === 0 && techStack.length === 0) return 70;
 
+    // Try LLM-based semantic matching first
+    try {
+      const { llmClient } = await import('./llmClient.js');
+      if (llmClient.isAvailable()) {
+        const result = await llmClient.semanticMatch({
+          candidate_skills: candidateSkills,
+          job_requirements: [...keywords, ...techStack],
+        });
+        return result.score;
+      }
+    } catch { /* fallback to keyword matching */ }
+
+    // Keyword overlap fallback
     const allTerms = [...keywords, ...techStack];
     const candidateText = candidateSkills.join(' ').toLowerCase();
 
@@ -672,7 +687,6 @@ export class AIMatchingEngine {
     for (const term of allTerms) {
       const tl = term.toLowerCase();
       if (candidateText.includes(tl)) hits++;
-      // Partial match for compound terms
       else if (tl.split(' ').some(w => w.length > 3 && candidateText.includes(w))) hits += 0.5;
     }
 
@@ -757,7 +771,7 @@ export class SourcingService {
     };
   }
 
-  calculateMatchForJob(candidate: CandidateProfile, job: JobRequirements): MatchDetails {
+  async calculateMatchForJob(candidate: CandidateProfile, job: JobRequirements): Promise<MatchDetails> {
     return AIMatchingEngine.calculateMatch(
       candidate.skills,
       candidate.experience || 0,

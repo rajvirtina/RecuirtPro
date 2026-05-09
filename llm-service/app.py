@@ -465,6 +465,83 @@ Return only the email body text (no subject line, no JSON).
 
 
 # =========================
+# SEMANTIC MATCHING ENDPOINT
+# =========================
+
+class SemanticMatchRequest(BaseModel):
+    candidate_skills: list[str] = Field(..., description="Candidate's skills list")
+    job_requirements: list[str] = Field(..., description="Job requirement skills list")
+    candidate_summary: Optional[str] = Field(None, description="Candidate summary/bio")
+    job_description: Optional[str] = Field(None, description="Job description text")
+
+
+class SemanticMatchResponse(BaseModel):
+    score: int
+    analysis: Optional[str] = None
+    success: bool = True
+    error: Optional[str] = None
+
+
+@app.post("/api/semantic-match", response_model=SemanticMatchResponse,
+           dependencies=[Depends(verify_api_key)])
+async def semantic_match(data: SemanticMatchRequest):
+    """
+    AI-powered semantic skill matching using LLM embeddings context.
+    Returns a 0-100 match score with analysis.
+    """
+    try:
+        safe_candidate = sanitize_llm_input(", ".join(data.candidate_skills))
+        safe_requirements = sanitize_llm_input(", ".join(data.job_requirements))
+        safe_summary = sanitize_llm_input(data.candidate_summary or "")
+        safe_description = sanitize_llm_input(data.job_description or "")
+
+        prompt = f"""You are a technical recruiter AI. Analyze skill match between a candidate and job requirements.
+
+Candidate Skills: {safe_candidate}
+{f"Candidate Summary: {safe_summary}" if safe_summary else ""}
+
+Job Requirements: {safe_requirements}
+{f"Job Description: {safe_description}" if safe_description else ""}
+
+Evaluate:
+1. Direct skill matches (exact technology match)
+2. Related/transferable skills (e.g., React experience is relevant for Vue.js roles)
+3. Ecosystem familiarity (e.g., knowing Docker suggests container orchestration capability)
+4. Skill depth inference from combination of skills
+
+Return ONLY valid JSON:
+{{"score": <0-100 integer>, "analysis": "<one paragraph analysis>"}}
+"""
+        result = call_llm(prompt, temperature=0.1, max_tokens=300)
+
+        # Parse JSON from LLM response
+        import json
+        try:
+            parsed = json.loads(result.strip())
+            return SemanticMatchResponse(
+                score=max(0, min(100, int(parsed.get("score", 50)))),
+                analysis=parsed.get("analysis", ""),
+                success=True
+            )
+        except (json.JSONDecodeError, ValueError):
+            # Fallback: keyword overlap
+            overlap = sum(1 for s in data.candidate_skills
+                         if any(r.lower() in s.lower() or s.lower() in r.lower()
+                                for r in data.job_requirements))
+            score = round((overlap / max(len(data.job_requirements), 1)) * 100)
+            return SemanticMatchResponse(score=score, analysis=result.strip()[:200], success=True)
+
+    except Exception as e:
+        logger.error(f"Semantic match error: {str(e)}")
+        # Fallback to keyword matching
+        overlap = sum(1 for s in data.candidate_skills
+                     if any(r.lower() in s.lower() or s.lower() in r.lower()
+                            for r in data.job_requirements))
+        score = round((overlap / max(len(data.job_requirements), 1)) * 100)
+        return SemanticMatchResponse(score=score, success=True, error=str(e))
+
+
+# =========================
 # ERROR HANDLERS
 # =========================
 

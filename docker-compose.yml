@@ -38,15 +38,16 @@ services:
   #   ports:
   #     - "5001:5001"
   #   environment:
-  #     NODE_ENV: development
-  #     MONGODB_URI: mongodb://admin:admin123@mongodb:27017/recruitpro?authSource=admin
+  #     NODE_ENV: production
+  #     MONGODB_URI: mongodb://admin:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/recruitpro?authSource=admin
   #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #   env_file:
+  #     - ./backend/.env.production
   #   depends_on:
   #     - mongodb
   #     - redis
-  #   volumes:
-  #     - ./backend:/app
-  #     - /app/node_modules
+  #     - llm-service
   #   networks:
   #     - recruitpro-network
 
