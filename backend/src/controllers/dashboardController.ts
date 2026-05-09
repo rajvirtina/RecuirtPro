@@ -7,6 +7,7 @@ import { AuthRequest, JobStatus, ApplicationStatus, InterviewStatus } from '../t
 import { sendSuccess, sendError } from '../utils/response';
 import { Job, Application, Interview, User, ProctoringEvent } from '../models';
 import logger from '../utils/logger';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Get employer dashboard statistics
@@ -19,15 +20,17 @@ export const getEmployerDashboard = async (
 ): Promise<void | Response> => {
   try {
     const companyId = req.user?.companyId;
-    const isAdmin = req.user?.role === 'admin';
+
+    // TENANT ISOLATION: Only super admin gets global view
+    const tenantId = getTenantCompanyId(req.user);
 
     // Build query filter
     const jobFilter: any = { deletedAt: null };
     const applicationFilter: any = {};
     const interviewFilter: any = {};
 
-    if (!isAdmin && companyId) {
-      jobFilter.companyId = companyId;
+    if (tenantId) {
+      jobFilter.companyId = tenantId;
     }
 
     // PERF-02: Replace 21 sequential countDocuments with aggregation pipelines
@@ -346,8 +349,10 @@ export const getRecruitmentAnalytics = async (
 ): Promise<void | Response> => {
   try {
     const companyId = req.user?.companyId;
-    const isAdmin = req.user?.role === 'admin';
     const { startDate, endDate } = req.query;
+
+    // TENANT ISOLATION: Only super admin gets global view
+    const tenantId = getTenantCompanyId(req.user);
 
     // Build date filter
     const dateFilter: any = {};
@@ -360,8 +365,8 @@ export const getRecruitmentAnalytics = async (
 
     // Build query filter
     const jobFilter: any = { deletedAt: null };
-    if (!isAdmin && companyId) {
-      jobFilter.companyId = companyId;
+    if (tenantId) {
+      jobFilter.companyId = tenantId;
     }
     if (Object.keys(dateFilter).length > 0) {
       jobFilter.createdAt = dateFilter;
@@ -438,9 +443,13 @@ export const getRecruitmentAnalytics = async (
     const interviewCompletionRate =
       totalScheduled > 0 ? Math.round((completed / totalScheduled) * 100) : 0;
 
-    // Proctoring violations summary
+    // Proctoring violations summary — TENANT ISOLATION
+    const proctoringFilter: any = { severity: { $in: ['critical', 'high'] } };
+    if (tenantId) {
+      proctoringFilter.companyId = tenantId;
+    }
     const proctoringViolations = await ProctoringEvent.aggregate([
-      { $match: { severity: { $in: ['critical', 'high'] } } },
+      { $match: proctoringFilter },
       { $group: { _id: '$eventType', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 10 },
@@ -492,12 +501,14 @@ export const exportReport = async (
   try {
     const { format = 'json', reportType = 'summary' } = req.query;
     const companyId = req.user?.companyId;
-    const isAdmin = req.user?.role === 'admin';
+
+    // TENANT ISOLATION: Only super admin gets global view
+    const tenantId = getTenantCompanyId(req.user);
 
     // Build query filter
     const jobFilter: any = { deletedAt: null };
-    if (!isAdmin && companyId) {
-      jobFilter.companyId = companyId;
+    if (tenantId) {
+      jobFilter.companyId = tenantId;
     }
 
     let reportData: any = {};

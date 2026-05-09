@@ -3,6 +3,7 @@ import { Interview, Application, Job, User, InterviewTemplate, Question, Proctor
 import { AuthRequest, InterviewStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Schedule an interview
@@ -35,10 +36,10 @@ export const scheduleInterview = async (
     }
 
     // Authorization check
+    const tenantId = getTenantCompanyId(req.user);
     const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        application.companyId?.toString() === req.user?.companyId);
+      isSuperAdmin(req.user) ||
+      (tenantId && application.companyId?.toString() === tenantId);
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to schedule interview', 403);
@@ -118,13 +119,15 @@ export const getInterviews = async (
     // Role-based filtering
     if (req.user?.role === 'candidate') {
       query.candidateId = req.user._id;
-    } else if (req.user?.role === 'employer' || req.user?.role === 'hr') {
-      if (req.user.companyId) {
-        query.companyId = req.user.companyId;
-      }
     } else if (req.user?.role === 'interviewer') {
       // Interviewers see interviews where they are panel members
       query['panel.userId'] = req.user._id;
+    } else {
+      // TENANT ISOLATION: All non-candidate users scoped to company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId) {
+        query.companyId = tenantId;
+      }
     }
 
     // Apply filters
@@ -218,13 +221,13 @@ export const getInterviewById = async (
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId?._id.toString() === req.user?._id
     );
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
     let isCompanyMember = false;
-    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
-      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    if (tenantId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === tenantId;
     }
 
-    if (!isCandidate && !isCompanyMember && !isPanelMember && !isAdmin) {
+    if (!isCandidate && !isCompanyMember && !isPanelMember && !isSuperAdmin(req.user)) {
       return sendError(res, 'Not authorized to view this interview', 403);
     }
 
@@ -255,12 +258,12 @@ export const updateInterview = async (
     }
 
     // Authorization check — company isolation (4.5/SEC-15)
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
     let isCompanyMember = false;
-    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
-      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    if (tenantId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === tenantId;
     }
-    const isAuthorized = isAdmin || isCompanyMember;
+    const isAuthorized = isSuperAdmin(req.user) || isCompanyMember;
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to update this interview', 403);
@@ -327,13 +330,13 @@ export const updateInterviewStatus = async (
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId.toString() === req.user?._id
     );
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
     let isCompanyMember = false;
-    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
-      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    if (tenantId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === tenantId;
     }
     const isAuthorized =
-      isAdmin ||
+      isSuperAdmin(req.user) ||
       isPanelMember ||
       isCompanyMember;
 
@@ -393,23 +396,20 @@ export const cancelInterview = async (
     }
 
     // Authorization check
+    const tenantId = getTenantCompanyId(req.user);
     const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
+      isSuperAdmin(req.user) ||
+      (tenantId && interview.companyId?.toString() === tenantId);
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to cancel this interview', 403);
     }
 
-    interview.status = InterviewStatus.CANCELLED;
-    interview.instructions = reason || 'Interview cancelled';
+    await Interview.findByIdAndDelete(id);
 
-    await interview.save();
+    logger.info(`Interview ${id} deleted by ${req.user?._id}`);
 
-    logger.info(`Interview ${id} cancelled by ${req.user?._id}`);
-
-    return sendSuccess(res, null, 'Interview cancelled successfully');
+    return sendSuccess(res, null, 'Interview deleted successfully');
   } catch (error: any) {
     logger.error('Error in cancelInterview:', error);
     return sendError(res, error.message || 'Error cancelling interview', 500);
@@ -443,13 +443,13 @@ export const submitInterviewFeedback = async (
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId.toString() === req.user?._id
     );
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
     let isCompanyMember = false;
-    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
-      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    if (tenantId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === tenantId;
     }
     const isAuthorized =
-      isAdmin ||
+      isSuperAdmin(req.user) ||
       isPanelMember ||
       isCompanyMember;
 
@@ -515,13 +515,13 @@ export const startInterview = async (
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId?._id.toString() === req.user?._id
     );
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
     let isCompanyMember = false;
-    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
-      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    if (tenantId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === tenantId;
     }
     const isAuthorized =
-      isAdmin ||
+      isSuperAdmin(req.user) ||
       isPanelMember ||
       isCandidate ||
       isCompanyMember;
