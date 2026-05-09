@@ -60,6 +60,9 @@ export interface IInterviewDocument extends Document {
   startedAt?: Date;
   completedAt?: Date;
   noShowReason?: string;
+  cancellationReason?: string;
+  cancelledBy?: mongoose.Types.ObjectId;
+  cancelledAt?: Date;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -211,6 +214,12 @@ const interviewSchema = new Schema<IInterviewDocument>(
     startedAt: Date,
     completedAt: Date,
     noShowReason: String,
+    cancellationReason: String,
+    cancelledBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    cancelledAt: Date,
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

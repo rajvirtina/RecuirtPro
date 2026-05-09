@@ -116,11 +116,11 @@ export default function Questions() {
     return colors[difficulty] || 'bg-gray-100 text-gray-800';
   };
 
-  if (user?.role !== 'employer' && user?.role !== 'admin') {
+  if (user?.role !== 'employer' && user?.role !== 'admin' && user?.role !== 'hr') {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
         <h2 className="text-2xl font-bold text-gray-900">Access Denied</h2>
-        <p className="mt-2 text-gray-600">Only employers can manage questions.</p>
+        <p className="mt-2 text-gray-600">Only HR, Admin, or Employer roles can manage questions.</p>
       </div>
     );
   }

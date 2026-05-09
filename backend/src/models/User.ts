@@ -14,6 +14,7 @@ export interface IUserDocument extends Document {
   phone?: string;
   timezone: string;
   companyId?: mongoose.Types.ObjectId;
+  isSuperAdminUser: boolean;
   profileImage?: string;
   emailVerified: boolean;
   phoneVerified: boolean;
@@ -92,6 +93,10 @@ const userSchema = new Schema<IUserDocument>(
     companyId: {
       type: Schema.Types.ObjectId,
       ref: 'Company',
+    },
+    isSuperAdminUser: {
+      type: Boolean,
+      default: false,
     },
     profileImage: {
       type: String,
