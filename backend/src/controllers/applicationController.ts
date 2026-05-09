@@ -1,8 +1,9 @@
 import { Response } from 'express';
 import { Application, Job, CandidateProfile, User } from '../models';
 import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
-import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Submit a job application
@@ -109,10 +110,11 @@ export const getApplications = async (
     if (req.user?.role === 'candidate') {
       // Candidates can only see their own applications
       query.candidateId = req.user._id;
-    } else if (req.user?.role === 'employer' || req.user?.role === 'hr') {
-      // Employers/HR see applications for their company's jobs
-      if (req.user.companyId) {
-        query.companyId = req.user.companyId;
+    } else {
+      // TENANT ISOLATION: All non-candidate, non-super-admin users are scoped to their company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId) {
+        query.companyId = tenantId;
       }
     }
 
@@ -123,8 +125,7 @@ export const getApplications = async (
       query.candidateId = candidateId;
     }
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
 
     const [applications, total] = await Promise.all([
@@ -173,17 +174,16 @@ export const getApplicationById = async (
 
     // Authorization check
     const isOwner = application.candidateId._id.toString() === req.user?._id;
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
+    const isSuperAdminUser = isSuperAdmin(req.user);
     
-    // HR/Employer can only view applications for their company's jobs
-    let isAuthorizedHROrEmployer = false;
-    if (req.user?.role === 'hr' || req.user?.role === 'employer') {
-      if (req.user?.companyId && application.companyId) {
-        isAuthorizedHROrEmployer = application.companyId.toString() === req.user.companyId.toString();
-      }
+    // Company members can only view applications for their company's jobs
+    let isAuthorizedCompanyMember = false;
+    if (tenantId && application.companyId) {
+      isAuthorizedCompanyMember = application.companyId.toString() === tenantId;
     }
 
-    if (!isOwner && !isAuthorizedHROrEmployer && !isAdmin) {
+    if (!isOwner && !isAuthorizedCompanyMember && !isSuperAdminUser) {
       return sendError(res, 'Not authorized to view this application', 403);
     }
 
@@ -213,17 +213,43 @@ export const updateApplicationStatus = async (
       return sendError(res, 'Application not found', 404);
     }
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+    // Authorization check — company isolation (SEC-15/B-16)
+    const tenantId = getTenantCompanyId(req.user);
+    const isSuperAdminUser = isSuperAdmin(req.user);
+    let isAuthorizedCompanyMember = false;
+    if (tenantId && application.companyId) {
+      isAuthorizedCompanyMember = application.companyId.toString() === tenantId;
+    }
 
-    if (!isAuthorized) {
+    if (!isSuperAdminUser && !isAuthorizedCompanyMember) {
       return sendError(
         res,
         'Not authorized to update this application',
         403
+      );
+    }
+
+    // Status transition validation (NEW-03)
+    const validTransitions: Record<string, string[]> = {
+      [ApplicationStatus.APPLIED]: [ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.SHORTLISTED]: [ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.INTERVIEW_SCHEDULED]: [ApplicationStatus.IN_PROGRESS, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.IN_PROGRESS]: [ApplicationStatus.SELECTED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.SELECTED]: [ApplicationStatus.OFFER_RELEASED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD],
+      [ApplicationStatus.OFFER_RELEASED]: [ApplicationStatus.HIRED, ApplicationStatus.REJECTED, ApplicationStatus.ON_HOLD],
+      [ApplicationStatus.ON_HOLD]: [ApplicationStatus.SHORTLISTED, ApplicationStatus.INTERVIEW_SCHEDULED, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN],
+      [ApplicationStatus.HIRED]: [],
+      [ApplicationStatus.REJECTED]: [],
+      [ApplicationStatus.WITHDRAWN]: [],
+    };
+
+    const currentStatus = application.status;
+    const allowedNext = validTransitions[currentStatus] || [];
+    if (!allowedNext.includes(status)) {
+      return sendError(
+        res,
+        `Cannot transition from '${currentStatus}' to '${status}'. Allowed: ${allowedNext.join(', ') || 'none (terminal state)'}`,
+        400
       );
     }
 
@@ -296,17 +322,8 @@ export const withdrawApplication = async (
       );
     }
 
-    // Soft delete
-    application.status = ApplicationStatus.WITHDRAWN;
-    application.deletedAt = new Date();
-    application.statusHistory.push({
-      status: ApplicationStatus.WITHDRAWN,
-      changedAt: new Date(),
-      changedBy: req.user?._id! as any,
-      remarks: 'Application withdrawn by candidate',
-    });
-
-    await application.save();
+    // Hard delete
+    await Application.findByIdAndDelete(id);
 
     // Decrement application count on job
     await Job.findByIdAndUpdate(application.jobId, {
@@ -337,9 +354,11 @@ export const getApplicationStats = async (
     const matchQuery: any = { deletedAt: null };
 
     // Role-based filtering
-    if (req.user?.role === 'employer' || req.user?.role === 'hr') {
-      if (req.user.companyId) {
-        matchQuery.companyId = req.user.companyId;
+    if (req.user?.role === 'employer' || req.user?.role === 'hr' || req.user?.role === 'admin') {
+      // TENANT ISOLATION: Scope to company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId) {
+        matchQuery.companyId = tenantId;
       }
     }
 
@@ -398,10 +417,11 @@ export const downloadResume = async (
 
     // Check authorization
     const isOwner = application.candidateId.toString() === req.user?._id;
-    const isCompanyHR = req.user?.companyId === application.companyId?.toString();
-    const isAdmin = req.user?.role === 'admin';
+    const tenantId = getTenantCompanyId(req.user);
+    const isCompanyMember = tenantId ? application.companyId?.toString() === tenantId : false;
+    const isSuperAdminUser = isSuperAdmin(req.user);
 
-    if (!isOwner && !isCompanyHR && !isAdmin) {
+    if (!isOwner && !isCompanyMember && !isSuperAdminUser) {
       return sendError(res, 'Not authorized to download this resume', 403);
     }
 
@@ -409,9 +429,16 @@ export const downloadResume = async (
       return sendError(res, 'No resume uploaded for this application', 404);
     }
 
-    // Get file path
+    // Prevent path traversal (SEC-04/B-05)
     const path = require('path');
-    const filePath = path.join(__dirname, '../../', application.resumeUrl);
+    const uploadsDir = path.resolve(__dirname, '../../uploads');
+    const filePath = path.resolve(__dirname, '../../', application.resumeUrl);
+
+    // Ensure resolved path stays within the uploads directory
+    if (!filePath.startsWith(uploadsDir)) {
+      logger.warn(`[downloadResume] Path traversal attempt blocked: ${application.resumeUrl}`);
+      return sendError(res, 'Invalid resume path', 400);
+    }
 
     // Check if file exists
     const fs = require('fs');

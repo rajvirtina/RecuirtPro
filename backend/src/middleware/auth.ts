@@ -6,6 +6,37 @@ import { AuthRequest, UserRole } from '../types';
 import { sendError } from '../utils/response';
 
 /**
+ * Check if user is a Super Admin (admin role without companyId)
+ */
+export const isSuperAdmin = (user: AuthRequest['user']): boolean => {
+  return user?.role === UserRole.ADMIN && !user?.companyId;
+};
+
+/**
+ * Get the tenant companyId for filtering — returns null for super admin (global access)
+ */
+export const getTenantCompanyId = (user: AuthRequest['user']): string | null => {
+  if (isSuperAdmin(user)) return null; // super admin sees everything
+  return user?.companyId || null;
+};
+
+/**
+ * Middleware: Require authenticated user to have a companyId (blocks super admin)
+ * Use on routes that MUST be tenant-scoped.
+ */
+export const requireTenant = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void | Response => {
+  const user = (req as AuthRequest).user;
+  if (!user?.companyId) {
+    return sendError(res, 'This action requires a company context', 403);
+  }
+  next();
+};
+
+/**
  * Protect routes - Verify JWT token
  */
 export const protect = async (

@@ -42,6 +42,27 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
+// Role-based route guard — redirects unauthorized roles to dashboard
+const RoleGuard = ({ children, roles }: { children: React.ReactNode; roles: string[] }) => {
+  const { user } = useAuthStore();
+  if (!user || !roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
+// Dashboard redirect - admin roles skip dashboard
+const DashboardRedirect = () => {
+  const { user } = useAuthStore();
+  if (user?.role === 'admin' && !user?.companyId) {
+    return <Navigate to="/superadmin" replace />;
+  }
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  return <Dashboard />;
+};
+
 function App() {
   const { setUser, token, isAuthenticated } = useAuthStore();
 
@@ -83,25 +104,25 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/" element={<DashboardRedirect />} />
+        <Route path="/dashboard" element={<DashboardRedirect />} />
         <Route path="/candidate/jobs" element={<CandidateJobs />} />
         <Route path="/jobs/:id/apply" element={<ApplyJob />} />
         <Route path="/jobs" element={<Jobs />} />
-        <Route path="/jobs/new" element={<JobForm />} />
+        <Route path="/jobs/new" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
         <Route path="/jobs/:id" element={<JobDetail />} />
-        <Route path="/jobs/:id/edit" element={<JobForm />} />
+        <Route path="/jobs/:id/edit" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
         <Route path="/applications" element={<Applications />} />
         <Route path="/applications/:id" element={<ApplicationDetail />} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
-        <Route path="/questions" element={<Questions />} />
-        <Route path="/sourcing" element={<CandidateSourcing />} />
-        <Route path="/proctoring/monitor" element={<ProctoringDashboard />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/hr-management" element={<HRManagement />} />
-        <Route path="/superadmin" element={<SuperAdminPanel />} />
+        <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
+        <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
+        <Route path="/proctoring/monitor" element={<RoleGuard roles={['admin', 'hr', 'employer']}><ProctoringDashboard /></RoleGuard>} />
+        <Route path="/admin" element={<RoleGuard roles={['admin']}><AdminDashboard /></RoleGuard>} />
+        <Route path="/admin/hr-management" element={<RoleGuard roles={['admin']}><HRManagement /></RoleGuard>} />
+        <Route path="/superadmin" element={<RoleGuard roles={['admin']}><SuperAdminPanel /></RoleGuard>} />
         <Route path="/profile" element={<Profile />} />
       </Route>
 

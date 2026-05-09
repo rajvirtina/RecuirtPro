@@ -4,13 +4,15 @@
 
 import { Response } from 'express';
 import { AuthRequest, UserRole, UserStatus, AuditAction } from '../types';
-import { sendSuccess, sendError } from '../utils/response';
-import { User } from '../models';
+import { sendSuccess, sendError, clampPagination } from '../utils/response';
+import { User, Company, Job, Application, Interview } from '../models';
 import { AuditLog } from '../models/AuditLog';
+import mongoose from 'mongoose';
 import { sendEmail } from '../services/emailService';
 import logger from '../utils/logger';
 import crypto from 'crypto';
 import { config } from '../config';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Invite HR user (Admin only)
@@ -39,6 +41,57 @@ export const inviteHR = async (
       return;
     }
 
+    // Email domain validation: HR email must match company or admin domain
+    const inviterCompanyId = req.user?.companyId;
+    const invitedEmailDomain = email.toLowerCase().split('@')[1];
+    const adminEmailDomain = req.user?.email?.toLowerCase().split('@')[1];
+
+    // Block common public email providers
+    const publicDomains = [
+      'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'aol.com',
+      'icloud.com', 'mail.com', 'protonmail.com', 'zoho.com', 'yandex.com',
+      'live.com', 'msn.com', 'rediffmail.com', 'google.com',
+    ];
+
+    let companyEmailDomain: string | undefined;
+
+    if (inviterCompanyId) {
+      const company = await Company.findById(inviterCompanyId);
+      if (company) {
+        companyEmailDomain = company.email.toLowerCase().split('@')[1];
+      }
+    }
+
+    // Use whichever domain we have: company domain takes priority, fallback to admin domain
+    const enforcedDomain = companyEmailDomain || adminEmailDomain;
+
+    if (enforcedDomain) {
+      const matchesCompanyDomain = companyEmailDomain && invitedEmailDomain === companyEmailDomain;
+      const matchesAdminDomain = adminEmailDomain && invitedEmailDomain === adminEmailDomain;
+
+      // If enforced domain is corporate (not public), HR must match
+      if (!publicDomains.includes(enforcedDomain)) {
+        if (!matchesCompanyDomain && !matchesAdminDomain) {
+          sendError(
+            res,
+            `Email domain "@${invitedEmailDomain}" does not match company domain "@${enforcedDomain}". HR users must use a company email address.`,
+            400
+          );
+          return;
+        }
+      } else {
+        // Enforced domain is public — invited must match exactly
+        if (!matchesCompanyDomain && !matchesAdminDomain) {
+          sendError(
+            res,
+            `Email domain "@${invitedEmailDomain}" does not match the registered company email domain "@${enforcedDomain}".`,
+            400
+          );
+          return;
+        }
+      }
+    }
+
     // Check if user already exists
     const existingUser = await User.findOne({ 
       email: email.toLowerCase(),
@@ -62,6 +115,7 @@ export const inviteHR = async (
       firstName,
       lastName,
       role: hrRole,
+      companyId: inviterCompanyId,
       status: UserStatus.PENDING_VERIFICATION,
       phone,
       emailVerificationToken: hashedToken,
@@ -90,8 +144,11 @@ export const inviteHR = async (
     const invitationUrl = `${config.frontendUrl}/complete-registration?token=${invitationToken}`;
     
     try {
-      // Validate email configuration
-      if (!config.email.host || !config.email.user || !config.email.password) {
+      // In dev mode with SKIP_EMAIL, sendEmail will log to console
+      const skipEmail = process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true';
+
+      // Only validate email config if we're actually going to send
+      if (!skipEmail && (!config.email.host || !config.email.user || !config.email.password)) {
         logger.error('Email configuration not set. SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured in .env');
         await User.findByIdAndDelete(newUser._id);
         sendError(res, 'Email service not configured. Please contact administrator.', 500);
@@ -176,6 +233,12 @@ export const getHRUsers = async (
       deletedAt: null,
     };
 
+    // TENANT ISOLATION: Scope to user's company (super admin sees all)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      query.companyId = tenantId;
+    }
+
     if (status) {
       query.status = status;
     }
@@ -192,13 +255,14 @@ export const getHRUsers = async (
       ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const { pageNum, limitNum } = clampPagination(page, limit);
+    const skip = (pageNum - 1) * limitNum;
 
     const [users, total] = await Promise.all([
       User.find(query)
         .select('-password -mfaSecret -emailVerificationToken -passwordResetToken')
         .skip(skip)
-        .limit(Number(limit))
+        .limit(limitNum)
         .sort({ createdAt: -1 }),
       User.countDocuments(query),
     ]);
@@ -206,8 +270,8 @@ export const getHRUsers = async (
     sendSuccess(res, {
       users,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
         totalPages: Math.ceil(total / Number(limit)),
       },
@@ -244,6 +308,13 @@ export const updateHRStatus = async (
 
     if (!user) {
       sendError(res, 'HR user not found', 404);
+      return;
+    }
+
+    // TENANT ISOLATION: Company admin can only manage their own company's users
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && user.companyId?.toString() !== tenantId) {
+      sendError(res, 'Not authorized to manage this user', 403);
       return;
     }
 
@@ -311,6 +382,13 @@ export const resendHRInvitation = async (
 
     if (!user) {
       sendError(res, 'HR user not found', 404);
+      return;
+    }
+
+    // TENANT ISOLATION: Company admin can only resend invitations for own company's users
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && user.companyId?.toString() !== tenantId) {
+      sendError(res, 'Not authorized to manage this user', 403);
       return;
     }
 
@@ -400,16 +478,24 @@ export const deleteHRUser = async (
       return;
     }
 
+    // TENANT ISOLATION: Company admin can only delete their own company's users
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && user.companyId?.toString() !== tenantId) {
+      sendError(res, 'Not authorized to delete this user', 403);
+      return;
+    }
+
     // Prevent deleting yourself
     if (user._id.toString() === req.user?._id.toString()) {
       sendError(res, 'You cannot delete your own account', 400);
       return;
     }
 
-    // Soft delete
-    user.deletedAt = new Date();
-    user.status = UserStatus.INACTIVE;
-    await user.save();
+    const deletedEmail = user.email;
+    const deletedRole = user.role;
+
+    // Hard delete
+    await User.findByIdAndDelete(id);
 
     // Create audit log
     await AuditLog.create({
@@ -417,9 +503,9 @@ export const deleteHRUser = async (
       action: AuditAction.DELETE,
       resource: 'User',
       resourceId: user._id.toString(),
-      description: `HR user deleted: ${user.email} (${user.role})`,
+      description: `HR user deleted: ${deletedEmail} (${deletedRole})`,
       metadata: {
-        deletedUser: user.email,
+        deletedUser: deletedEmail,
         role: user.role,
       },
       ipAddress: req.ip,
@@ -445,9 +531,13 @@ export const getAdminStats = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { Job, Application, Interview, Company } = await import('../models');
-    const mongoose = await import('mongoose');
+    // Models imported at top of file
     
+    // TENANT ISOLATION: Scope stats to user's company (super admin sees all)
+    const tenantId = getTenantCompanyId(req.user);
+    const tenantFilter: any = tenantId ? { companyId: tenantId } : {};
+    const userTenantFilter: any = tenantId ? { companyId: tenantId, deletedAt: null } : { deletedAt: null };
+
     const [
       totalUsers,
       totalCandidates,
@@ -461,43 +551,45 @@ export const getAdminStats = async (
       activeInterviews,
       recentActivity,
     ] = await Promise.all([
-      User.countDocuments({ deletedAt: null }),
-      User.countDocuments({ role: UserRole.CANDIDATE, deletedAt: null }),
+      User.countDocuments(userTenantFilter),
+      tenantId 
+        ? User.countDocuments({ role: UserRole.CANDIDATE, deletedAt: null, companyId: tenantId })
+        : User.countDocuments({ role: UserRole.CANDIDATE, deletedAt: null }),
       User.countDocuments({ 
         role: { $in: [UserRole.HR, UserRole.EMPLOYER, UserRole.INTERVIEWER] },
-        deletedAt: null 
+        ...userTenantFilter
       }),
       User.countDocuments({ 
         role: { $in: [UserRole.HR, UserRole.EMPLOYER, UserRole.INTERVIEWER] },
         status: 'active',
-        deletedAt: null 
+        ...userTenantFilter
       }),
       User.countDocuments({ 
         role: { $in: [UserRole.HR, UserRole.EMPLOYER, UserRole.INTERVIEWER] },
         status: 'pending_verification',
-        deletedAt: null 
+        ...userTenantFilter
       }),
       User.countDocuments({ 
         role: { $in: [UserRole.HR, UserRole.EMPLOYER, UserRole.INTERVIEWER] },
         status: 'suspended',
-        deletedAt: null 
+        ...userTenantFilter
       }),
-      Company.countDocuments(),
-      Job.countDocuments(),
-      Application.countDocuments(),
+      tenantId ? Promise.resolve(1) : Company.countDocuments(),
+      Job.countDocuments(tenantFilter),
+      Application.countDocuments(tenantFilter),
       Interview.countDocuments({ 
-        status: { $in: ['scheduled', 'in_progress'] }
+        status: { $in: ['scheduled', 'in_progress'] },
+        ...tenantFilter
       }),
-      AuditLog.find()
+      AuditLog.find(tenantId ? { 'metadata.companyId': tenantId } : {})
         .sort({ timestamp: -1 })
         .limit(10)
         .populate('userId', 'firstName lastName email')
         .lean(),
     ]);
 
-    // Check system health - use mongoose.default for dynamically imported module
-    const dbConnection = mongoose.default?.connection || mongoose.connection;
-    const dbStatus = dbConnection?.readyState === 1 ? 'healthy' : 'unhealthy';
+    // Check system health
+    const dbStatus = mongoose.connection?.readyState === 1 ? 'healthy' : 'unhealthy';
 
     const activityData = recentActivity.map((log: any) => ({
       id: log._id,
@@ -543,7 +635,6 @@ export const getCompanies = async (
   res: Response
 ): Promise<void> => {
   try {
-    const { Company } = require('../models');
     const companies = await Company.find({ deletedAt: null }).sort({ createdAt: -1 });
     sendSuccess(res, companies, 'Companies retrieved successfully');
   } catch (error: any) {
@@ -568,8 +659,6 @@ export const createCompany = async (
       sendError(res, 'Company name and email are required', 400);
       return;
     }
-
-    const { Company } = require('../models');
     
     // Check if company already exists
     const existingCompany = await Company.findOne({ 
@@ -588,13 +677,17 @@ export const createCompany = async (
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     
-    // Ensure slug is unique
+    // Ensure slug is unique (check all documents, including soft-deleted)
     let slug = baseSlug;
     let counter = 1;
-    while (await Company.findOne({ slug, deletedAt: null })) {
+    while (await Company.findOne({ slug })) {
       slug = `${baseSlug}-${counter}`;
       counter++;
     }
+
+    // Generate email verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
 
     const company = await Company.create({
       name,
@@ -603,6 +696,10 @@ export const createCompany = async (
       phone,
       website,
       address,
+      status: 'pending_verification',
+      emailVerified: false,
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
     });
 
     await AuditLog.create({
@@ -615,8 +712,46 @@ export const createCompany = async (
       userAgent: req.get('user-agent'),
     });
 
+    // Send verification email to company email
+    const verificationUrl = `${config.frontendUrl}/verify-company-email?token=${verificationToken}`;
+    const skipEmail = process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true';
+
+    if (skipEmail) {
+      // Dev mode with SKIP_EMAIL: auto-verify since no real email is sent
+      company.emailVerified = true;
+      company.status = 'active';
+      company.emailVerificationToken = undefined;
+      company.emailVerificationExpires = undefined;
+      await company.save();
+      logger.info('Development mode (SKIP_EMAIL): Auto-verified company email');
+    } else {
+      try {
+        await sendEmail({
+          to: company.email,
+          subject: 'Verify Your Company Email - RecuirtPro',
+          template: 'emailVerification',
+          data: {
+            name: company.name,
+            verificationUrl,
+          },
+        });
+        logger.info(`Company verification email sent to: ${company.email}`);
+      } catch (emailError) {
+        logger.error('Failed to send company verification email:', emailError);
+        // In development, auto-verify
+        if (config.env === 'development') {
+          company.emailVerified = true;
+          company.status = 'active';
+          company.emailVerificationToken = undefined;
+          company.emailVerificationExpires = undefined;
+          await company.save();
+          logger.info('Development mode: Auto-verified company email');
+        }
+      }
+    }
+
     logger.info(`Company created: ${company.name} by ${req.user?.email}`);
-    sendSuccess(res, company, 'Company created successfully', 201);
+    sendSuccess(res, company, 'Company created successfully. Verification email sent.', 201);
   } catch (error: any) {
     logger.error('Error creating company:', error);
     sendError(res, error.message || 'Failed to create company', 500);
@@ -634,7 +769,6 @@ export const deleteCompany = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { Company } = require('../models');
 
     const company = await Company.findById(id);
     if (!company) {
@@ -642,31 +776,186 @@ export const deleteCompany = async (
       return;
     }
 
-    // Soft delete
-    company.deletedAt = new Date();
-    await company.save();
+    const companyName = company.name;
 
-    // Also soft delete all users belonging to this company
-    await User.updateMany(
-      { companyId: id },
-      { $set: { deletedAt: new Date() } }
-    );
+    // Hard delete all users belonging to this company
+    await User.deleteMany({ companyId: id });
+
+    // Hard delete the company
+    await Company.findByIdAndDelete(id);
 
     await AuditLog.create({
       userId: req.user?._id,
       action: AuditAction.DELETE,
       resource: 'Company',
       resourceId: company._id.toString(),
-      description: `Deleted company: ${company.name}`,
+      description: `Deleted company: ${companyName}`,
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
     });
 
-    logger.info(`Company deleted: ${company.name} by ${req.user?.email}`);
+    logger.info(`Company deleted: ${companyName} by ${req.user?.email}`);
     sendSuccess(res, null, 'Company deleted successfully');
   } catch (error: any) {
     logger.error('Error deleting company:', error);
     sendError(res, error.message || 'Failed to delete company', 500);
+  }
+};
+
+/**
+ * @desc    Get company by ID (Super Admin)
+ * @route   GET /api/v1/admin/companies/:id
+ * @access  Private/SuperAdmin
+ */
+export const getCompanyById = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const company = await Company.findOne({ _id: id, deletedAt: null });
+    if (!company) {
+      sendError(res, 'Company not found', 404);
+      return;
+    }
+
+    // Get admin users for this company
+    const companyAdmins = await User.find({
+      companyId: id,
+      role: { $in: ['admin', 'hr'] },
+      deletedAt: null,
+    }).select('-password -mfaSecret -emailVerificationToken -passwordResetToken');
+
+    sendSuccess(res, { company, admins: companyAdmins }, 'Company details retrieved successfully');
+  } catch (error: any) {
+    logger.error('Error getting company details:', error);
+    sendError(res, error.message || 'Failed to retrieve company details', 500);
+  }
+};
+
+/**
+ * @desc    Update company (Super Admin)
+ * @route   PUT /api/v1/admin/companies/:id
+ * @access  Private/SuperAdmin
+ */
+export const updateCompany = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, email, phone, website, description, industry, size } = req.body;
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+
+    const company = await Company.findOne({ _id: id, deletedAt: null });
+    if (!company) {
+      sendError(res, 'Company not found', 404);
+      return;
+    }
+
+    // Track changes for audit
+    const changes: { before: any; after: any } = { before: {}, after: {} };
+    const sensitiveFieldChanged = (name && name !== company.name) || (email && email.toLowerCase() !== company.email);
+
+    if (name && name !== company.name) {
+      changes.before.name = company.name;
+      changes.after.name = name;
+      company.name = name;
+    }
+    if (email && email.toLowerCase() !== company.email) {
+      changes.before.email = company.email;
+      changes.after.email = email.toLowerCase();
+      // New email needs verification
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      company.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+      company.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      company.emailVerified = false;
+      company.email = email.toLowerCase();
+
+      // Send verification to new email
+      try {
+        await sendEmail({
+          to: email.toLowerCase(),
+          subject: 'Verify Your Updated Company Email - RecuirtPro',
+          template: 'emailVerification',
+          data: {
+            name: company.name,
+            verificationUrl: `${config.frontendUrl}/verify-company-email?token=${verificationToken}`,
+          },
+        });
+      } catch (emailError) {
+        logger.error('Failed to send company email verification:', emailError);
+      }
+    }
+    if (phone !== undefined) company.phone = phone;
+    if (website !== undefined) company.website = website;
+    if (description !== undefined) company.description = description;
+    if (industry !== undefined) company.industry = industry;
+    if (size !== undefined) company.size = size;
+
+    await company.save();
+
+    // Audit log
+    await AuditLog.create({
+      userId: req.user?._id,
+      action: AuditAction.UPDATE,
+      resource: 'Company',
+      resourceId: company._id.toString(),
+      description: `Updated company: ${company.name}${sensitiveFieldChanged ? ' (sensitive fields changed)' : ''}`,
+      changes,
+      ipAddress,
+      userAgent: req.get('user-agent'),
+    });
+
+    logger.info(`Company updated: ${company.name} by ${req.user?.email}`);
+    sendSuccess(res, company, sensitiveFieldChanged
+      ? 'Company updated. Email verification required for new email.'
+      : 'Company updated successfully');
+  } catch (error: any) {
+    logger.error('Error updating company:', error);
+    sendError(res, error.message || 'Failed to update company', 500);
+  }
+};
+
+/**
+ * @desc    Verify company email
+ * @route   POST /api/v1/admin/companies/verify-email
+ * @access  Public
+ */
+export const verifyCompanyEmail = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      sendError(res, 'Verification token is required', 400);
+      return;
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const company = await Company.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: { $gt: Date.now() },
+      deletedAt: null,
+    }).select('+emailVerificationToken +emailVerificationExpires');
+
+    if (!company) {
+      sendError(res, 'Invalid or expired verification token', 400);
+      return;
+    }
+
+    company.emailVerified = true;
+    company.status = 'active';
+    company.emailVerificationToken = undefined;
+    company.emailVerificationExpires = undefined;
+    await company.save();
+
+    logger.info(`Company email verified: ${company.name}`);
+    sendSuccess(res, { company: { id: company._id, name: company.name } }, 'Company email verified successfully');
+  } catch (error: any) {
+    logger.error('Error verifying company email:', error);
+    sendError(res, error.message || 'Failed to verify company email', 500);
   }
 };
 

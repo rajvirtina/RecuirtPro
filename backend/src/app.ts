@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import mongoSanitize from 'express-mongo-sanitize';
 import config from './config';
-import { errorHandler, notFound, limiter } from './middleware';
+import { errorHandler, notFound, limiter, xssSanitize } from './middleware';
 import { stream } from './utils/logger';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
@@ -71,8 +71,13 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Serve static files for uploads
-app.use('/uploads', express.static('uploads'));
+// SEC-12: Protect uploads behind authentication instead of serving publicly.
+// Resumes are served via the /api/v1/applications/:id/resume endpoint which
+// performs authorization checks. Static serving is restricted to non-resume
+// assets only in development; in production, use S3 signed URLs.
+if (config.env === 'development') {
+  app.use('/uploads', express.static('uploads'));
+}
 
 // Security middleware
 app.use(helmet());
@@ -100,6 +105,7 @@ app.use(
   })
 );
 app.use(mongoSanitize());
+app.use(xssSanitize);
 app.use(compression());
 
 // Rate limiting
@@ -111,8 +117,10 @@ if (config.env !== 'test') {
   app.use(morgan('combined', { stream }));
 }
 
-// API Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// API Documentation — SEC-10: Protect Swagger UI in production
+if (config.env !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // Health check
 app.get('/health', (_req, res) => {

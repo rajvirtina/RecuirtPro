@@ -1,34 +1,37 @@
 import { Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import { Job, Application, Company } from "../models";
-import { sendSuccess, sendError, sendPaginatedResponse } from "../utils/response";
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from "../utils/response";
 import logger from "../utils/logger";
 import { JobStatus, AuthRequest } from "../types";
+import { isSuperAdmin, getTenantCompanyId } from "../middleware/auth";
 
 export const getJobs = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { page = 1, limit = 10, companySpecific } = req.query;
     const query: any = { deletedAt: null };
     
-    // Log user details for debugging
-    logger.info(`[getJobs] User: ${req.user?.email}, Role: ${req.user?.role}, CompanyID: ${req.user?.companyId}, Query: companySpecific=${companySpecific}`);
-    
-    // Always filter by company for HR/employer users, unless they're admin
+    // TENANT ISOLATION: Always scope by company for non-super-admin users
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
-      // Convert companyId to ObjectId for proper comparison
-      query.companyId = new mongoose.Types.ObjectId(req.user.companyId);
-      logger.info(`[getJobs] ✅ Applying company filter: ${req.user.companyId}`);
-    } else if (companySpecific === 'true' && req.user?.companyId && userRole === 'admin') {
-      // Admins can optionally filter by company
-      query.companyId = new mongoose.Types.ObjectId(req.user.companyId);
-      logger.info(`[getJobs] ✅ Admin company filter: ${req.user.companyId}`);
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      query.companyId = new mongoose.Types.ObjectId(tenantId);
+      logger.info(`[getJobs] ✅ Applying company filter: ${tenantId}`);
+    } else if (isSuperAdmin(req.user)) {
+      // Super admin: optionally filter by company
+      if (companySpecific === 'true' && req.user?.companyId) {
+        query.companyId = new mongoose.Types.ObjectId(req.user.companyId);
+      }
+      logger.info(`[getJobs] Super admin - ${companySpecific === 'true' ? 'filtered' : 'global'} view`);
+    } else if (userRole === 'candidate') {
+      // Candidates see all published jobs
+      query.status = JobStatus.PUBLISHED;
+      logger.info(`[getJobs] Candidate view - published jobs only`);
     } else {
       logger.info(`[getJobs] ❌ NO company filter applied - Role: ${userRole}, HasCompanyId: ${!!req.user?.companyId}`);
     }
     
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
     
     const jobs = await Job.find(query)
@@ -47,7 +50,7 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
 export const getJobsByCompanySlug = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
-    const { page = 1, limit = 10, status } = req.query;
+    const { page = 1, limit = 10 } = req.query;
     
     // Find company by slug
     const company = await Company.findOne({ slug, deletedAt: null });
@@ -56,15 +59,14 @@ export const getJobsByCompanySlug = async (req: AuthRequest, res: Response, next
       return;
     }
     
-    // Build query for jobs belonging to this company
+    // Build query for jobs belonging to this company — public endpoint, only published jobs
     const query: any = { 
       companyId: company._id,
       deletedAt: null,
-      status: status || 'published'  // Default to published jobs for public access
+      status: 'published'
     };
     
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
     
     const jobs = await Job.find(query)
@@ -84,13 +86,13 @@ export const getJobById = async (req: AuthRequest, res: Response, next: NextFunc
     const job = await Job.findById(req.params.id).populate('companyId', 'name logo slug description website');
     if (!job) { sendError(res, "Job not found", 404); return; }
     
-    // Authorization: HR/employer can only view their company's jobs
+    // Authorization: All non-super-admin users can only view their company's jobs
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
       const jobCompanyId = job.companyId._id.toString();
-      const userCompanyId = req.user.companyId.toString();
-      if (jobCompanyId !== userCompanyId) {
-        logger.warn(`[getJobById] Access denied: ${req.user.email} (${userCompanyId}) tried to access job from company ${jobCompanyId}`);
+      if (jobCompanyId !== tenantId) {
+        logger.warn(`[getJobById] Access denied: ${req.user?.email} (${tenantId}) tried to access job from company ${jobCompanyId}`);
         sendError(res, "You don't have permission to view this job", 403);
         return;
       }
@@ -103,10 +105,11 @@ export const getJobById = async (req: AuthRequest, res: Response, next: NextFunc
 export const createJob = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     // If companyId is not provided, use the user's companyId
-    let companyId = req.body.companyId;
+    let companyId = req.user?.companyId;
     
-    if (!companyId && req.user?.companyId) {
-      companyId = req.user.companyId;
+    // SECURITY: Only super admin can specify a different companyId
+    if (req.body.companyId && isSuperAdmin(req.user)) {
+      companyId = req.body.companyId;
     }
     
     // If still no companyId, check if user has one or create error
@@ -115,11 +118,32 @@ export const createJob = async (req: AuthRequest, res: Response, next: NextFunct
       return;
     }
 
-    const jobData = {
-      ...req.body,
-      companyId,
-      createdBy: req.user?._id,
-    };
+    // Whitelist allowed fields to prevent mass assignment (SEC-03/B-02)
+    const allowedFields = [
+      'title', 'description', 'responsibilities', 'requirements', 'skills',
+      'experienceMin', 'experienceMax', 'salaryMin', 'salaryMax', 'currency',
+      'location', 'workMode', 'jobType', 'department', 'positions',
+      'joiningDate', 'expiryDate', 'tags',
+    ];
+    const jobData: Record<string, any> = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        jobData[field] = req.body[field];
+      }
+    }
+    jobData.companyId = companyId;
+    jobData.createdBy = req.user?._id;
+    jobData.status = JobStatus.DRAFT; // New jobs always start as draft
+
+    // Cross-field validation (EC-01/EC-02)
+    if (jobData.experienceMin != null && jobData.experienceMax != null && jobData.experienceMin > jobData.experienceMax) {
+      sendError(res, 'experienceMin cannot be greater than experienceMax', 400);
+      return;
+    }
+    if (jobData.salaryMin != null && jobData.salaryMax != null && jobData.salaryMin > jobData.salaryMax) {
+      sendError(res, 'salaryMin cannot be greater than salaryMax', 400);
+      return;
+    }
 
     const job = await Job.create(jobData);
     sendSuccess(res, { job }, "Job created", 201);
@@ -133,19 +157,46 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
     const job = await Job.findById(req.params.id);
     if (!job) { sendError(res, "Job not found", 404); return; }
     
-    // Authorization: HR/employer can only update their company's jobs
+    // Authorization: ALL roles must have matching companyId for updates (SEC-05/B-04)
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
-      const jobCompanyId = job.companyId.toString();
-      const userCompanyId = req.user.companyId.toString();
-      if (jobCompanyId !== userCompanyId) {
-        logger.warn(`[updateJob] Access denied: ${req.user.email} (${userCompanyId}) tried to update job from company ${jobCompanyId}`);
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      if (job.companyId.toString() !== tenantId) {
+        logger.warn(`[updateJob] Access denied: ${req.user?.email} tried to update job from another company`);
         sendError(res, "You don't have permission to update this job", 403);
         return;
       }
     }
     
-    const updatedJob = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Whitelist allowed update fields to prevent mass assignment (SEC-03/B-02)
+    const allowedUpdateFields = [
+      'title', 'description', 'responsibilities', 'requirements', 'skills',
+      'experienceMin', 'experienceMax', 'salaryMin', 'salaryMax', 'currency',
+      'location', 'workMode', 'jobType', 'status', 'department', 'positions',
+      'joiningDate', 'expiryDate', 'tags',
+    ];
+    const sanitizedUpdate: Record<string, any> = {};
+    for (const field of allowedUpdateFields) {
+      if (req.body[field] !== undefined) {
+        sanitizedUpdate[field] = req.body[field];
+      }
+    }
+
+    // Cross-field validation (EC-01/EC-02)
+    const checkExpMin = sanitizedUpdate.experienceMin ?? (job as any).experienceMin;
+    const checkExpMax = sanitizedUpdate.experienceMax ?? (job as any).experienceMax;
+    if (checkExpMin != null && checkExpMax != null && checkExpMin > checkExpMax) {
+      sendError(res, 'experienceMin cannot be greater than experienceMax', 400);
+      return;
+    }
+    const checkSalMin = sanitizedUpdate.salaryMin ?? (job as any).salaryMin;
+    const checkSalMax = sanitizedUpdate.salaryMax ?? (job as any).salaryMax;
+    if (checkSalMin != null && checkSalMax != null && checkSalMin > checkSalMax) {
+      sendError(res, 'salaryMin cannot be greater than salaryMax', 400);
+      return;
+    }
+    
+    const updatedJob = await Job.findByIdAndUpdate(req.params.id, sanitizedUpdate, { new: true, runValidators: true });
     sendSuccess(res, { job: updatedJob }, "Job updated");
   } catch (error) { next(error); }
 };
@@ -155,19 +206,19 @@ export const deleteJob = async (req: AuthRequest, res: Response, next: NextFunct
     const job = await Job.findById(req.params.id);
     if (!job) { sendError(res, "Job not found", 404); return; }
     
-    // Authorization: HR/employer can only delete their company's jobs
+    // Authorization: ALL roles must have matching companyId for deletes (SEC-05/B-04)
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
-      const jobCompanyId = job.companyId.toString();
-      const userCompanyId = req.user.companyId.toString();
-      if (jobCompanyId !== userCompanyId) {
-        logger.warn(`[deleteJob] Access denied: ${req.user.email} (${userCompanyId}) tried to delete job from company ${jobCompanyId}`);
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId) {
+      if (job.companyId.toString() !== tenantId) {
+        logger.warn(`[deleteJob] Access denied: ${req.user?.email} tried to delete job from another company`);
         sendError(res, "You don't have permission to delete this job", 403);
         return;
       }
     }
     
-    const deletedJob = await Job.findByIdAndUpdate(req.params.id, { deletedAt: new Date() }, { new: true });
+    job.deletedAt = new Date();
+    await job.save();
     sendSuccess(res, null, "Job deleted");
   } catch (error) { next(error); }
 };
