@@ -141,15 +141,11 @@ applicationSchema.index({ companyId: 1, status: 1 });
 applicationSchema.index({ overallScore: -1 });
 applicationSchema.index({ appliedAt: -1 });
 
-// Update status history on status change
+// Update timestamp fields on status change (B-07/B-08 fix: removed duplicate
+// statusHistory push — history is now managed only in the controller, which
+// correctly records the actual user who made the change).
 applicationSchema.pre('save', function (next) {
   if (this.isModified('status')) {
-    this.statusHistory.push({
-      status: this.status,
-      changedBy: this.candidateId, // This should be updated based on who is making the change
-      changedAt: new Date(),
-    });
-    
     // Update timestamp fields
     switch (this.status) {
       case ApplicationStatus.SHORTLISTED:

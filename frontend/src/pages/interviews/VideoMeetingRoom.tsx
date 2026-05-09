@@ -113,6 +113,24 @@ export default function VideoMeetingRoom() {
           
           console.log('✅ System check completed. Proceeding to meeting room...');
         }
+
+        // Start the interview if not already started
+        if (interviewData.status === 'scheduled' || interviewData.status === 'confirmed') {
+          console.log('🚀 Starting interview...');
+          const startResponse = await apiClient.post(`/interviews/${id}/start`);
+          if (startResponse.success) {
+            console.log('✅ Interview started successfully');
+            setInterview(startResponse.data);
+          }
+        } else if (interviewData.status === 'completed') {
+          alert('This interview has already been completed.');
+          navigate('/interviews');
+          return;
+        } else if (interviewData.status === 'cancelled') {
+          alert('This interview has been cancelled.');
+          navigate('/interviews');
+          return;
+        }
       }
 
       // Get user media

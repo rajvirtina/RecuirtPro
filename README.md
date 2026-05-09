@@ -1,7 +1,7 @@
 # RecuirtPro - Recruitment Automation Platform
 
 ## Overview
-End-to-end recruitment automation platform integrating with Microsoft Teams, Google Meet, Zoho, and Naukri for streamlined hiring workflows.
+End-to-end recruitment automation platform integrating with Microsoft Teams, Google Meet, Zoho, and Naukri, Linkedin, Github for streamlined hiring workflows.
 
 ## Features
 - **Job Management**: Create, post, and manage job descriptions across multiple portals
@@ -15,6 +15,7 @@ End-to-end recruitment automation platform integrating with Microsoft Teams, Goo
 ## Tech Stack
 - **Backend**: Node.js, Express, TypeScript, MongoDB
 - **Frontend**: React, TypeScript, Tailwind CSS
+- **LLM Service**: Python, FastAPI, OpenAI (Interview AI Automation)
 - **Authentication**: JWT with RBAC
 - **API Documentation**: Swagger/OpenAPI
 - **Integrations**: Microsoft Graph, Google Calendar, Zoho, Naukri
@@ -87,6 +88,10 @@ NAUKRI_API_SECRET=your-naukri-secret
 ENABLE_PROCTORING=true
 ENABLE_NAUKRI_INTEGRATION=true
 ENABLE_MFA=true
+
+# LLM Service
+LLM_SERVICE_URL=http://localhost:8001
+LLM_API_KEY=your-secure-secret-key-here
 ```
 
 #### Frontend (.env in frontend folder)
@@ -94,6 +99,15 @@ ENABLE_MFA=true
 VITE_API_URL=http://localhost:5000/api
 VITE_WS_URL=ws://localhost:5000
 VITE_ENABLE_PROCTORING=true
+```
+
+#### LLM Service (.env in llm-service folder)
+```env
+OPENAI_API_KEY=sk-your-openai-api-key-here
+OPENAI_MODEL=gpt-4o-mini
+API_SECRET_KEY=your-secure-secret-key-here
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:5000
+SERVICE_PORT=8001
 ```
 
 ### 4. Start MongoDB

@@ -2,13 +2,36 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// SEC-06: Reject default secrets in production
+const DANGEROUS_DEFAULTS = [
+  'default-secret-change-me',
+  'refresh-secret-change-me',
+  'default-encryption-key-change-me',
+];
+
+if (process.env.NODE_ENV === 'production') {
+  const jwtSecret = process.env.JWT_SECRET || '';
+  const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || '';
+  const encryptionKey = process.env.ENCRYPTION_KEY || '';
+
+  if (!jwtSecret || DANGEROUS_DEFAULTS.includes(jwtSecret)) {
+    throw new Error('FATAL: JWT_SECRET must be set to a secure value in production.');
+  }
+  if (!jwtRefreshSecret || DANGEROUS_DEFAULTS.includes(jwtRefreshSecret)) {
+    throw new Error('FATAL: JWT_REFRESH_SECRET must be set to a secure value in production.');
+  }
+  if (!encryptionKey || DANGEROUS_DEFAULTS.includes(encryptionKey)) {
+    throw new Error('FATAL: ENCRYPTION_KEY must be set to a secure value in production.');
+  }
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '5000', 10),
   
-  // Server
+  // Server — B-11 fix: default to same port as the main PORT value
   server: {
-    url: process.env.SERVER_URL || `http://localhost:${process.env.PORT || '5001'}`,
+    url: process.env.SERVER_URL || `http://localhost:${process.env.PORT || '5000'}`,
   },
   
   // Database
@@ -22,13 +45,11 @@ export const config = {
     refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
   },
   
-  // CORS
+  // CORS — removed hardcoded internal IP (4.13)
   corsOrigin: process.env.CORS_ORIGIN?.split(',') || [
     'http://localhost:3000', 
     'http://localhost:3001',
     'http://localhost:5173',
-    'http://192.168.0.106:3000',
-    'http://192.168.0.106:5173',
   ],
   
   // Email
@@ -131,7 +152,7 @@ export const config = {
   
   // Company
   companyName: process.env.COMPANY_NAME || 'RecuirtPro',
-  supportEmail: process.env.SUPPORT_EMAIL || 'support@recuritpro.com',
+  supportEmail: process.env.SUPPORT_EMAIL || 'support@recruitpro.com',
   
   // Encryption
   encryptionKey: process.env.ENCRYPTION_KEY || 'default-encryption-key-change-me',

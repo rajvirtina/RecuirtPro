@@ -149,23 +149,29 @@ export const getInterviews = async (
       Interview.countDocuments(query),
     ]);
 
-    // Add violation counts for active interviews
-    const interviewsWithViolations = await Promise.all(
-      interviews.map(async (interview: any) => {
-        if (interview.status === InterviewStatus.IN_PROGRESS || interview.proctoringEnabled) {
-          const violationCount = await ProctoringEvent.countDocuments({
-            interviewId: interview._id,
-          });
+    // Add violation counts via a single batch query instead of N+1 (PERF-01 fix)
+    const interviewIds = interviews
+      .filter((i: any) => i.status === InterviewStatus.IN_PROGRESS || i.proctoringEnabled)
+      .map((i: any) => i._id);
 
-          return {
-            ...interview,
-            violations: violationCount,
-          };
-        }
+    let violationMap: Record<string, number> = {};
+    if (interviewIds.length > 0) {
+      const violationCounts = await ProctoringEvent.aggregate([
+        { $match: { interviewId: { $in: interviewIds } } },
+        { $group: { _id: '$interviewId', count: { $sum: 1 } } },
+      ]);
+      violationMap = violationCounts.reduce((acc: Record<string, number>, v: any) => {
+        acc[v._id.toString()] = v.count;
+        return acc;
+      }, {});
+    }
 
-        return interview;
-      })
-    );
+    const interviewsWithViolations = interviews.map((interview: any) => {
+      if (interview.status === InterviewStatus.IN_PROGRESS || interview.proctoringEnabled) {
+        return { ...interview, violations: violationMap[interview._id.toString()] || 0 };
+      }
+      return interview;
+    });
 
     return sendPaginatedResponse(
       res,
@@ -460,5 +466,66 @@ export const submitInterviewFeedback = async (
   } catch (error: any) {
     logger.error('Error in submitInterviewFeedback:', error);
     return sendError(res, error.message || 'Error submitting feedback', 500);
+  }
+};
+
+/**
+ * @desc    Start interview - mark as in progress and generate questions using LLM
+ * @route   POST /api/v1/interviews/:id/start
+ * @access  Private (Panel members, Employer/HR/Admin, Candidate)
+ */
+export const startInterview = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+
+    const interview = await Interview.findById(id)
+      .populate('jobId')
+      .populate('candidateId', '-password')
+      .populate('panel.userId', 'firstName lastName email');
+
+    if (!interview || interview.status === InterviewStatus.CANCELLED) {
+      return sendError(res, 'Interview not found', 404);
+    }
+
+    // Authorization check
+    const isCandidate = interview.candidateId._id.toString() === req.user?._id;
+    const isPanelMember = (interview.panel as any[]).some(
+      (member: any) => member.userId?._id.toString() === req.user?._id
+    );
+    const isAuthorized =
+      req.user?.role === 'admin' ||
+      isPanelMember ||
+      isCandidate ||
+      req.user?.role === 'employer' ||
+      req.user?.role === 'hr';
+
+    if (!isAuthorized) {
+      return sendError(res, 'Not authorized to start this interview', 403);
+    }
+
+    // Check if already in progress or completed
+    if (interview.status === InterviewStatus.IN_PROGRESS) {
+      return sendSuccess(res, interview, 'Interview already in progress');
+    }
+
+    if (interview.status === InterviewStatus.COMPLETED) {
+      return sendError(res, 'Interview already completed', 400);
+    }
+
+    // Update status to in progress
+    interview.status = InterviewStatus.IN_PROGRESS;
+    interview.startedAt = new Date();
+    
+    await interview.save();
+
+    logger.info(`Interview ${id} started by ${req.user?._id}`);
+
+    return sendSuccess(res, interview, 'Interview started successfully');
+  } catch (error: any) {
+    logger.error('Error in startInterview:', error);
+    return sendError(res, error.message || 'Error starting interview', 500);
   }
 };

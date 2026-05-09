@@ -115,11 +115,22 @@ export const createJob = async (req: AuthRequest, res: Response, next: NextFunct
       return;
     }
 
-    const jobData = {
-      ...req.body,
-      companyId,
-      createdBy: req.user?._id,
-    };
+    // Whitelist allowed fields to prevent mass assignment (SEC-03/B-02)
+    const allowedFields = [
+      'title', 'description', 'responsibilities', 'requirements', 'skills',
+      'experienceMin', 'experienceMax', 'salaryMin', 'salaryMax', 'currency',
+      'location', 'workMode', 'jobType', 'department', 'positions',
+      'joiningDate', 'expiryDate', 'tags',
+    ];
+    const jobData: Record<string, any> = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        jobData[field] = req.body[field];
+      }
+    }
+    jobData.companyId = companyId;
+    jobData.createdBy = req.user?._id;
+    jobData.status = JobStatus.DRAFT; // New jobs always start as draft
 
     const job = await Job.create(jobData);
     sendSuccess(res, { job }, "Job created", 201);
@@ -133,19 +144,31 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
     const job = await Job.findById(req.params.id);
     if (!job) { sendError(res, "Job not found", 404); return; }
     
-    // Authorization: HR/employer can only update their company's jobs
+    // Authorization: ALL roles (including admin) must have matching companyId for updates (SEC-05/B-04)
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
-      const jobCompanyId = job.companyId.toString();
-      const userCompanyId = req.user.companyId.toString();
-      if (jobCompanyId !== userCompanyId) {
-        logger.warn(`[updateJob] Access denied: ${req.user.email} (${userCompanyId}) tried to update job from company ${jobCompanyId}`);
+    if (userRole !== 'admin') {
+      if (!req.user?.companyId || job.companyId.toString() !== req.user.companyId.toString()) {
+        logger.warn(`[updateJob] Access denied: ${req.user?.email} tried to update job from another company`);
         sendError(res, "You don't have permission to update this job", 403);
         return;
       }
     }
     
-    const updatedJob = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Whitelist allowed update fields to prevent mass assignment (SEC-03/B-02)
+    const allowedUpdateFields = [
+      'title', 'description', 'responsibilities', 'requirements', 'skills',
+      'experienceMin', 'experienceMax', 'salaryMin', 'salaryMax', 'currency',
+      'location', 'workMode', 'jobType', 'status', 'department', 'positions',
+      'joiningDate', 'expiryDate', 'tags',
+    ];
+    const sanitizedUpdate: Record<string, any> = {};
+    for (const field of allowedUpdateFields) {
+      if (req.body[field] !== undefined) {
+        sanitizedUpdate[field] = req.body[field];
+      }
+    }
+    
+    const updatedJob = await Job.findByIdAndUpdate(req.params.id, sanitizedUpdate, { new: true, runValidators: true });
     sendSuccess(res, { job: updatedJob }, "Job updated");
   } catch (error) { next(error); }
 };
@@ -155,13 +178,11 @@ export const deleteJob = async (req: AuthRequest, res: Response, next: NextFunct
     const job = await Job.findById(req.params.id);
     if (!job) { sendError(res, "Job not found", 404); return; }
     
-    // Authorization: HR/employer can only delete their company's jobs
+    // Authorization: ALL roles (including admin) must have matching companyId for deletes (SEC-05/B-04)
     const userRole = req.user?.role;
-    if ((userRole === 'hr' || userRole === 'employer') && req.user?.companyId) {
-      const jobCompanyId = job.companyId.toString();
-      const userCompanyId = req.user.companyId.toString();
-      if (jobCompanyId !== userCompanyId) {
-        logger.warn(`[deleteJob] Access denied: ${req.user.email} (${userCompanyId}) tried to delete job from company ${jobCompanyId}`);
+    if (userRole !== 'admin') {
+      if (!req.user?.companyId || job.companyId.toString() !== req.user.companyId.toString()) {
+        logger.warn(`[deleteJob] Access denied: ${req.user?.email} tried to delete job from another company`);
         sendError(res, "You don't have permission to delete this job", 403);
         return;
       }
