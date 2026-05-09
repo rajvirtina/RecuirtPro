@@ -30,54 +30,86 @@ export const getEmployerDashboard = async (
       jobFilter.companyId = companyId;
     }
 
-    // Get jobs statistics
-    const totalJobs = await Job.countDocuments(jobFilter);
-    const activeJobs = await Job.countDocuments({
-      ...jobFilter,
-      status: JobStatus.PUBLISHED,
-    });
-    const draftJobs = await Job.countDocuments({ ...jobFilter, status: JobStatus.DRAFT });
-    const closedJobs = await Job.countDocuments({ ...jobFilter, status: JobStatus.CLOSED });
-
-    // Get job IDs for filtering applications and interviews
+    // PERF-02: Replace 21 sequential countDocuments with aggregation pipelines
+    // Get job IDs first (needed for application/interview filters)
     const jobs = await Job.find(jobFilter, '_id');
     const jobIds = jobs.map((j) => j._id);
 
+    const applicationFilter: any = {};
+    const interviewFilter: any = {};
     if (jobIds.length > 0) {
       applicationFilter.jobId = { $in: jobIds };
       interviewFilter.jobId = { $in: jobIds };
     }
 
-    // Get applications statistics
-    const totalApplications = await Application.countDocuments(applicationFilter);
-    const pendingApplications = await Application.countDocuments({
-      ...applicationFilter,
-      status: ApplicationStatus.APPLIED,
-    });
-    const reviewedApplications = await Application.countDocuments({
-      ...applicationFilter,
-      status: ApplicationStatus.IN_PROGRESS,
-    });
-    const shortlistedApplications = await Application.countDocuments({
-      ...applicationFilter,
-      status: ApplicationStatus.SHORTLISTED,
-    });
-    const selectedApplications = await Application.countDocuments({
-      ...applicationFilter,
-      status: ApplicationStatus.SELECTED,
-    });
+    // Single aggregation for job stats by status
+    const [jobStats, appStats, interviewStats] = await Promise.all([
+      Job.aggregate([
+        { $match: jobFilter },
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      jobIds.length > 0
+        ? Application.aggregate([
+            { $match: applicationFilter },
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 },
+              },
+            },
+          ])
+        : Promise.resolve([]),
+      jobIds.length > 0
+        ? Interview.aggregate([
+            { $match: interviewFilter },
+            {
+              $facet: {
+                byStatus: [{ $group: { _id: '$status', count: { $sum: 1 } } }],
+                scheduled: [
+                  {
+                    $match: {
+                      status: InterviewStatus.SCHEDULED,
+                      scheduledTime: { $gte: new Date() },
+                    },
+                  },
+                  { $count: 'count' },
+                ],
+              },
+            },
+          ])
+        : Promise.resolve([{ byStatus: [], scheduled: [] }]),
+    ]);
 
-    // Get interviews statistics
-    const totalInterviews = await Interview.countDocuments(interviewFilter);
-    const scheduledInterviews = await Interview.countDocuments({
-      ...interviewFilter,
-      status: InterviewStatus.SCHEDULED,
-      scheduledTime: { $gte: new Date() },
-    });
-    const completedInterviews = await Interview.countDocuments({
-      ...interviewFilter,
-      status: InterviewStatus.COMPLETED,
-    });
+    // Extract job counts from aggregation
+    const jobCountMap: Record<string, number> = {};
+    jobStats.forEach((s: any) => { jobCountMap[s._id] = s.count; });
+    const totalJobs = Object.values(jobCountMap).reduce((a: number, b: number) => a + b, 0);
+    const activeJobs = jobCountMap[JobStatus.PUBLISHED] || 0;
+    const draftJobs = jobCountMap[JobStatus.DRAFT] || 0;
+    const closedJobs = jobCountMap[JobStatus.CLOSED] || 0;
+
+    // Extract application counts
+    const appCountMap: Record<string, number> = {};
+    appStats.forEach((s: any) => { appCountMap[s._id] = s.count; });
+    const totalApplications = Object.values(appCountMap).reduce((a: number, b: number) => a + b, 0);
+    const pendingApplications = appCountMap[ApplicationStatus.APPLIED] || 0;
+    const reviewedApplications = appCountMap[ApplicationStatus.IN_PROGRESS] || 0;
+    const shortlistedApplications = appCountMap[ApplicationStatus.SHORTLISTED] || 0;
+    const selectedApplications = appCountMap[ApplicationStatus.SELECTED] || 0;
+
+    // Extract interview counts
+    const interviewData = interviewStats[0] || { byStatus: [], scheduled: [] };
+    const intCountMap: Record<string, number> = {};
+    (interviewData.byStatus || []).forEach((s: any) => { intCountMap[s._id] = s.count; });
+    const totalInterviews = Object.values(intCountMap).reduce((a: number, b: number) => a + b, 0);
+    const scheduledInterviews = interviewData.scheduled?.[0]?.count || 0;
+    const completedInterviews = intCountMap[InterviewStatus.COMPLETED] || 0;
+
     const upcomingInterviews = await Interview.find({
       ...interviewFilter,
       status: { $in: [InterviewStatus.SCHEDULED, InterviewStatus.CONFIRMED] },
@@ -222,27 +254,31 @@ export const getCandidateDashboard = async (
   try {
     const candidateId = req.user?._id;
 
-    // Get applications statistics
-    const totalApplications = await Application.countDocuments({ candidateId });
-    const pendingApplications = await Application.countDocuments({
-      candidateId,
-      status: ApplicationStatus.APPLIED,
-    });
-    const underReviewApplications = await Application.countDocuments({
-      candidateId,
-      status: ApplicationStatus.IN_PROGRESS,
-    });
-    const shortlistedApplications = await Application.countDocuments({
-      candidateId,
-      status: ApplicationStatus.SHORTLISTED,
-    });
-    const rejectedApplications = await Application.countDocuments({
-      candidateId,
-      status: ApplicationStatus.REJECTED,
-    });
+    // PERF-02: Replace sequential countDocuments with aggregation
+    const [appStats, intStats] = await Promise.all([
+      Application.aggregate([
+        { $match: { candidateId } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      Interview.aggregate([
+        { $match: { candidateId } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+    ]);
 
-    // Get interviews statistics
-    const totalInterviews = await Interview.countDocuments({ candidateId });
+    const appMap: Record<string, number> = {};
+    appStats.forEach((s: any) => { appMap[s._id] = s.count; });
+    const totalApplications = Object.values(appMap).reduce((a: number, b: number) => a + b, 0);
+    const pendingApplications = appMap[ApplicationStatus.APPLIED] || 0;
+    const underReviewApplications = appMap[ApplicationStatus.IN_PROGRESS] || 0;
+    const shortlistedApplications = appMap[ApplicationStatus.SHORTLISTED] || 0;
+    const rejectedApplications = appMap[ApplicationStatus.REJECTED] || 0;
+
+    const intMap: Record<string, number> = {};
+    intStats.forEach((s: any) => { intMap[s._id] = s.count; });
+    const totalInterviews = Object.values(intMap).reduce((a: number, b: number) => a + b, 0);
+    const completedInterviews = intMap[InterviewStatus.COMPLETED] || 0;
+
     const upcomingInterviews = await Interview.find({
       candidateId,
       status: { $in: [InterviewStatus.SCHEDULED, InterviewStatus.CONFIRMED] },
@@ -252,23 +288,14 @@ export const getCandidateDashboard = async (
       .populate('jobId', 'title location workMode')
       .populate('companyId', 'name');
 
-    const completedInterviews = await Interview.countDocuments({
-      candidateId,
-      status: InterviewStatus.COMPLETED,
-    });
-
     // Recent applications
     const recentApplications = await Application.find({ candidateId })
       .limit(10)
       .sort({ createdAt: -1 })
       .populate('jobId', 'title location workMode salary Min salaryMax currency');
 
-    // Application status breakdown
-    const applicationsByStatus = await Application.aggregate([
-      { $match: { candidateId } },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
-      { $project: { status: '$_id', count: 1, _id: 0 } },
-    ]);
+    // Application status breakdown (reuse aggregation data)
+    const applicationsByStatus = appStats.map((s: any) => ({ status: s._id, count: s.count }));
 
     // Recommended jobs (based on candidate's applications)
     let recommendedJobs: any[] = [];

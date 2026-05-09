@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { Application, Job, CandidateProfile, User } from '../models';
 import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
-import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 
 /**
@@ -123,8 +123,7 @@ export const getApplications = async (
       query.candidateId = candidateId;
     }
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
 
     const [applications, total] = await Promise.all([
@@ -213,13 +212,16 @@ export const updateApplicationStatus = async (
       return sendError(res, 'Application not found', 404);
     }
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+    // Authorization check — company isolation (SEC-15/B-16)
+    const isAdmin = req.user?.role === 'admin';
+    let isAuthorizedHROrEmployer = false;
+    if (req.user?.role === 'hr' || req.user?.role === 'employer') {
+      if (req.user?.companyId && application.companyId) {
+        isAuthorizedHROrEmployer = application.companyId.toString() === req.user.companyId.toString();
+      }
+    }
 
-    if (!isAuthorized) {
+    if (!isAdmin && !isAuthorizedHROrEmployer) {
       return sendError(
         res,
         'Not authorized to update this application',

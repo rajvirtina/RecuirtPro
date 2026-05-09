@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { Interview, Application, Job, User, InterviewTemplate, Question, ProctoringEvent } from '../models';
 import { AuthRequest, InterviewStatus, ApplicationStatus } from '../types';
-import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 
 /**
@@ -42,6 +42,11 @@ export const scheduleInterview = async (
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to schedule interview', 403);
+    }
+
+    // Validate scheduledTime is not in the past (EC-03)
+    if (scheduledTime && new Date(scheduledTime) < new Date()) {
+      return sendError(res, 'Interview cannot be scheduled in the past', 400);
     }
 
     // Create interview
@@ -134,8 +139,7 @@ export const getInterviews = async (
       if (to) query.scheduledTime.$lte = new Date(to as string);
     }
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
 
     const [interviews, total] = await Promise.all([
@@ -209,15 +213,18 @@ export const getInterviewById = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
+    // Authorization check — company isolation (4.6/SEC-15)
     const isCandidate = interview.candidateId._id.toString() === req.user?._id;
-    const isEmployer = req.user?.role === 'employer' || req.user?.role === 'hr';
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId?._id.toString() === req.user?._id
     );
     const isAdmin = req.user?.role === 'admin';
+    let isCompanyMember = false;
+    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    }
 
-    if (!isCandidate && !isEmployer && !isPanelMember && !isAdmin) {
+    if (!isCandidate && !isCompanyMember && !isPanelMember && !isAdmin) {
       return sendError(res, 'Not authorized to view this interview', 403);
     }
 
@@ -247,11 +254,13 @@ export const updateInterview = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+    // Authorization check — company isolation (4.5/SEC-15)
+    const isAdmin = req.user?.role === 'admin';
+    let isCompanyMember = false;
+    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    }
+    const isAuthorized = isAdmin || isCompanyMember;
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to update this interview', 403);
@@ -274,8 +283,11 @@ export const updateInterview = async (
       }
     });
 
-    // If rescheduling, update status
+    // If rescheduling, validate and update status (EC-03)
     if (updates.scheduledTime && updates.scheduledTime !== interview.scheduledTime) {
+      if (new Date(updates.scheduledTime) < new Date()) {
+        return sendError(res, 'Interview cannot be rescheduled to a past date', 400);
+      }
       interview.status = InterviewStatus.RESCHEDULED;
       interview.previousScheduledTime = interview.scheduledTime;
       (interview as any).rescheduleCount += 1;
@@ -311,15 +323,19 @@ export const updateInterviewStatus = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
+    // Authorization check — company isolation (4.5/SEC-15)
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId.toString() === req.user?._id
     );
+    const isAdmin = req.user?.role === 'admin';
+    let isCompanyMember = false;
+    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    }
     const isAuthorized =
-      req.user?.role === 'admin' ||
+      isAdmin ||
       isPanelMember ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+      isCompanyMember;
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to update interview status', 403);
@@ -423,15 +439,19 @@ export const submitInterviewFeedback = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
+    // Authorization check — company isolation (SEC-15)
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId.toString() === req.user?._id
     );
+    const isAdmin = req.user?.role === 'admin';
+    let isCompanyMember = false;
+    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    }
     const isAuthorized =
-      req.user?.role === 'admin' ||
+      isAdmin ||
       isPanelMember ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+      isCompanyMember;
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to submit feedback for this interview', 403);
@@ -490,17 +510,21 @@ export const startInterview = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
+    // Authorization check — company isolation (B-17)
     const isCandidate = interview.candidateId._id.toString() === req.user?._id;
     const isPanelMember = (interview.panel as any[]).some(
       (member: any) => member.userId?._id.toString() === req.user?._id
     );
+    const isAdmin = req.user?.role === 'admin';
+    let isCompanyMember = false;
+    if ((req.user?.role === 'employer' || req.user?.role === 'hr') && req.user?.companyId && interview.companyId) {
+      isCompanyMember = interview.companyId.toString() === req.user.companyId.toString();
+    }
     const isAuthorized =
-      req.user?.role === 'admin' ||
+      isAdmin ||
       isPanelMember ||
       isCandidate ||
-      req.user?.role === 'employer' ||
-      req.user?.role === 'hr';
+      isCompanyMember;
 
     if (!isAuthorized) {
       return sendError(res, 'Not authorized to start this interview', 403);

@@ -2,7 +2,7 @@ import { Response } from 'express';
 import crypto from 'crypto';
 import { Invitation, User } from '../models';
 import { AuthRequest } from '../types';
-import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
+import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 import { sendEmail } from '../services/emailService';
 
@@ -158,8 +158,7 @@ export const getInvitations = async (
       query.status = status;
     }
 
-    const pageNum = parseInt(page as string, 10);
-    const limitNum = parseInt(limit as string, 10);
+    const { pageNum, limitNum } = clampPagination(page, limit);
     const skip = (pageNum - 1) * limitNum;
 
     const [invitations, total] = await Promise.all([

@@ -27,12 +27,14 @@ export interface IUserDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
+  refreshTokenVersion: number;
   
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
   generateAuthToken(): string;
   generateRefreshToken(): string;
   getFullName(): string;
+  invalidateRefreshTokens(): Promise<void>;
 }
 
 interface IUserModel extends Model<IUserDocument> {
@@ -132,6 +134,10 @@ const userSchema = new Schema<IUserDocument>(
     deletedAt: {
       type: Date,
     },
+    refreshTokenVersion: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
@@ -181,10 +187,17 @@ userSchema.methods.generateRefreshToken = function (): string {
       id: this._id,
       companyId: this.companyId,
       type: 'refresh',
+      tokenVersion: this.refreshTokenVersion || 0,
     },
     config.jwt.refreshSecret,
     { expiresIn: config.jwt.refreshExpire } as any
   );
+};
+
+// Instance method: Invalidate all refresh tokens (B-06/SEC-07)
+userSchema.methods.invalidateRefreshTokens = async function (): Promise<void> {
+  this.refreshTokenVersion = (this.refreshTokenVersion || 0) + 1;
+  await this.save();
 };
 
 // Instance method: Get full name
@@ -219,9 +232,18 @@ userSchema.statics.findByCredentials = async function (
   return user;
 };
 
-// Static method: Verify refresh token
+// Static method: Verify refresh token (B-06/SEC-07)
 userSchema.statics.verifyRefreshToken = async function (token: string): Promise<any> {
-  return jwt.verify(token, config.jwt.refreshSecret);
+  const decoded = jwt.verify(token, config.jwt.refreshSecret) as any;
+  // Check token version to support revocation
+  const user = await this.findById(decoded.id);
+  if (!user) {
+    throw new Error('User not found');
+  }
+  if (decoded.tokenVersion !== undefined && decoded.tokenVersion !== (user.refreshTokenVersion || 0)) {
+    throw new Error('Refresh token has been revoked');
+  }
+  return decoded;
 };
 
 // Soft delete - don't actually remove, just mark as deleted
