@@ -18,6 +18,9 @@ import Dashboard from './pages/Dashboard';
 import Jobs from './pages/jobs/Jobs';
 import JobDetail from './pages/jobs/JobDetail';
 import JobForm from './pages/jobs/JobForm';
+import CompanyJobs from './pages/jobs/CompanyJobs';
+import CandidateJobs from './pages/jobs/CandidateJobs';
+import ApplyJob from './pages/jobs/ApplyJob';
 import Applications from './pages/applications/Applications';
 import ApplicationDetail from './pages/applications/ApplicationDetail';
 import Interviews from './pages/interviews/Interviews';
@@ -69,6 +72,9 @@ function App() {
       {/* Proctoring check - Public route */}
       <Route path="/proctoring-check/:interviewId" element={<ProctoringCheck />} />
 
+      {/* Company-specific job listings - Public route */}
+      <Route path="/company/:slug/jobs" element={<CompanyJobs />} />
+
       {/* Protected routes */}
       <Route
         element={
@@ -79,6 +85,8 @@ function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/candidate/jobs" element={<CandidateJobs />} />
+        <Route path="/jobs/:id/apply" element={<ApplyJob />} />
         <Route path="/jobs" element={<Jobs />} />
         <Route path="/jobs/new" element={<JobForm />} />
         <Route path="/jobs/:id" element={<JobDetail />} />

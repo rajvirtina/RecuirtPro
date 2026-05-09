@@ -42,6 +42,12 @@ export default function Dashboard() {
       <div className="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-lg p-8 text-white">
         <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.firstName}!</h1>
         <p className="text-indigo-100">Track your job applications and upcoming interviews</p>
+        <Link
+          to="/candidate/jobs"
+          className="inline-block mt-4 px-6 py-3 bg-white text-indigo-600 font-semibold rounded-lg hover:bg-indigo-50 transition-colors"
+        >
+          Browse Jobs
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

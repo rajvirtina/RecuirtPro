@@ -59,3 +59,7 @@ data/
 *.pem
 *.key
 *.crt
+
+# Credentials files
+SUPERADMIN_CREDENTIALS.txt
+*.credentials.txt

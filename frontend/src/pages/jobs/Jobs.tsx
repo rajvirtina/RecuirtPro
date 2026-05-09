@@ -19,7 +19,9 @@ export default function Jobs() {
       setLoading(true);
       // For candidates, only show published (non-closed) jobs
       const statusFilter = user?.role === 'candidate' ? '&status=published' : '';
-      const response = await apiClient.get(`/jobs?page=${page}&limit=10${statusFilter}`);
+      // For HR/employer, only show jobs from their company
+      const companyFilter = (user?.role === 'hr' || user?.role === 'employer') ? '&companySpecific=true' : '';
+      const response = await apiClient.get(`/jobs?page=${page}&limit=10${statusFilter}${companyFilter}`);
       setJobs((response.data as any) || []);
       setPagination(response.pagination || { page: 1, totalPages: 1, total: 0 });
     } catch (error) {

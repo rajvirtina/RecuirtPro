@@ -208,6 +208,7 @@ export const login = async (
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        companyId: user.companyId,
         emailVerified: user.emailVerified,
         isMfaEnabled: user.mfaEnabled || false,
       },
@@ -673,3 +674,4 @@ export const resendVerification = async (
     next(error);
   }
 };
+

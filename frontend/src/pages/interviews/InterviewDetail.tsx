@@ -312,10 +312,10 @@ export default function InterviewDetail() {
                 </Link>
               )}
 
-              {/* For Candidates: System check required first */}
+              {/* For Candidates: System check required first if proctoring enabled */}
               {user?.role === 'candidate' && (
                 <>
-                  {!systemCheckCompleted && upcoming ? (
+                  {interview?.proctoringEnabled && !systemCheckCompleted && upcoming ? (
                     <button
                       disabled
                       className="flex-1 px-4 py-3 bg-gray-300 text-gray-500 rounded-lg font-medium text-center cursor-not-allowed"
@@ -325,18 +325,20 @@ export default function InterviewDetail() {
                     </button>
                   ) : (
                     <Link
-                      to={`/interviews/${id}/room`}
+                      to={interview?.proctoringEnabled && !systemCheckCompleted ? `/proctoring-check/${id}` : `/interviews/${id}/room`}
                       className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-center transition-colors"
                     >
                       {upcoming ? 'Join Meeting' : 'View Meeting Link'}
                     </Link>
                   )}
-                  <Link
-                    to={`/proctoring-check/${id}`}
-                    className="px-4 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-50 font-medium transition-colors"
-                  >
-                    {systemCheckCompleted ? 'Recheck System' : 'System Check'}
-                  </Link>
+                  {interview?.proctoringEnabled && (
+                    <Link
+                      to={`/proctoring-check/${id}`}
+                      className="px-4 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-50 font-medium transition-colors"
+                    >
+                      {systemCheckCompleted ? 'Recheck System' : 'System Check'}
+                    </Link>
+                  )}
                 </>
               )}
             </div>

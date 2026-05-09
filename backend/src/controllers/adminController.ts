@@ -582,8 +582,23 @@ export const createCompany = async (
       return;
     }
 
+    // Generate slug from company name
+    const baseSlug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    
+    // Ensure slug is unique
+    let slug = baseSlug;
+    let counter = 1;
+    while (await Company.findOne({ slug, deletedAt: null })) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+
     const company = await Company.create({
       name,
+      slug,
       email: email.toLowerCase(),
       phone,
       website,
