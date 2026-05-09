@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { CalendarProvider, ICalendarIntegration } from '../types';
+import { encrypt, decrypt } from '../utils/encryption';
 
 export interface ICalendarIntegrationDocument extends Document {
   userId: mongoose.Types.ObjectId;
@@ -65,6 +66,35 @@ const calendarIntegrationSchema = new Schema<ICalendarIntegrationDocument>(
 // Indexes
 calendarIntegrationSchema.index({ userId: 1, provider: 1 }, { unique: true });
 calendarIntegrationSchema.index({ isActive: 1 });
+
+// SEC-11: Encrypt OAuth tokens before saving to DB
+calendarIntegrationSchema.pre('save', function (next) {
+  if (this.isModified('accessToken') && this.accessToken && !this.accessToken.includes(':')) {
+    this.accessToken = encrypt(this.accessToken);
+  }
+  if (this.isModified('refreshToken') && this.refreshToken && !this.refreshToken.includes(':')) {
+    this.refreshToken = encrypt(this.refreshToken);
+  }
+  next();
+});
+
+// SEC-11: Decrypt tokens when reading from DB
+calendarIntegrationSchema.methods.getDecryptedAccessToken = function (): string {
+  try {
+    return decrypt(this.accessToken);
+  } catch {
+    return this.accessToken; // Return raw if decryption fails (legacy data)
+  }
+};
+
+calendarIntegrationSchema.methods.getDecryptedRefreshToken = function (): string | undefined {
+  if (!this.refreshToken) return undefined;
+  try {
+    return decrypt(this.refreshToken);
+  } catch {
+    return this.refreshToken;
+  }
+};
 
 export const CalendarIntegration = mongoose.model<ICalendarIntegrationDocument>(
   'CalendarIntegration',

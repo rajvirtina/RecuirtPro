@@ -14,6 +14,7 @@ Tech Stack:
 """
 
 import os
+import re
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -95,6 +96,29 @@ Rules:
 # =========================
 # SECURITY
 # =========================
+
+# 4.16: Prompt injection mitigation — strip known injection patterns from user input
+INJECTION_PATTERNS = [
+    r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+    r"(?i)you\s+are\s+now\s+a",
+    r"(?i)disregard\s+(all\s+)?(above|prior|previous)",
+    r"(?i)system\s*:\s*",
+    r"(?i)act\s+as\s+(if\s+you\s+are\s+)?a",
+    r"(?i)pretend\s+to\s+be",
+    r"(?i)new\s+instructions?\s*:",
+    r"(?i)override\s+(all\s+)?rules",
+    r"(?i)\[INST\]",
+    r"(?i)<\|im_start\|>",
+]
+
+def sanitize_llm_input(text: str) -> str:
+    """Strip prompt injection patterns from user-provided text."""
+    sanitized = text
+    for pattern in INJECTION_PATTERNS:
+        sanitized = re.sub(pattern, "[FILTERED]", sanitized)
+    # Limit total length to prevent token flooding
+    return sanitized[:5000]
+
 async def verify_api_key(x_api_key: str = Header(None)):
     """Verify API key for service-to-service authentication"""
     if x_api_key != API_SECRET_KEY:
@@ -267,16 +291,21 @@ def schedule_interview(
     Intelligent interview scheduling - finds optimal slot and generates invitation
     """
     try:
+        # 4.16: Sanitize user inputs before prompt interpolation
+        safe_hr = [sanitize_llm_input(s) for s in data.hr_availability]
+        safe_cand = [sanitize_llm_input(s) for s in data.candidate_availability]
+        safe_type = sanitize_llm_input(data.interview_type)
+
         prompt = f"""
 You are an HR coordinator optimizing interview schedules.
 
 HR Availability (ISO 8601):
-{data.hr_availability}
+{safe_hr}
 
 Candidate Availability (ISO 8601):
-{data.candidate_availability}
+{safe_cand}
 
-Interview Type: {data.interview_type}
+Interview Type: {safe_type}
 Duration: {data.duration_minutes} minutes
 
 Tasks:
@@ -327,14 +356,19 @@ def analyze_feedback(
     Analyze unstructured interview feedback and provide structured evaluation
     """
     try:
+        # 4.16: Sanitize user inputs before prompt interpolation
+        safe_role = sanitize_llm_input(data.role)
+        safe_type = sanitize_llm_input(data.interview_type)
+        safe_feedback = sanitize_llm_input(data.raw_feedback)
+
         prompt = f"""
 You are a senior HR evaluator analyzing interview performance objectively.
 
-Job Role: {data.role}
-Interview Type: {data.interview_type}
+Job Role: {safe_role}
+Interview Type: {safe_type}
 
 Raw Interview Feedback:
-{data.raw_feedback}
+{safe_feedback}
 
 Analyze and return ONLY valid JSON (no markdown, no extra text):
 {{
@@ -387,15 +421,19 @@ def generate_candidate_message(
     Generate professional, GDPR-safe candidate communication
     """
     try:
-        candidate_prefix = f"Dear {data.candidate_name},\n\n" if data.candidate_name else "Dear Candidate,\n\n"
+        candidate_prefix = f"Dear {sanitize_llm_input(data.candidate_name)},\n\n" if data.candidate_name else "Dear Candidate,\n\n"
         
+        # 4.16: Sanitize user inputs before prompt interpolation
+        safe_summary = sanitize_llm_input(data.evaluation_summary)
+        safe_outcome = sanitize_llm_input(data.outcome)
+
         prompt = f"""
 You are an HR communication specialist generating candidate-facing messages.
 
 Internal Evaluation Summary:
-{data.evaluation_summary}
+{safe_summary}
 
-Outcome: {data.outcome}
+Outcome: {safe_outcome}
 
 Generate a professional email body (plain text, no HTML).
 

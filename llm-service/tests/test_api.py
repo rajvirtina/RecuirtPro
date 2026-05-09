@@ -1,11 +1,12 @@
+import os
 import pytest
 from fastapi.testclient import TestClient
 from app import app
 
 client = TestClient(app)
 
-# Test API key for testing
-TEST_API_KEY = "default-secret-key"
+# Test API key — matches APP_ENV=test default (not production)
+TEST_API_KEY = os.environ.get("API_SECRET_KEY", "default-secret-key")
 
 
 def test_home_endpoint():
