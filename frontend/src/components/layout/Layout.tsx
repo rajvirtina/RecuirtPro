@@ -16,7 +16,7 @@ export default function Layout() {
   const navigation = user?.role === 'candidate'
     ? [
         { name: 'Dashboard', href: '/dashboard', icon: '📊' },
-        { name: 'Find Jobs', href: '/jobs', icon: '💼' },
+        { name: 'Browse Jobs', href: '/candidate/jobs', icon: '💼' },
         { name: 'My Applications', href: '/applications', icon: '📝' },
         { name: 'Interviews', href: '/interviews', icon: '🗓️' },
         { name: 'Profile', href: '/profile', icon: '👤' },

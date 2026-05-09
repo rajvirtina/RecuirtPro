@@ -59,6 +59,33 @@ router.post(
 
 /**
  * @swagger
+ * /api/v1/applications/check/{jobId}:
+ *   get:
+ *     summary: Check if candidate has applied to a job
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Application status retrieved
+ */
+router.get(
+  '/check/:jobId',
+  protect,
+  authorize(UserRole.CANDIDATE),
+  [param('jobId').isMongoId().withMessage('Valid job ID is required')],
+  validate,
+  applicationController.checkApplicationStatus
+);
+
+/**
+ * @swagger
  * /api/v1/applications:
  *   get:
  *     summary: Get all applications (filtered by role)

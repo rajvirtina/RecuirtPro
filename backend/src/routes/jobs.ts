@@ -3,11 +3,12 @@ import { body, param } from 'express-validator';
 import {
   getJobs,
   getJobById,
+  getJobsByCompanySlug,
   createJob,
   updateJob,
   deleteJob,
 } from '../controllers/jobController';
-import { protect, authorize } from '../middleware/auth';
+import { protect, authorize, optionalAuth } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
 
@@ -16,17 +17,25 @@ const router = Router();
 /**
  * @route   GET /api/v1/jobs
  * @desc    Get all jobs with filters
+ * @access  Public (optionalAuth - filters by company if authenticated HR/employer)
+ */
+router.get('/', optionalAuth, getJobs);
+
+/**
+ * @route   GET /api/v1/jobs/company/:slug
+ * @desc    Get jobs by company slug
  * @access  Public
  */
-router.get('/', getJobs);
+router.get('/company/:slug', optionalAuth, getJobsByCompanySlug);
 
 /**
  * @route   GET /api/v1/jobs/:id
  * @desc    Get job by ID
- * @access  Public
+ * @access  Public (optionalAuth - checks company authorization for HR/employer)
  */
 router.get(
   '/:id',
+  optionalAuth,
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,
   getJobById

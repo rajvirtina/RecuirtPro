@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ICompanyDocument extends Document {
   name: string;
+  slug: string;
   email: string;
   phone?: string;
   website?: string;
@@ -34,6 +35,14 @@ const companySchema = new Schema<ICompanyDocument>(
       type: String,
       required: [true, 'Company name is required'],
       trim: true,
+    },
+    slug: {
+      type: String,
+      required: [true, 'Company slug is required'],
+      unique: true,
+      lowercase: true,
+      trim: true,
+      match: [/^[a-z0-9-]+$/, 'Slug can only contain lowercase letters, numbers, and hyphens'],
     },
     email: {
       type: String,
@@ -102,5 +111,6 @@ const companySchema = new Schema<ICompanyDocument>(
 );
 
 companySchema.index({ name: 1, deletedAt: 1 });
+companySchema.index({ slug: 1, deletedAt: 1 });
 
 export const Company = mongoose.model<ICompanyDocument>('Company', companySchema);

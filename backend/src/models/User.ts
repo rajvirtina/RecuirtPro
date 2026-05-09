@@ -167,6 +167,7 @@ userSchema.methods.generateAuthToken = function (): string {
       id: this._id,
       email: this.email,
       role: this.role,
+      companyId: this.companyId,
     },
     config.jwt.secret,
     { expiresIn: config.jwt.expire } as any
@@ -178,6 +179,7 @@ userSchema.methods.generateRefreshToken = function (): string {
   return jwt.sign(
     { 
       id: this._id,
+      companyId: this.companyId,
       type: 'refresh',
     },
     config.jwt.refreshSecret,
@@ -230,3 +232,4 @@ userSchema.methods.softDelete = function () {
 };
 
 export const User = mongoose.model<IUserDocument, IUserModel>('User', userSchema);
+
