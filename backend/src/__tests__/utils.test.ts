@@ -1,5 +1,5 @@
-import { clampPagination } from '../../utils/response';
-import { encrypt, decrypt } from '../../utils/encryption';
+import { clampPagination } from '../utils/response';
+import { encrypt, decrypt } from '../utils/encryption';
 
 describe('clampPagination', () => {
   it('returns defaults for NaN inputs', () => {

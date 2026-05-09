@@ -4,6 +4,7 @@ import { AuthRequest, ProctoringEventType, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import { emitViolation, emitInterviewTermination, emitWarning } from '../socket/socketController';
+import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
  * @desc    Verify system readiness for proctored interview
@@ -259,13 +260,9 @@ export const getProctoringEvents = async (
       return sendError(res, 'Interview not found', 404);
     }
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
-
-    if (!isAuthorized) {
+    // Authorization check — tenant isolation (NEW-05)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && interview.companyId?.toString() !== tenantId) {
       return sendError(res, 'Not authorized to view proctoring events', 403);
     }
 
@@ -318,13 +315,9 @@ export const reviewProctoringEvent = async (
 
     const interview = event.interviewId as any;
 
-    // Authorization check
-    const isAuthorized =
-      req.user?.role === 'admin' ||
-      ((req.user?.role === 'employer' || req.user?.role === 'hr') &&
-        interview.companyId?.toString() === req.user?.companyId);
-
-    if (!isAuthorized) {
+    // Authorization check — tenant isolation (NEW-05)
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && interview.companyId?.toString() !== tenantId) {
       return sendError(res, 'Not authorized to review this event', 403);
     }
 
