@@ -153,22 +153,22 @@ app.use('/api/v1/notifications', notificationRoutes);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 
-// Root route
-app.get('/', (_req, res) => {
-  res.json({
-    success: true,
-    message: 'RecuirtPro API',
-    version: '1.0.0',
-    documentation: '/api-docs',
-  });
-});
-
-// Serve frontend in production
+// Serve frontend in production, otherwise show API info
 if (config.env === 'production') {
   const frontendDist = path.join(__dirname, '../../frontend/dist');
   app.use(express.static(frontendDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+} else {
+  // Root route (dev only)
+  app.get('/', (_req, res) => {
+    res.json({
+      success: true,
+      message: 'RecuirtPro API',
+      version: '1.0.0',
+      documentation: '/api-docs',
+    });
   });
 }
 
