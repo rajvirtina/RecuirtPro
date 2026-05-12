@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
-import { User, RateLimitLog, Invitation } from '../models';
+import { User, RateLimitLog, Invitation, Company } from '../models';
 import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import { sendEmail } from '../services/emailService';
@@ -26,7 +26,7 @@ export const register = async (
       return;
     }
 
-    const { email, password, firstName, lastName, role, phoneNumber, invitationToken } = req.body;
+    const { email, password, firstName, lastName, role, phoneNumber, invitationToken, companySlug } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -36,7 +36,7 @@ export const register = async (
     }
 
     let userRole = 'candidate';
-    let companyId;
+    let companyId: string | undefined;
 
     // Handle invitation-based registration
     if (invitationToken) {
@@ -65,7 +65,7 @@ export const register = async (
       }
 
       userRole = invitation.role;
-      companyId = invitation.companyId;
+      companyId = invitation.companyId?.toString();
 
       // Mark invitation as accepted
       invitation.status = 'accepted';
@@ -78,6 +78,24 @@ export const register = async (
       if (role && restrictedRoles.includes(role.toLowerCase())) {
         sendError(res, 'This role requires an invitation from an administrator. Please contact support.', 403);
         return;
+      }
+
+      // Candidates must register under a specific company using its company code (slug)
+      if (!role || role === 'candidate') {
+        if (!companySlug) {
+          sendError(res, 'Company code is required to register as a candidate. Please enter your company\'s code.', 400);
+          return;
+        }
+        const company = await Company.findOne({
+          slug: companySlug.trim().toLowerCase(),
+          deletedAt: null,
+          status: 'active',
+        });
+        if (!company) {
+          sendError(res, 'Invalid company code. Please verify the code with your recruiter and try again.', 400);
+          return;
+        }
+        companyId = (company._id as any).toString();
       }
     }
 

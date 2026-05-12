@@ -4,6 +4,7 @@ import {
   getJobs,
   getJobById,
   getJobsByCompanySlug,
+  getCompanyInfoBySlug,
   createJob,
   updateJob,
   deleteJob,
@@ -20,6 +21,13 @@ const router = Router();
  * @access  Public (optionalAuth - filters by company if authenticated HR/employer)
  */
 router.get('/', optionalAuth, getJobs);
+
+/**
+ * @route   GET /api/v1/jobs/company/:slug/info
+ * @desc    Get public company info by slug (used for registration lookup)
+ * @access  Public
+ */
+router.get('/company/:slug/info', getCompanyInfoBySlug);
 
 /**
  * @route   GET /api/v1/jobs/company/:slug

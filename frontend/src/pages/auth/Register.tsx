@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../services/api';
@@ -14,17 +14,27 @@ interface InvitationData {
   expiresAt: string;
 }
 
+interface CompanyLookup {
+  name: string;
+  logo?: string;
+  slug: string;
+}
+
 export default function Register() {
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
   const [searchParams] = useSearchParams();
   const invitationToken = searchParams.get('token');
-  
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [invitationData, setInvitationData] = useState<InvitationData | null>(null);
   const [verifyingToken, setVerifyingToken] = useState(false);
-  
+  const [companyLookup, setCompanyLookup] = useState<CompanyLookup | null>(null);
+  const [companyLookupError, setCompanyLookupError] = useState('');
+  const [lookingUpCompany, setLookingUpCompany] = useState(false);
+  const companyLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -33,9 +43,9 @@ export default function Register() {
     confirmPassword: '',
     role: 'candidate',
     invitationToken: invitationToken || '',
+    companySlug: '',
   });
 
-  // Verify invitation token on mount
   useEffect(() => {
     if (invitationToken) {
       verifyInvitationToken();
@@ -48,9 +58,7 @@ export default function Register() {
       setError('');
       const response = await apiClient.get(`/invitations/verify/${invitationToken}`);
       const invitation = response.data.data;
-      
       setInvitationData(invitation);
-      // Pre-fill email from invitation
       setFormData(prev => ({ ...prev, email: invitation.email }));
     } catch (err: any) {
       setError(err.response?.data?.message || 'Invalid or expired invitation');
@@ -59,16 +67,44 @@ export default function Register() {
     }
   };
 
+  const lookupCompany = async (slug: string) => {
+    if (!slug.trim()) {
+      setCompanyLookup(null);
+      setCompanyLookupError('');
+      return;
+    }
+    try {
+      setLookingUpCompany(true);
+      setCompanyLookupError('');
+      setCompanyLookup(null);
+      const response = await apiClient.get(`/jobs/company/${slug.trim().toLowerCase()}/info`);
+      const company = response.data?.data;
+      setCompanyLookup({ name: company.name, logo: company.logo, slug: company.slug });
+    } catch (err: any) {
+      setCompanyLookupError('No company found with this code. Please check with your recruiter.');
+      setCompanyLookup(null);
+    } finally {
+      setLookingUpCompany(false);
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
     setError('');
+
+    if (name === 'companySlug') {
+      setCompanyLookup(null);
+      setCompanyLookupError('');
+      if (companyLookupTimer.current) clearTimeout(companyLookupTimer.current);
+      companyLookupTimer.current = setTimeout(() => lookupCompany(value), 600);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -79,7 +115,6 @@ export default function Register() {
       return;
     }
 
-    // Check password complexity
     const hasUppercase = /[A-Z]/.test(formData.password);
     const hasLowercase = /[a-z]/.test(formData.password);
     const hasNumber = /[0-9]/.test(formData.password);
@@ -88,6 +123,18 @@ export default function Register() {
     if (!hasUppercase || !hasLowercase || !hasNumber || !hasSpecial) {
       setError('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character');
       return;
+    }
+
+    // Require company code for candidates without invitation
+    if (!invitationToken && formData.role === 'candidate') {
+      if (!formData.companySlug.trim()) {
+        setError('Company code is required. Please enter the code provided by your recruiter.');
+        return;
+      }
+      if (companyLookupError || !companyLookup) {
+        setError('Please enter a valid company code before continuing.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -102,6 +149,9 @@ export default function Register() {
       setLoading(false);
     }
   };
+
+  const isCandidate = formData.role === 'candidate';
+  const showCompanyField = !invitationToken && isCandidate;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
@@ -229,6 +279,74 @@ export default function Register() {
                 <option value="candidate">Employee / Job Seeker</option>
                 <option value="employer">Employer / Company</option>
               </select>
+            </div>
+          )}
+
+          {/* Company Code field — only for candidates without invitation */}
+          {showCompanyField && (
+            <div>
+              <label htmlFor="companySlug" className="block text-sm font-medium text-gray-700">
+                Company Code <span className="text-red-500">*</span>
+              </label>
+              <div className="mt-1 relative">
+                <input
+                  id="companySlug"
+                  name="companySlug"
+                  type="text"
+                  required={showCompanyField}
+                  value={formData.companySlug}
+                  onChange={handleChange}
+                  className={`appearance-none relative block w-full px-3 py-2 border placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-2 sm:text-sm ${
+                    companyLookupError
+                      ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
+                      : companyLookup
+                      ? 'border-green-300 focus:ring-green-500 focus:border-green-500'
+                      : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
+                  }`}
+                  placeholder="e.g. ambiquest or techiworld"
+                />
+                {lookingUpCompany && (
+                  <div className="absolute inset-y-0 right-3 flex items-center">
+                    <svg className="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                )}
+                {!lookingUpCompany && companyLookup && (
+                  <div className="absolute inset-y-0 right-3 flex items-center">
+                    <CheckCircleIcon className="h-4 w-4 text-green-500" />
+                  </div>
+                )}
+                {!lookingUpCompany && companyLookupError && (
+                  <div className="absolute inset-y-0 right-3 flex items-center">
+                    <ExclamationTriangleIcon className="h-4 w-4 text-red-500" />
+                  </div>
+                )}
+              </div>
+
+              {/* Company found confirmation */}
+              {companyLookup && !lookingUpCompany && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                  {companyLookup.logo ? (
+                    <img src={companyLookup.logo} alt={companyLookup.name} className="w-5 h-5 rounded object-cover" />
+                  ) : (
+                    <div className="w-5 h-5 rounded bg-indigo-600 flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">{companyLookup.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                  )}
+                  <span>Registering under <strong>{companyLookup.name}</strong></span>
+                </div>
+              )}
+
+              {/* Company not found */}
+              {companyLookupError && !lookingUpCompany && (
+                <p className="mt-1 text-xs text-red-600">{companyLookupError}</p>
+              )}
+
+              <p className="mt-1 text-xs text-gray-500">
+                Enter the company code provided by your recruiter or HR team.
+              </p>
             </div>
           )}
 
