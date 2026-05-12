@@ -7,11 +7,14 @@ import { sendEmail } from '../services/emailService';
 // Queue Definitions
 // =============================================
 
-const redisConfig = {
+const redisConfig: any = {
   host: config.redis.host,
   port: config.redis.port,
   password: config.redis.password || undefined,
 };
+if ((config.redis as any).tls) {
+  redisConfig.tls = {};
+}
 
 export const emailQueue = new Bull('email', { redis: redisConfig });
 export const crossPortalQueue = new Bull('cross-portal-posting', { redis: redisConfig });
