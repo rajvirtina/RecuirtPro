@@ -19,6 +19,14 @@ if ((config.redis as any).tls) {
 export const emailQueue = new Bull('email', { redis: redisConfig });
 export const crossPortalQueue = new Bull('cross-portal-posting', { redis: redisConfig });
 
+// Prevent unhandled Redis connection errors from crashing the process
+emailQueue.on('error', (err) => {
+  console.error('[EmailQueue] Redis error:', err.message);
+});
+crossPortalQueue.on('error', (err) => {
+  console.error('[CrossPortalQueue] Redis error:', err.message);
+});
+
 // =============================================
 // Email Queue Processor
 // =============================================

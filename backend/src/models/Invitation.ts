@@ -59,7 +59,6 @@ const invitationSchema = new Schema<IInvitationDocument>(
 
 // Index for faster lookups
 invitationSchema.index({ email: 1, companyId: 1 });
-invitationSchema.index({ token: 1 });
 invitationSchema.index({ status: 1, expiresAt: 1 });
 
 export const Invitation = mongoose.model<IInvitationDocument>('Invitation', invitationSchema);
