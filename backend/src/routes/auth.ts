@@ -62,6 +62,7 @@ router.post(
     body('lastName').trim().notEmpty().withMessage('Last name is required'),
     body('role').optional().isIn(['candidate', 'hr', 'interviewer', 'employer', 'admin']),
     body('phoneNumber').optional().isMobilePhone('any'),
+    body('companySlug').optional().trim().toLowerCase(),
   ],
   authController.register
 );

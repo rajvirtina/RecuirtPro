@@ -107,8 +107,32 @@ export default function CandidateJobs() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Find Your Dream Job</h1>
-              <p className="text-sm text-gray-600 mt-1">{pagination.total} jobs available</p>
+              {jobs[0]?.companyId ? (
+                <div className="flex items-center gap-3">
+                  {jobs[0].companyId.logo ? (
+                    <img
+                      src={jobs[0].companyId.logo}
+                      alt={jobs[0].companyId.name}
+                      className="w-9 h-9 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                      <Building2 className="w-5 h-5 text-white" />
+                    </div>
+                  )}
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">
+                      Open Positions at {jobs[0].companyId.name}
+                    </h1>
+                    <p className="text-sm text-gray-600 mt-0.5">{pagination.total} job{pagination.total !== 1 ? 's' : ''} available</p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Open Positions</h1>
+                  <p className="text-sm text-gray-600 mt-1">{pagination.total} jobs available</p>
+                </div>
+              )}
             </div>
             <button
               onClick={() => navigate('/profile')}

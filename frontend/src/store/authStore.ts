@@ -10,7 +10,7 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: { firstName: string; lastName: string; email: string; password: string; role: string }) => Promise<void>;
+  register: (data: { firstName: string; lastName: string; email: string; password: string; role: string; companySlug?: string; invitationToken?: string }) => Promise<void>;
   logout: () => void;
   fetchCurrentUser: () => Promise<void>;
 }

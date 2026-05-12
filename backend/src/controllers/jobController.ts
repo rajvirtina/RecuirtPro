@@ -24,9 +24,10 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
       }
       logger.info(`[getJobs] Super admin - ${companySpecific === 'true' ? 'filtered' : 'global'} view`);
     } else if (userRole === 'candidate') {
-      // Candidates see all published jobs
-      query.status = JobStatus.PUBLISHED;
-      logger.info(`[getJobs] Candidate view - published jobs only`);
+      // Candidates without a company affiliation see no jobs —
+      // all candidates are required to register under a specific company.
+      query._id = null;
+      logger.info(`[getJobs] Candidate without companyId - returning empty result`);
     } else {
       logger.info(`[getJobs] ❌ NO company filter applied - Role: ${userRole}, HasCompanyId: ${!!req.user?.companyId}`);
     }
@@ -56,6 +57,18 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
     
     logger.info(`Found ${total} jobs matching query. Returning ${jobs.length} jobs for page ${pageNum}`);
     sendPaginatedResponse(res, jobs, pageNum, limitNum, total, "Jobs retrieved");
+  } catch (error) { next(error); }
+};
+
+export const getCompanyInfoBySlug = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { slug } = req.params;
+    const company = await Company.findOne({ slug: slug.toLowerCase(), deletedAt: null, status: 'active' });
+    if (!company) {
+      sendError(res, 'Company not found', 404);
+      return;
+    }
+    sendSuccess(res, { name: company.name, slug: company.slug, logo: company.logo }, 'Company found');
   } catch (error) { next(error); }
 };
 

@@ -136,6 +136,8 @@ export interface RegisterData {
   lastName: string;
   role?: UserRole;
   phone?: string;
+  companySlug?: string;
+  invitationToken?: string;
 }
 
 export interface AuthResponse {
