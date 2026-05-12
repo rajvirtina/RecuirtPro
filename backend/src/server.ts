@@ -29,6 +29,7 @@ const startServer = async () => {
     
     // Connect to database first
     await connectDB();
+    console.log('Database connected, setting up HTTP server...');
     
     // Create HTTP server
     const httpServer = createServer(app);
