@@ -8,6 +8,9 @@ import { closeQueues } from './services/queueProcessors';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error: Error) => {
+  console.error(`UNCAUGHT EXCEPTION! Shutting down...`);
+  console.error(`Error: ${error.message}`);
+  console.error(`Stack: ${error.stack}`);
   logger.error(`UNCAUGHT EXCEPTION! 💥 Shutting down...`);
   logger.error(`Error: ${error.message}`);
   logger.error(`Stack: ${error.stack}`);
@@ -19,6 +22,11 @@ let server: any;
 // Start server function
 const startServer = async () => {
   try {
+    console.log('Starting server...');
+    console.log('NODE_ENV:', config.env);
+    console.log('PORT:', config.port);
+    console.log('MONGODB_URI:', config.mongoUri ? config.mongoUri.substring(0, 30) + '...' : 'NOT SET');
+    
     // Connect to database first
     await connectDB();
     
@@ -39,6 +47,8 @@ const startServer = async () => {
       logger.info(`WebSocket server ready for connections`);
     });
   } catch (error: any) {
+    console.error(`Failed to start server: ${error.message}`);
+    console.error(`Stack: ${error.stack}`);
     logger.error(`Failed to start server: ${error.message}`);
     process.exit(1);
   }
@@ -46,6 +56,9 @@ const startServer = async () => {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (error: Error) => {
+  console.error(`UNHANDLED REJECTION! Shutting down...`);
+  console.error(`Error: ${error?.message}`);
+  console.error(`Stack: ${error?.stack}`);
   logger.error(`UNHANDLED REJECTION! 💥 Shutting down...`);
   logger.error(`Error: ${error.message}`);
   logger.error(`Stack: ${error.stack}`);
