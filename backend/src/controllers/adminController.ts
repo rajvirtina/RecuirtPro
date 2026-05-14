@@ -972,3 +972,97 @@ export const verifyCompanyEmail = async (
   }
 };
 
+/**
+ * @desc    Resend company email verification
+ * @route   POST /api/v1/admin/companies/:id/resend-verification
+ * @access  Private/SuperAdmin
+ */
+export const resendCompanyVerification = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const company = await Company.findOne({ _id: id, deletedAt: null });
+    if (!company) {
+      sendError(res, 'Company not found', 404);
+      return;
+    }
+
+    if (company.emailVerified) {
+      sendError(res, 'Company email is already verified', 400);
+      return;
+    }
+
+    // Generate new verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    company.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    company.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await company.save();
+
+    const verificationUrl = `${config.frontendUrl}/verify-company-email?token=${verificationToken}`;
+    await sendEmail({
+      to: company.email,
+      subject: 'Verify Your Company Email - RecuirtPro',
+      template: 'emailVerification',
+      data: {
+        name: company.name,
+        verificationUrl,
+      },
+    });
+
+    logger.info(`Company verification email resent to: ${company.email}`);
+    sendSuccess(res, null, 'Verification email resent successfully');
+  } catch (error: any) {
+    logger.error('Error resending company verification:', error);
+    sendError(res, error.message || 'Failed to resend verification email', 500);
+  }
+};
+
+/**
+ * @desc    Resend user (admin/HR) email verification
+ * @route   POST /api/v1/admin/users/:id/resend-verification
+ * @access  Private/Admin
+ */
+export const resendUserVerification = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const user = await User.findOne({ _id: id, deletedAt: null });
+    if (!user) {
+      sendError(res, 'User not found', 404);
+      return;
+    }
+
+    if (user.emailVerified) {
+      sendError(res, 'User email is already verified', 400);
+      return;
+    }
+
+    // Generate new verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    const verificationUrl = `${config.frontendUrl}/verify-email?token=${verificationToken}`;
+    await sendEmail({
+      to: user.email,
+      subject: 'Verify Your Email - RecuirtPro',
+      template: 'emailVerification',
+      data: {
+        name: user.firstName,
+        verificationUrl,
+      },
+    });
+
+    logger.info(`User verification email resent to: ${user.email}`);
+    sendSuccess(res, null, 'Verification email resent successfully');
+  } catch (error: any) {
+    logger.error('Error resending user verification:', error);
+    sendError(res, error.message || 'Failed to resend verification email', 500);
+  }
+};
+
