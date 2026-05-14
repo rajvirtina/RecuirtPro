@@ -11,7 +11,8 @@ let emailQueue: Bull.Queue | null = null;
 let crossPortalQueue: Bull.Queue | null = null;
 
 function initQueues() {
-  if (!config.redis.host || config.redis.host === 'localhost') {
+  const redisHost = config.redis.host;
+  if (!redisHost || redisHost === 'localhost' || redisHost.trim() === '') {
     // Skip Redis if not configured or localhost (not available on shared hosting)
     console.log('[Queues] Redis not configured — emails will be sent synchronously');
     return;

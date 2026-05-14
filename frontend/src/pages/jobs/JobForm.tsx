@@ -2,199 +2,260 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
+import { Button } from '../../components/ui/Button';
+import { Input, Select, Textarea } from '../../components/ui/Input';
+import { Badge } from '../../components/ui/Badge';
+import toast from 'react-hot-toast';
+import { clsx } from 'clsx';
 
 interface JobFormData {
-  title: string;
-  description: string;
-  location: string;
-  jobType: string;
-  workMode: string;
+  title:         string;
+  description:   string;
+  location:      string;
+  jobType:       string;
+  workMode:      string;
   experienceMin: number;
   experienceMax: number;
-  salaryMin: number;
-  salaryMax: number;
-  currency: string;
-  skills: string[];
-  requirements: string[];
+  salaryMin:     number;
+  salaryMax:     number;
+  currency:      string;
+  skills:        string[];
+  requirements:  string[];
 }
 
+const EMPTY: JobFormData = {
+  title: '', description: '', location: '',
+  jobType: 'full_time', workMode: 'onsite',
+  experienceMin: 0, experienceMax: 5,
+  salaryMin: 0, salaryMax: 0, currency: 'INR',
+  skills: [], requirements: [],
+};
+
+type Step = 1 | 2 | 3;
+
+/* ── Step progress bar ──────────────────────────────────────────── */
+const STEPS = [
+  { n: 1 as Step, label: 'Basics',       desc: 'Title, location, type' },
+  { n: 2 as Step, label: 'Details',      desc: 'Description, salary, experience' },
+  { n: 3 as Step, label: 'Requirements', desc: 'Skills & requirements' },
+];
+
+function StepBar({ current }: { current: Step }) {
+  return (
+    <div className="flex items-center gap-0 mb-8">
+      {STEPS.map((s, i) => (
+        <div key={s.n} className="flex items-center flex-1">
+          {/* Step circle */}
+          <div className="flex flex-col items-center">
+            <div className={clsx(
+              'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all',
+              current === s.n  ? 'bg-primary-600 text-white ring-4 ring-primary-100' :
+              current > s.n    ? 'bg-success-500 text-white' :
+                                 'bg-neutral-100 text-neutral-400',
+            )}>
+              {current > s.n ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : s.n}
+            </div>
+            <div className="mt-1.5 hidden sm:block text-center">
+              <p className={clsx('text-xs font-semibold', current >= s.n ? 'text-neutral-900' : 'text-neutral-400')}>
+                {s.label}
+              </p>
+              <p className="text-[10px] text-neutral-400 leading-tight">{s.desc}</p>
+            </div>
+          </div>
+          {/* Connector */}
+          {i < STEPS.length - 1 && (
+            <div className={clsx(
+              'flex-1 h-px mx-2 mt-[-14px] sm:mt-[-28px] transition-colors',
+              current > s.n ? 'bg-success-400' : 'bg-neutral-200',
+            )} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Tag input ──────────────────────────────────────────────────── */
+function TagInput({
+  label, placeholder, tags, onAdd, onRemove, hint,
+}: {
+  label: string; placeholder: string; tags: string[];
+  onAdd: (v: string) => void; onRemove: (v: string) => void; hint?: string;
+}) {
+  const [val, setVal] = useState('');
+  const add = () => {
+    const t = val.trim();
+    if (t && !tags.includes(t)) { onAdd(t); setVal(''); }
+  };
+  return (
+    <div>
+      <label className="text-sm font-medium text-neutral-700 block mb-1.5">{label}</label>
+      <div className="flex gap-2">
+        <Input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder={placeholder}
+        />
+        <Button type="button" variant="secondary" size="md" onClick={add} className="shrink-0">
+          Add
+        </Button>
+      </div>
+      {hint && <p className="text-xs text-neutral-400 mt-1">{hint}</p>}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {tags.map((t) => (
+            <span key={t} className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">
+              {t}
+              <button
+                type="button"
+                onClick={() => onRemove(t)}
+                className="ml-0.5 hover:text-primary-900 leading-none"
+                aria-label={`Remove ${t}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Review row ──────────────────────────────────────────────────── */
+function ReviewRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-4 py-3 border-b border-neutral-100 last:border-0">
+      <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider w-32 shrink-0 pt-0.5">
+        {label}
+      </span>
+      <span className="text-sm text-neutral-800 flex-1">{value || <span className="text-neutral-400 italic">Not set</span>}</span>
+    </div>
+  );
+}
+
+/* ── Main wizard ────────────────────────────────────────────────── */
 export default function JobForm() {
-  const { id } = useParams();
+  const { id }   = useParams();
   const navigate = useNavigate();
-  const user = useAuthStore((state) => state.user);
-  const isEdit = !!id;
+  const user     = useAuthStore((state) => state.user);
+  const isEdit   = !!id;
 
+  const [step, setStep]       = useState<Step>(1);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [skillInput, setSkillInput] = useState('');
-  const [requirementInput, setRequirementInput] = useState('');
+  const [fetching, setFetching] = useState(false);
+  const [data, setData]       = useState<JobFormData>(EMPTY);
+  const [errors, setErrors]   = useState<Partial<Record<keyof JobFormData, string>>>({});
 
-  const [formData, setFormData] = useState<JobFormData>({
-    title: '',
-    description: '',
-    location: '',
-    jobType: 'full_time',
-    workMode: 'onsite',
-    experienceMin: 0,
-    experienceMax: 5,
-    salaryMin: 0,
-    salaryMax: 0,
-    currency: 'INR',
-    skills: [],
-    requirements: [],
-  });
-
+  /* ── Load for edit ─────────────────────────────────────────── */
   useEffect(() => {
-    if (isEdit) {
-      fetchJobDetails();
-    }
+    if (!isEdit) return;
+    setFetching(true);
+    apiClient.get(`/jobs/${id}`)
+      .then((res) => {
+        const j = res.data as any;
+        setData({
+          title:         j.title        || '',
+          description:   j.description  || '',
+          location:      j.location     || '',
+          jobType:       j.jobType      || 'full_time',
+          workMode:      j.workMode     || 'onsite',
+          experienceMin: j.experienceMin ?? 0,
+          experienceMax: j.experienceMax ?? 5,
+          salaryMin:     j.salaryMin    ?? 0,
+          salaryMax:     j.salaryMax    ?? 0,
+          currency:      j.currency     || 'INR',
+          skills:        j.skills       || [],
+          requirements:  j.requirements || [],
+        });
+      })
+      .catch(() => toast.error('Failed to load job details'))
+      .finally(() => setFetching(false));
   }, [id]);
 
-  const fetchJobDetails = async () => {
+  /* ── Per-step validation ────────────────────────────────────── */
+  function validateStep(s: Step): boolean {
+    const e: Partial<Record<keyof JobFormData, string>> = {};
+    if (s === 1) {
+      if (!data.title.trim())    e.title    = 'Job title is required';
+      if (!data.location.trim()) e.location = 'Location is required';
+    }
+    if (s === 2) {
+      if (!data.description.trim()) e.description = 'Description is required';
+      if (data.experienceMax < data.experienceMin)
+        e.experienceMax = 'Max experience must be ≥ min';
+      if (data.salaryMin > 0 && data.salaryMax > 0 && data.salaryMax < data.salaryMin)
+        e.salaryMax = 'Max salary must be ≥ min salary';
+    }
+    if (s === 3) {
+      if (data.skills.length === 0) e.skills = 'Add at least one skill';
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  function next() {
+    if (validateStep(step)) setStep((s) => Math.min(3, s + 1) as Step);
+  }
+  function back() {
+    setErrors({});
+    setStep((s) => Math.max(1, s - 1) as Step);
+  }
+
+  function set<K extends keyof JobFormData>(k: K, v: JobFormData[K]) {
+    setData((d) => ({ ...d, [k]: v }));
+    setErrors((e) => { const next = { ...e }; delete next[k]; return next; });
+  }
+
+  /* ── Submit ─────────────────────────────────────────────────── */
+  const handleSubmit = async () => {
+    if (!validateStep(3)) return;
     try {
       setLoading(true);
-      const response = await apiClient.get(`/jobs/${id}`);
-      const job = response.data as any;
-      setFormData({
-        title: job.title || '',
-        description: job.description || '',
-        location: job.location || '',
-        jobType: job.jobType || 'full_time',
-        workMode: job.workMode || 'onsite',
-        experienceMin: job.experienceMin || 0,
-        experienceMax: job.experienceMax || 5,
-        salaryMin: job.salaryMin || 0,
-        salaryMax: job.salaryMax || 0,
-        currency: job.currency || 'INR',
-        skills: job.skills || [],
-        requirements: job.requirements || [],
-      });
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to load job details',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const validateForm = (): string[] => {
-    const errors: string[] = [];
-    
-    if (!formData.title.trim()) {
-      errors.push('Job title is required');
-    }
-    
-    if (!formData.description.trim()) {
-      errors.push('Job description is required');
-    }
-    
-    if (!formData.location.trim()) {
-      errors.push('Location is required');
-    }
-    
-    if (formData.skills.length === 0) {
-      errors.push('At least one skill is required');
-    }
-    
-    if (formData.experienceMin < 0) {
-      errors.push('Minimum experience cannot be negative');
-    }
-    
-    if (formData.experienceMax < formData.experienceMin) {
-      errors.push('Maximum experience must be greater than or equal to minimum experience');
-    }
-    
-    if (formData.salaryMin > 0 && formData.salaryMax > 0 && formData.salaryMax < formData.salaryMin) {
-      errors.push('Maximum salary must be greater than or equal to minimum salary');
-    }
-    
-    return errors;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Validate form
-    const validationErrors = validateForm();
-    if (validationErrors.length > 0) {
-      setMessage({ 
-        type: 'error', 
-        text: validationErrors.join(', ')
-      });
-      // Scroll to top to show error
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setMessage({ type: '', text: '' });
-
       if (isEdit) {
-        await apiClient.put(`/jobs/${id}`, formData);
-        setMessage({ type: 'success', text: 'Job updated successfully!' });
+        await apiClient.put(`/jobs/${id}`, data);
+        toast.success('Job updated successfully!');
       } else {
-        await apiClient.post('/jobs', formData);
-        setMessage({ type: 'success', text: 'Job posted successfully!' });
+        await apiClient.post('/jobs', data);
+        toast.success('Job posted successfully!');
       }
-
-      setTimeout(() => navigate('/jobs'), 1500);
-    } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 
-                          error.response?.data?.errors?.join(', ') ||
-                          `Failed to ${isEdit ? 'update' : 'create'} job`;
-      setMessage({
-        type: 'error',
-        text: errorMessage,
-      });
-      // Scroll to top to show error
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      navigate('/jobs');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'post'} job`);
     } finally {
       setLoading(false);
     }
   };
 
-  const addSkill = () => {
-    if (skillInput.trim() && !formData.skills.includes(skillInput.trim())) {
-      setFormData({ ...formData, skills: [...formData.skills, skillInput.trim()] });
-      setSkillInput('');
-    }
-  };
-
-  const removeSkill = (skill: string) => {
-    setFormData({ ...formData, skills: formData.skills.filter((s) => s !== skill) });
-  };
-
-  const addRequirement = () => {
-    if (requirementInput.trim()) {
-      setFormData({ ...formData, requirements: [...formData.requirements, requirementInput.trim()] });
-      setRequirementInput('');
-    }
-  };
-
-  const removeRequirement = (index: number) => {
-    setFormData({
-      ...formData,
-      requirements: formData.requirements.filter((_, i) => i !== index),
-    });
-  };
-
-  if (user?.role !== 'employer' && user?.role !== 'admin' && user?.role !== 'hr') {
+  /* ── Access guard ───────────────────────────────────────────── */
+  if (!['employer', 'admin', 'hr'].includes(user?.role ?? '')) {
     return (
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Access Denied</h2>
-        <p className="mt-2 text-gray-600">Only employers and HR can post jobs.</p>
+      <div className="p-6 text-center">
+        <h2 className="text-h2 text-neutral-900 mb-2">Access Denied</h2>
+        <p className="text-neutral-500">Only employers and HR can post jobs.</p>
+      </div>
+    );
+  }
+
+  if (fetching) {
+    return (
+      <div className="p-6 flex justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+      {/* Breadcrumb */}
       <button
         onClick={() => navigate('/jobs')}
-        className="mb-6 text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+        className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary-600 transition-colors mb-6"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -202,286 +263,248 @@ export default function JobForm() {
         Back to Jobs
       </button>
 
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">
-        {isEdit ? 'Edit Job' : 'Post New Job'}
-      </h1>
+      <h1 className="page-title mb-6">{isEdit ? 'Edit Job' : 'Post New Job'}</h1>
 
-      {message.text && (
-        <div
-          className={`mb-6 p-4 rounded-lg border-2 ${
-            message.type === 'success' 
-              ? 'bg-green-50 text-green-800 border-green-200' 
-              : 'bg-red-50 text-red-800 border-red-200'
-          }`}
-        >
-          <div className="flex items-start gap-2">
-            {message.type === 'success' ? (
-              <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
-            <div className="flex-1">
-              <p className="font-semibold mb-1">
-                {message.type === 'success' ? 'Success!' : 'Please fix the following errors:'}
-              </p>
-              {message.type === 'error' && message.text.includes(',') ? (
-                <ul className="list-disc list-inside space-y-1 text-sm">
-                  {message.text.split(',').map((error, index) => (
-                    <li key={index}>{error.trim()}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm">{message.text}</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Progress stepper */}
+      <StepBar current={step} />
 
-      <form onSubmit={handleSubmit} className="bg-white shadow rounded-lg p-6 space-y-6">
-        {/* Job Title */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Job Title <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            placeholder="e.g., Senior Full Stack Developer"
-            required
-          />
-        </div>
-
-        {/* Job Description */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Job Description <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            rows={6}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            placeholder="Describe the role, responsibilities, and what you're looking for..."
-            required
-          />
-        </div>
-
-        {/* Location */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* ── Step 1: Basics ──────────────────────────────────────── */}
+      {step === 1 && (
+        <div className="card card-md space-y-5 animate-fade-in">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Location <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="e.g., Bangalore, India"
+            <h2 className="text-h3 mb-0.5">Basic Information</h2>
+            <p className="text-sm text-neutral-500">What role are you hiring for?</p>
+          </div>
+
+          <Input
+            label="Job Title"
+            required
+            value={data.title}
+            onChange={(e) => set('title', e.target.value)}
+            placeholder="e.g. Senior Full Stack Developer"
+            error={errors.title}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Location"
               required
+              value={data.location}
+              onChange={(e) => set('location', e.target.value)}
+              placeholder="e.g. Bangalore, India"
+              error={errors.location}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Work Mode</label>
-            <select
-              value={formData.workMode}
-              onChange={(e) => setFormData({ ...formData, workMode: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            <Select
+              label="Work Mode"
+              value={data.workMode}
+              onChange={(e) => set('workMode', e.target.value)}
             >
               <option value="onsite">On-site</option>
               <option value="remote">Remote</option>
               <option value="hybrid">Hybrid</option>
-            </select>
+            </Select>
           </div>
-        </div>
 
-        {/* Job Type */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Job Type</label>
-          <select
-            value={formData.jobType}
-            onChange={(e) => setFormData({ ...formData, jobType: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          <Select
+            label="Employment Type"
+            value={data.jobType}
+            onChange={(e) => set('jobType', e.target.value)}
           >
             <option value="full_time">Full Time</option>
             <option value="part_time">Part Time</option>
             <option value="contract">Contract</option>
             <option value="internship">Internship</option>
             <option value="temporary">Temporary</option>
-          </select>
-        </div>
+          </Select>
 
-        {/* Experience Range */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Min Experience (years)
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={formData.experienceMin || ''}
-              onChange={(e) => setFormData({ ...formData, experienceMin: e.target.value === '' ? 0 : parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Max Experience (years)
-            </label>
-            <input
-              type="number"
-              min="0"
-              value={formData.experienceMax || ''}
-              onChange={(e) => setFormData({ ...formData, experienceMax: e.target.value === '' ? 0 : parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+          <div className="flex justify-end pt-2">
+            <Button variant="primary" onClick={next}>
+              Continue
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Button>
           </div>
         </div>
+      )}
 
-        {/* Salary Range */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* ── Step 2: Details ─────────────────────────────────────── */}
+      {step === 2 && (
+        <div className="card card-md space-y-5 animate-fade-in">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Min Salary</label>
-            <input
+            <h2 className="text-h3 mb-0.5">Role Details</h2>
+            <p className="text-sm text-neutral-500">Describe the position and compensation.</p>
+          </div>
+
+          <Textarea
+            label="Job Description"
+            required
+            value={data.description}
+            onChange={(e) => set('description', e.target.value)}
+            placeholder="Describe the role, responsibilities, and team environment…"
+            rows={6}
+            error={errors.description}
+          />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Min Experience (years)"
               type="number"
-              min="0"
-              value={formData.salaryMin || ''}
-              onChange={(e) => setFormData({ ...formData, salaryMin: e.target.value === '' ? 0 : parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              min={0}
+              value={data.experienceMin || ''}
+              onChange={(e) => set('experienceMin', e.target.value === '' ? 0 : parseInt(e.target.value))}
+            />
+            <Input
+              label="Max Experience (years)"
+              type="number"
+              min={0}
+              value={data.experienceMax || ''}
+              onChange={(e) => set('experienceMax', e.target.value === '' ? 0 : parseInt(e.target.value))}
+              error={errors.experienceMax}
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Max Salary</label>
-            <input
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              label="Min Salary"
               type="number"
-              min="0"
-              value={formData.salaryMax || ''}
-              onChange={(e) => setFormData({ ...formData, salaryMax: e.target.value === '' ? 0 : parseInt(e.target.value) })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              min={0}
+              value={data.salaryMin || ''}
+              onChange={(e) => set('salaryMin', e.target.value === '' ? 0 : parseInt(e.target.value))}
+              hint="Leave 0 to hide"
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-            <select
-              value={formData.currency}
-              onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            <Input
+              label="Max Salary"
+              type="number"
+              min={0}
+              value={data.salaryMax || ''}
+              onChange={(e) => set('salaryMax', e.target.value === '' ? 0 : parseInt(e.target.value))}
+              error={errors.salaryMax}
+            />
+            <Select
+              label="Currency"
+              value={data.currency}
+              onChange={(e) => set('currency', e.target.value)}
             >
               <option value="INR">INR</option>
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
               <option value="GBP">GBP</option>
-            </select>
+            </Select>
+          </div>
+
+          <div className="flex justify-between pt-2">
+            <Button variant="secondary" onClick={back}>← Back</Button>
+            <Button variant="primary" onClick={next}>
+              Continue
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Button>
           </div>
         </div>
+      )}
 
-        {/* Required Skills */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Required Skills <span className="text-red-500">*</span>
-            <span className="text-xs text-gray-500 ml-2">(At least one skill required)</span>
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={skillInput}
-              onChange={(e) => setSkillInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="e.g., React, Node.js, MongoDB (Press Enter to add)"
-            />
-            <button
-              type="button"
-              onClick={addSkill}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Add
-            </button>
-          </div>
-          {formData.skills.length === 0 && (
-            <p className="text-sm text-amber-600 mb-2">⚠️ Please add at least one required skill</p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {formData.skills.map((skill) => (
-              <span
-                key={skill}
-                className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm flex items-center gap-1"
-              >
-                {skill}
-                <button type="button" onClick={() => removeSkill(skill)} className="hover:text-indigo-900">
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
+      {/* ── Step 3: Requirements + Review ───────────────────────── */}
+      {step === 3 && (
+        <div className="space-y-5 animate-fade-in">
+          <div className="card card-md space-y-5">
+            <div>
+              <h2 className="text-h3 mb-0.5">Requirements</h2>
+              <p className="text-sm text-neutral-500">What skills and qualifications are needed?</p>
+            </div>
 
-        {/* Requirements */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Requirements</label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={requirementInput}
-              onChange={(e) => setRequirementInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addRequirement())}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              placeholder="Enter a requirement and press Enter"
-            />
-            <button
-              type="button"
-              onClick={addRequirement}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              Add
-            </button>
-          </div>
-          <ul className="space-y-2">
-            {formData.requirements.map((req, index) => (
-              <li key={index} className="flex items-start gap-2 text-sm text-gray-700">
-                <span className="flex-1">• {req}</span>
-                <button
-                  type="button"
-                  onClick={() => removeRequirement(index)}
-                  className="text-red-600 hover:text-red-800"
+            <div>
+              <TagInput
+                label="Required Skills *"
+                placeholder="e.g. React, Node.js, PostgreSQL — press Enter to add"
+                tags={data.skills}
+                onAdd={(v) => set('skills', [...data.skills, v])}
+                onRemove={(v) => set('skills', data.skills.filter((s) => s !== v))}
+                hint="Add at least one skill"
+              />
+              {errors.skills && (
+                <p className="text-xs text-error-600 mt-1" role="alert">{errors.skills}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-neutral-700 block mb-1.5">
+                Job Requirements
+                <span className="font-normal text-neutral-400 ml-1">(optional)</span>
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  id="req-input"
+                  placeholder="e.g. Bachelor's in Computer Science — press Enter to add"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const input = document.getElementById('req-input') as HTMLInputElement;
+                      const val = input.value.trim();
+                      if (val) { set('requirements', [...data.requirements, val]); input.value = ''; }
+                    }
+                  }}
+                />
+                <Button
+                  type="button" variant="secondary" size="md"
+                  onClick={() => {
+                    const input = document.getElementById('req-input') as HTMLInputElement;
+                    const val = input.value.trim();
+                    if (val) { set('requirements', [...data.requirements, val]); input.value = ''; }
+                  }}
+                  className="shrink-0"
                 >
-                  Remove
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+                  Add
+                </Button>
+              </div>
+              {data.requirements.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {data.requirements.map((r, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm text-neutral-700 group">
+                      <span className="text-neutral-300 mt-0.5">•</span>
+                      <span className="flex-1">{r}</span>
+                      <button
+                        type="button"
+                        onClick={() => set('requirements', data.requirements.filter((_, j) => j !== i))}
+                        className="text-neutral-300 hover:text-error-500 transition-colors opacity-0 group-hover:opacity-100 text-xs"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
 
-        {/* Submit Buttons */}
-        <div className="flex gap-3 pt-4">
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium transition-colors"
-          >
-            {loading ? 'Saving...' : isEdit ? 'Update Job' : 'Post Job'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/jobs')}
-            className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
-          >
-            Cancel
-          </button>
+          {/* Review summary */}
+          <div className="card card-md">
+            <h3 className="text-h3 mb-4">Review</h3>
+            <ReviewRow label="Title"      value={data.title} />
+            <ReviewRow label="Location"   value={`${data.location} · ${data.workMode}`} />
+            <ReviewRow label="Type"       value={data.jobType.replace('_', ' ')} />
+            <ReviewRow label="Experience" value={`${data.experienceMin}–${data.experienceMax} years`} />
+            <ReviewRow label="Salary"     value={
+              data.salaryMin || data.salaryMax
+                ? `${data.currency} ${(data.salaryMin/100000).toFixed(1)}L – ${(data.salaryMax/100000).toFixed(1)}L`
+                : 'Not specified'
+            } />
+            <ReviewRow label="Skills" value={
+              data.skills.length > 0
+                ? <div className="flex flex-wrap gap-1">{data.skills.map((s) => <Badge key={s} variant="purple">{s}</Badge>)}</div>
+                : undefined
+            } />
+          </div>
+
+          <div className="flex justify-between">
+            <Button variant="secondary" onClick={back}>← Back</Button>
+            <Button variant="primary" loading={loading} onClick={handleSubmit}>
+              {isEdit ? 'Save Changes' : 'Post Job'}
+            </Button>
+          </div>
         </div>
-      </form>
+      )}
     </div>
   );
 }
