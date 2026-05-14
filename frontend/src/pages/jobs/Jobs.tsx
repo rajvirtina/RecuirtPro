@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
@@ -8,7 +8,7 @@ import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { Input } from '../../components/ui/Input';
 import { EmptyJobs } from '../../components/ui/EmptyState';
 import { SkeletonCard } from '../../components/ui/Skeleton';
-import { useState } from 'react';
+import { useDebounce } from '../../hooks/useDebounce';
 
 function Icon({ d, className = 'w-4 h-4' }: { d: string; className?: string }) {
   return (
@@ -136,9 +136,12 @@ export default function Jobs() {
     }, { replace: true });
   }
 
-  const [jobs, setJobs]           = useState<Job[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [jobs, setJobs]             = useState<Job[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
+
+  // UX-005: Debounce the search so we don't filter on every keystroke
+  const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => { fetchJobs(1); }, [statusFilter]);
 
@@ -158,11 +161,12 @@ export default function Jobs() {
     }
   };
 
-  const displayed = search.trim()
+  // UX-005: filter against the debounced value, not raw keystroke value
+  const displayed = debouncedSearch.trim()
     ? jobs.filter((j) =>
-        j.title?.toLowerCase().includes(search.toLowerCase()) ||
-        j.location?.toLowerCase().includes(search.toLowerCase()) ||
-        j.skills?.some((s) => s.toLowerCase().includes(search.toLowerCase()))
+        j.title?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        j.location?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        j.skills?.some((s) => s.toLowerCase().includes(debouncedSearch.toLowerCase()))
       )
     : jobs;
 

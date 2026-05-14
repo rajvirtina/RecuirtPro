@@ -160,6 +160,13 @@ export const createJob = async (req: AuthRequest, res: Response, next: NextFunct
     jobData.createdBy = req.user?._id;
     jobData.status = JobStatus.DRAFT; // New jobs always start as draft
 
+    // VAL-003: Strip empty/blank skill strings before persisting
+    if (Array.isArray(jobData.skills)) {
+      jobData.skills = jobData.skills
+        .map((s: string) => (typeof s === 'string' ? s.trim() : s))
+        .filter((s: string) => s.length > 0);
+    }
+
     // Cross-field validation (EC-01/EC-02)
     if (jobData.experienceMin != null && jobData.experienceMax != null && jobData.experienceMin > jobData.experienceMax) {
       sendError(res, 'experienceMin cannot be greater than experienceMax', 400);
