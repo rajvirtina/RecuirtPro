@@ -185,6 +185,28 @@ export default function SuperAdminPanel() {
     }
   };
 
+  const resendCompanyVerification = async (companyId: string) => {
+    try {
+      setError('');
+      await apiClient.post(`/admin/companies/${companyId}/resend-verification`);
+      setSuccess('Verification email resent successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to resend verification email');
+    }
+  };
+
+  const resendAdminVerification = async (userId: string) => {
+    try {
+      setError('');
+      await apiClient.post(`/admin/users/${userId}/resend-verification`);
+      setSuccess('Verification email resent successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to resend verification email');
+    }
+  };
+
   const startEditCompany = () => {
     if (!selectedCompany) return;
     setCompanyEditForm({
@@ -410,11 +432,20 @@ export default function SuperAdminPanel() {
                         {format(new Date(company.createdAt), 'MMM dd, yyyy')}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); deleteCompany(company._id); }}
-                          className="text-red-600 hover:text-red-900 font-medium">
-                          Delete
-                        </button>
+                        <div className="flex gap-2">
+                          {!company.emailVerified && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); resendCompanyVerification(company._id); }}
+                              className="text-indigo-600 hover:text-indigo-900 font-medium">
+                              Resend
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteCompany(company._id); }}
+                            className="text-red-600 hover:text-red-900 font-medium">
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -557,11 +588,20 @@ export default function SuperAdminPanel() {
                       </td>
                       <td className="px-6 py-4 text-sm">
                         {admin.companyId ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteAdmin(admin._id); }}
-                            className="text-red-600 hover:text-red-900 font-medium">
-                            Delete
-                          </button>
+                          <div className="flex gap-2">
+                            {!admin.emailVerified && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); resendAdminVerification(admin._id); }}
+                                className="text-indigo-600 hover:text-indigo-900 font-medium">
+                                Resend
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); deleteAdmin(admin._id); }}
+                              className="text-red-600 hover:text-red-900 font-medium">
+                              Delete
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-gray-400 text-xs">Super Admin</span>
                         )}
@@ -596,7 +636,14 @@ export default function SuperAdminPanel() {
                   {selectedCompany.company.emailVerified ? (
                     <span className="px-3 py-1 text-sm font-semibold rounded-full bg-green-100 text-green-800">Email Verified</span>
                   ) : (
-                    <span className="px-3 py-1 text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">Email Not Verified</span>
+                    <>
+                      <span className="px-3 py-1 text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">Email Not Verified</span>
+                      <button
+                        onClick={() => resendCompanyVerification(selectedCompany.company._id)}
+                        className="px-3 py-1 text-sm font-medium rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition">
+                        Resend Verification
+                      </button>
+                    </>
                   )}
                 </div>
 
@@ -787,7 +834,14 @@ export default function SuperAdminPanel() {
                   {selectedAdmin.emailVerified ? (
                     <span className="px-3 py-1 text-sm font-semibold rounded-full bg-green-100 text-green-800">Email Verified</span>
                   ) : (
-                    <span className="px-3 py-1 text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">Not Verified</span>
+                    <>
+                      <span className="px-3 py-1 text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800">Not Verified</span>
+                      <button
+                        onClick={() => resendAdminVerification(selectedAdmin._id)}
+                        className="px-3 py-1 text-sm font-medium rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition">
+                        Resend Verification
+                      </button>
+                    </>
                   )}
                 </div>
 

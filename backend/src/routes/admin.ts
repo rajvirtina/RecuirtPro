@@ -18,12 +18,21 @@ import {
   updateCompany,
   deleteCompany,
   verifyCompanyEmail,
+  resendCompanyVerification,
+  resendUserVerification,
 } from '../controllers/adminController';
 import { body } from 'express-validator';
 
 const router = express.Router();
 
-// Protect all admin routes
+/**
+ * @route   POST /api/v1/admin/companies/verify-email
+ * @desc    Verify company email token
+ * @access  Public (no auth required - accessed via email link)
+ */
+router.post('/companies/verify-email', verifyCompanyEmail);
+
+// Protect all remaining admin routes
 router.use(protect);
 router.use(authorize(UserRole.ADMIN));
 
@@ -130,11 +139,11 @@ router.put(
 );
 
 /**
- * @route   POST /api/v1/admin/companies/verify-email
- * @desc    Verify company email token
+ * @route   POST /api/v1/admin/companies/:id/resend-verification
+ * @desc    Resend company email verification
  * @access  Private/Admin
  */
-router.post('/companies/verify-email', verifyCompanyEmail);
+router.post('/companies/:id/resend-verification', resendCompanyVerification);
 
 /**
  * @route   DELETE /api/v1/admin/companies/:id
@@ -352,5 +361,12 @@ router.delete('/users/:id', async (req, res) => {
     sendError(res, error.message || 'Failed to delete user', 500);
   }
 });
+
+/**
+ * @route   POST /api/v1/admin/users/:id/resend-verification
+ * @desc    Resend user email verification
+ * @access  Private/Admin
+ */
+router.post('/users/:id/resend-verification', resendUserVerification);
 
 export default router;
