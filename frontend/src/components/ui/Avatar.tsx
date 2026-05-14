@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { clsx } from 'clsx';
 
 type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -22,26 +23,29 @@ const colors = [
   'bg-warning-600', 'bg-error-600', 'bg-purple-600',
 ];
 
+/* Full-name hash: much better distribution than single charCodeAt(0) */
 function getColor(name = '') {
-  const idx = (name.charCodeAt(0) || 0) % colors.length;
+  const idx = name.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % colors.length;
   return colors[idx];
 }
 
 function getInitials(name = '') {
-  const parts = name.trim().split(' ');
+  const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
+  return (name.slice(0, 2) || '?').toUpperCase();
 }
 
 export function Avatar({ name = '', src, size = 'md', className }: AvatarProps) {
-  const sizeClass = sizeMap[size];
+  const [imgError, setImgError] = useState(false);
+  const sizeClass  = sizeMap[size];
   const colorClass = getColor(name);
 
-  if (src) {
+  if (src && !imgError) {
     return (
       <img
         src={src}
         alt={name}
+        onError={() => setImgError(true)}
         className={clsx('rounded-full object-cover shrink-0', sizeClass, className)}
       />
     );
@@ -49,13 +53,14 @@ export function Avatar({ name = '', src, size = 'md', className }: AvatarProps) 
 
   return (
     <div
+      role="img"
+      aria-label={name || 'User avatar'}
       className={clsx(
         'rounded-full flex items-center justify-center shrink-0 font-semibold text-white select-none',
         sizeClass,
         colorClass,
         className,
       )}
-      aria-label={name}
     >
       {getInitials(name)}
     </div>

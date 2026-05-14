@@ -37,13 +37,14 @@ export default function AuthLayout() {
           {/* Stats */}
           <div className="mt-10 grid grid-cols-3 gap-6">
             {[
-              { value: '10k+', label: 'Candidates placed' },
-              { value: '98%',  label: 'Employer satisfaction' },
-              { value: '3×',   label: 'Faster time-to-hire' },
+              { value: '10k+', label: 'Candidates placed', sub: 'Industry avg.' },
+              { value: '98%',  label: 'Employer satisfaction', sub: 'Industry avg.' },
+              { value: '3×',   label: 'Faster time-to-hire', sub: 'vs. manual' },
             ].map((stat) => (
               <div key={stat.label}>
                 <p className="text-2xl font-semibold text-white">{stat.value}</p>
                 <p className="text-sm text-primary-200 mt-0.5">{stat.label}</p>
+                <p className="text-xs text-primary-300/70 mt-0.5">{stat.sub}</p>
               </div>
             ))}
           </div>
@@ -51,7 +52,7 @@ export default function AuthLayout() {
 
         {/* Footer */}
         <div className="relative z-10">
-          <p className="text-primary-300 text-sm">© 2025 RecuirtPro. All rights reserved.</p>
+          <p className="text-primary-300 text-sm">© {new Date().getFullYear()} RecuirtPro. All rights reserved.</p>
         </div>
       </div>
 

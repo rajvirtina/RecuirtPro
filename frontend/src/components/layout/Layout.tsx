@@ -78,6 +78,14 @@ function HRIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function AnalyticsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={clsx('w-5 h-5', className)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+    </svg>
+  );
+}
 function OfferIcon({ className }: { className?: string }) {
   return (
     <svg className={clsx('w-5 h-5', className)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -140,24 +148,26 @@ const superAdminNav: NavItem[] = [
 ];
 
 const companyAdminNav: NavItem[] = [
-  { name: 'Admin Portal',  href: '/admin',              Icon: AdminIcon,    group: 'admin' },
-  { name: 'HR Management', href: '/admin/hr-management',Icon: HRIcon,       group: 'admin' },
-  { name: 'Jobs',          href: '/jobs',               Icon: JobsIcon,     group: 'main' },
-  { name: 'Applications',  href: '/applications',       Icon: AppsIcon,     group: 'main' },
-  { name: 'Interviews',    href: '/interviews',         Icon: InterviewIcon,group: 'main' },
-  { name: 'Proctoring',    href: '/proctoring/monitor', Icon: ProctoringIcon,group: 'main' },
-  { name: 'Profile',       href: '/profile',            Icon: ProfileIcon,  group: 'account' },
+  { name: 'Admin Portal',  href: '/admin',              Icon: AdminIcon,     group: 'admin' },
+  { name: 'HR Management', href: '/admin/hr-management',Icon: HRIcon,        group: 'admin' },
+  { name: 'Jobs',          href: '/jobs',               Icon: JobsIcon,      group: 'main' },
+  { name: 'Applications',  href: '/applications',       Icon: AppsIcon,      group: 'main' },
+  { name: 'Interviews',    href: '/interviews',         Icon: InterviewIcon, group: 'main' },
+  { name: 'Analytics',     href: '/analytics',          Icon: AnalyticsIcon, group: 'main' },
+  { name: 'Proctoring',    href: '/proctoring/monitor', Icon: ProctoringIcon,group: 'tools' },
+  { name: 'Profile',       href: '/profile',            Icon: ProfileIcon,   group: 'account' },
 ];
 
 const defaultNav: NavItem[] = [
-  { name: 'Dashboard',    href: '/dashboard',   Icon: DashboardIcon, group: 'main' },
-  { name: 'Jobs',         href: '/jobs',        Icon: JobsIcon,      group: 'main' },
-  { name: 'Applications', href: '/applications',Icon: AppsIcon,      group: 'main' },
-  { name: 'Interviews',   href: '/interviews',  Icon: InterviewIcon, group: 'main' },
-  { name: 'Offers',       href: '/offers',      Icon: OfferIcon,     group: 'main' },
-  { name: 'Questions',    href: '/questions',   Icon: QuestionIcon,  group: 'tools' },
-  { name: 'Sourcing',     href: '/sourcing',    Icon: SourcingIcon,  group: 'tools' },
-  { name: 'Profile',      href: '/profile',     Icon: ProfileIcon,   group: 'account' },
+  { name: 'Dashboard',    href: '/dashboard',   Icon: DashboardIcon,  group: 'main' },
+  { name: 'Jobs',         href: '/jobs',        Icon: JobsIcon,       group: 'main' },
+  { name: 'Applications', href: '/applications',Icon: AppsIcon,       group: 'main' },
+  { name: 'Interviews',   href: '/interviews',  Icon: InterviewIcon,  group: 'main' },
+  { name: 'Offers',       href: '/offers',      Icon: OfferIcon,      group: 'main' },
+  { name: 'Analytics',    href: '/analytics',   Icon: AnalyticsIcon,  group: 'main' },
+  { name: 'Questions',    href: '/questions',   Icon: QuestionIcon,   group: 'tools' },
+  { name: 'Sourcing',     href: '/sourcing',    Icon: SourcingIcon,   group: 'tools' },
+  { name: 'Profile',      href: '/profile',     Icon: ProfileIcon,    group: 'account' },
 ];
 
 /* ── Sidebar nav item component ─────────────────────────────────────── */
@@ -303,6 +313,9 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex bg-neutral-50">
+      {/* ── Skip to main content (WCAG 2.4.1) ──────────────────────── */}
+      <a href="#main-content" className="skip-link">Skip to content</a>
+
       {/* ── Desktop sidebar ─────────────────────────────────────────── */}
       <aside
         className={clsx(
@@ -347,7 +360,7 @@ export default function Layout() {
           </div>
         </header>
 
-        <main className="min-h-screen">
+        <main id="main-content" className="min-h-screen">
           <Outlet />
         </main>
       </div>
