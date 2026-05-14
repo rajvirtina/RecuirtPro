@@ -2,21 +2,16 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
+import { StatusBadge } from '../../components/ui/Badge';
+import { Avatar } from '../../components/ui/Avatar';
+import { Button } from '../../components/ui/Button';
+import { SkeletonPage } from '../../components/ui/Skeleton';
+import toast from 'react-hot-toast';
 
 interface ApplicationDetail {
   _id: string;
-  job: {
-    _id: string;
-    title: string;
-    location?: string;
-  };
-  candidate?: {
-    _id?: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-  };
+  job: { _id: string; title: string; location?: string; };
+  candidate?: { _id?: string; firstName: string; lastName: string; email: string; phone?: string; };
   status: string;
   coverLetter?: string;
   resume?: string;
@@ -26,59 +21,198 @@ interface ApplicationDetail {
   appliedAt: string;
 }
 
-export default function ApplicationDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const user = useAuthStore((state) => state.user);
-  const [application, setApplication] = useState<ApplicationDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduling, setScheduling] = useState(false);
+type ActiveTab = 'overview' | 'resume' | 'notes';
 
-  useEffect(() => {
-    fetchApplicationDetail();
-  }, [id]);
+/* ── Score ring ─────────────────────────────────────────────────── */
+function ScoreRing({ value, label, color = 'stroke-primary-500' }: { value: number; label: string; color?: string }) {
+  const r = 22;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * Math.min(1, value / 100);
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg width="56" height="56" className="-rotate-90">
+        <circle cx="28" cy="28" r={r} fill="none" strokeWidth="4" className="stroke-neutral-100" />
+        <circle
+          cx="28" cy="28" r={r} fill="none" strokeWidth="4"
+          className={color}
+          strokeDasharray={`${dash} ${circ}`}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="text-xs text-neutral-900 font-semibold -mt-12 pointer-events-none">{value}%</span>
+      <span className="text-[10px] text-neutral-500 mt-7 text-center leading-tight">{label}</span>
+    </div>
+  );
+}
 
-  const fetchApplicationDetail = async () => {
+/* ── Schedule Interview Modal ─────────────────────────────────── */
+function ScheduleModal({
+  application,
+  user,
+  onClose,
+  onScheduled,
+}: {
+  application: ApplicationDetail;
+  user: any;
+  onClose: () => void;
+  onScheduled: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
     try {
       setLoading(true);
-      const response = await apiClient.get(`/applications/${id}`);
-      console.log('Application API response:', response);
-      
-      // Map API response to match interface
-      const apiData = response.data;
-      const mappedData: ApplicationDetail = {
-        _id: apiData._id,
-        job: {
-          _id: apiData.jobId?._id || apiData.jobId,
-          title: apiData.jobId?.title || 'N/A',
-          location: apiData.jobId?.location,
-        },
-        candidate: apiData.candidateId ? {
-          _id: apiData.candidateId._id,
-          firstName: apiData.candidateId.firstName,
-          lastName: apiData.candidateId.lastName,
-          email: apiData.candidateId.email,
-          phone: apiData.candidateId.phone,
-        } : undefined,
-        status: apiData.status,
-        coverLetter: apiData.coverLetter,
-        resume: apiData.resumeUrl,
-        skillMatchScore: apiData.skillMatchScore,
-        experienceMatchScore: apiData.experienceMatchScore,
-        overallScore: apiData.overallScore,
-        appliedAt: apiData.createdAt || apiData.appliedAt,
-      };
-      
-      setApplication(mappedData);
-    } catch (error: any) {
-      console.error('Failed to fetch application:', error);
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to load application details',
+      const scheduledTime = new Date(`${fd.get('date')}T${fd.get('time')}`).toISOString();
+      await apiClient.post('/interviews', {
+        applicationId: application._id,
+        jobId:         application.job._id,
+        candidateId:   application.candidate?._id,
+        scheduledTime,
+        duration:  parseInt(fd.get('duration') as string) || 60,
+        mode:      fd.get('mode'),
+        location:  fd.get('location') || '',
+        meetingLink: fd.get('meetingLink') || 'https://meet.google.com/' + Math.random().toString(36).substring(7),
+        round:     fd.get('round'),
+        panel:     [{ userId: user?._id, name: `${user?.firstName} ${user?.lastName}`, email: user?.email, role: user?.role }],
       });
+      toast.success('Interview scheduled!');
+      onScheduled();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to schedule interview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 animate-fade-in">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
+          <h2 className="text-h3">Schedule Interview</h2>
+          <button onClick={onClose} className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Info cards */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 bg-neutral-50 rounded-md">
+              <p className="text-xs text-neutral-500 mb-0.5">Candidate</p>
+              <p className="text-sm font-medium text-neutral-900">
+                {application.candidate?.firstName} {application.candidate?.lastName}
+              </p>
+            </div>
+            <div className="p-3 bg-neutral-50 rounded-md">
+              <p className="text-xs text-neutral-500 mb-0.5">Position</p>
+              <p className="text-sm font-medium text-neutral-900">{application.job?.title}</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="field-label">Round</label>
+            <select name="round" required className="field-input">
+              <option value="L1">Round 1 — Technical Screening</option>
+              <option value="L2">Round 2 — System Design</option>
+              <option value="L3">Round 3 — Behavioral</option>
+              <option value="final">Final Round</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="field-label">Date</label>
+              <input type="date" name="date" required min={new Date().toISOString().split('T')[0]} className="field-input" />
+            </div>
+            <div>
+              <label className="field-label">Time</label>
+              <input type="time" name="time" required className="field-input" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="field-label">Duration</label>
+              <select name="duration" required className="field-input">
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">60 minutes</option>
+                <option value="90">90 minutes</option>
+              </select>
+            </div>
+            <div>
+              <label className="field-label">Mode</label>
+              <select name="mode" required className="field-input">
+                <option value="online">Video Call</option>
+                <option value="in_person">In-Person</option>
+                <option value="phone">Phone</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="field-label">Location / Meeting Link</label>
+            <input type="text" name="location" placeholder="Office address or leave blank" className="field-input" />
+          </div>
+          <div>
+            <label className="field-label">Custom Meeting Link <span className="font-normal text-neutral-400">(optional)</span></label>
+            <input type="url" name="meetingLink" placeholder="https://meet.google.com/… (auto-generated if empty)" className="field-input" />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button type="submit" variant="primary" loading={loading} className="flex-1">
+              Schedule Interview
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main Component ───────────────────────────────────────────── */
+export default function ApplicationDetail() {
+  const { id }   = useParams();
+  const navigate = useNavigate();
+  const user     = useAuthStore((state) => state.user);
+  const isEmployer = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
+
+  const [app, setApp]                 = useState<ApplicationDetail | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [updating, setUpdating]       = useState(false);
+  const [activeTab, setActiveTab]     = useState<ActiveTab>('overview');
+  const [showSchedule, setShowSchedule] = useState(false);
+
+  useEffect(() => { fetchDetail(); }, [id]);
+
+  const fetchDetail = async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get(`/applications/${id}`);
+      const d   = res.data;
+      setApp({
+        _id:      d._id,
+        job:      { _id: d.jobId?._id || d.jobId, title: d.jobId?.title || 'N/A', location: d.jobId?.location },
+        candidate: d.candidateId ? {
+          _id: d.candidateId._id, firstName: d.candidateId.firstName,
+          lastName: d.candidateId.lastName, email: d.candidateId.email, phone: d.candidateId.phone,
+        } : undefined,
+        status:              d.status,
+        coverLetter:         d.coverLetter,
+        resume:              d.resumeUrl,
+        skillMatchScore:     d.skillMatchScore,
+        experienceMatchScore:d.experienceMatchScore,
+        overallScore:        d.overallScore,
+        appliedAt:           d.createdAt || d.appliedAt,
+      });
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to load application');
     } finally {
       setLoading(false);
     }
@@ -88,442 +222,297 @@ export default function ApplicationDetail() {
     try {
       setUpdating(true);
       await apiClient.put(`/applications/${id}/status`, { status: newStatus });
-      setMessage({ type: 'success', text: 'Status updated successfully!' });
-      await fetchApplicationDetail();
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to update status',
-      });
+      toast.success('Status updated');
+      await fetchDetail();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to update status');
     } finally {
       setUpdating(false);
     }
   };
 
-  const handleScheduleInterview = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    
-    try {
-      setScheduling(true);
-      const scheduledTime = new Date(`${formData.get('date')}T${formData.get('time')}`).toISOString();
-      
-      await apiClient.post('/interviews', {
-        applicationId: application?._id,
-        jobId: application?.job._id,
-        candidateId: application?.candidate?._id,
-        scheduledTime,
-        duration: parseInt(formData.get('duration') as string) || 60,
-        mode: formData.get('mode'),
-        location: formData.get('location') || '',
-        meetingLink: formData.get('meetingLink') || 'https://meet.google.com/' + Math.random().toString(36).substring(7),
-        round: formData.get('round'),
-        panel: [{
-          userId: user?._id,
-          name: `${user?.firstName} ${user?.lastName}`,
-          email: user?.email,
-          role: user?.role,
-        }],
-      });
-      
-      setMessage({ type: 'success', text: 'Interview scheduled successfully! View it in the Interviews section.' });
-      setShowScheduleModal(false);
-      
-      // Update application status to interview_scheduled
-      await updateStatus('interview_scheduled');
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to schedule interview',
-      });
-    } finally {
-      setScheduling(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      applied: 'bg-blue-100 text-blue-800',
-      shortlisted: 'bg-yellow-100 text-yellow-800',
-      interview_scheduled: 'bg-purple-100 text-purple-800',
-      in_progress: 'bg-indigo-100 text-indigo-800',
-      selected: 'bg-green-100 text-green-800',
-      hired: 'bg-green-200 text-green-900',
-      offer_released: 'bg-teal-100 text-teal-800',
-      rejected: 'bg-red-100 text-red-800',
-      on_hold: 'bg-gray-100 text-gray-800',
-      withdrawn: 'bg-gray-200 text-gray-700',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
-  };
-
-  if (loading) {
+  if (loading) return <SkeletonPage />;
+  if (!app) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="p-6 text-center">
+        <h2 className="text-h2 text-neutral-900 mb-4">Application not found</h2>
+        <Button variant="secondary" onClick={() => navigate('/applications')}>← Back</Button>
       </div>
     );
   }
 
-  if (!application) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Application not found</h2>
-        <button
-          onClick={() => navigate('/applications')}
-          className="mt-4 text-indigo-600 hover:text-indigo-800"
-        >
-          ← Back to Applications
-        </button>
-      </div>
-    );
-  }
+  const candidateName = app.candidate
+    ? `${app.candidate.firstName} ${app.candidate.lastName}`
+    : 'Candidate';
 
-  const isEmployer = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
+  const STATUSES = ['shortlisted','interview_scheduled','in_progress','selected','hired','offer_released','rejected','on_hold'];
+  const tabs: { id: ActiveTab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'resume',   label: 'Resume' },
+    { id: 'notes',    label: 'Notes' },
+  ];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="p-6 max-w-6xl mx-auto space-y-6 animate-fade-in">
+      {/* Breadcrumb */}
       <button
         onClick={() => navigate('/applications')}
-        className="mb-6 text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+        className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-primary-600 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
-        Back to Applications
+        Applications
       </button>
 
-      {message.text && (
-        <div
-          className={`mb-6 p-4 rounded-lg ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span>{message.text}</span>
-            {message.type === 'success' && message.text.includes('Interview scheduled') && (
-              <Link
-                to="/interviews"
-                className="ml-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors"
-              >
-                View Interviews
-              </Link>
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* ── Left sidebar ──────────────────────────────────── */}
+        <aside className="w-full lg:w-72 space-y-4 shrink-0">
+          {/* Candidate card */}
+          <div className="card card-md text-center">
+            <Avatar name={isEmployer ? candidateName : app.job.title} size="xl" className="mx-auto mb-3" />
+            <h2 className="text-h3 text-neutral-900">
+              {isEmployer ? candidateName : app.job.title}
+            </h2>
+            {isEmployer && app.candidate && (
+              <p className="text-sm text-neutral-500 mt-0.5">{app.candidate.email}</p>
             )}
-          </div>
-        </div>
-      )}
+            {isEmployer && app.candidate?.phone && (
+              <p className="text-sm text-neutral-500">{app.candidate.phone}</p>
+            )}
 
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{application.job?.title}</h1>
-              {isEmployer && application.candidate && (
-                <div className="mt-2 space-y-1">
-                  <p className="text-lg text-gray-700">
-                    {application.candidate.firstName} {application.candidate.lastName}
-                  </p>
-                  <p className="text-sm text-gray-600">{application.candidate.email}</p>
-                  {application.candidate.phone && (
-                    <p className="text-sm text-gray-600">{application.candidate.phone}</p>
+            <div className="mt-3 flex justify-center">
+              <StatusBadge status={app.status} />
+            </div>
+
+            <div className="mt-4 text-left space-y-2 border-t border-neutral-100 pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-neutral-500">Position</span>
+                <span className="text-xs font-medium text-neutral-800 truncate max-w-[140px]">{app.job.title}</span>
+              </div>
+              {app.job.location && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-neutral-500">Location</span>
+                  <span className="text-xs font-medium text-neutral-800">{app.job.location}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-neutral-500">Applied</span>
+                <span className="text-xs font-medium text-neutral-800">
+                  {new Date(app.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Match scores */}
+          {isEmployer && (app.skillMatchScore !== undefined || app.overallScore !== undefined) && (
+            <div className="card card-md">
+              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4">Match Scores</h3>
+              <div className="flex justify-around">
+                {app.overallScore !== undefined && (
+                  <ScoreRing value={app.overallScore} label="Overall" color="stroke-primary-500" />
+                )}
+                {app.skillMatchScore !== undefined && (
+                  <ScoreRing value={app.skillMatchScore} label="Skills" color="stroke-info-500" />
+                )}
+                {app.experienceMatchScore !== undefined && (
+                  <ScoreRing value={app.experienceMatchScore} label="Experience" color="stroke-success-500" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Employer actions */}
+          {isEmployer && (
+            <div className="card card-md space-y-3">
+              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Actions</h3>
+
+              {['applied','shortlisted'].includes(app.status) && (
+                <Button
+                  variant="primary"
+                  className="w-full"
+                  onClick={() => setShowSchedule(true)}
+                  icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+                >
+                  Schedule Interview
+                </Button>
+              )}
+
+              <div>
+                <p className="text-xs text-neutral-500 mb-2">Update Stage</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => updateStatus(s)}
+                      disabled={updating || app.status === s}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-all ${
+                        app.status === s
+                          ? 'bg-primary-50 border-primary-200 text-primary-700 cursor-default'
+                          : 'bg-white border-neutral-200 text-neutral-600 hover:border-primary-300 hover:text-primary-600 disabled:opacity-40'
+                      }`}
+                    >
+                      {s.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* ── Main content ──────────────────────────────────── */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Tabs */}
+          <div className="card overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex border-b border-neutral-100">
+              {tabs.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`px-5 py-3.5 text-sm font-medium transition-all border-b-2 -mb-px ${
+                    activeTab === t.id
+                      ? 'border-primary-600 text-primary-700'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-700'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            <div className="p-6">
+              {/* Overview */}
+              {activeTab === 'overview' && (
+                <div className="space-y-6 animate-fade-in">
+                  {isEmployer && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-neutral-900 mb-2">Applicant Summary</h3>
+                      {app.candidate ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {[
+                            { label: 'Name',  value: `${app.candidate.firstName} ${app.candidate.lastName}` },
+                            { label: 'Email', value: app.candidate.email },
+                            { label: 'Phone', value: app.candidate.phone ?? '—' },
+                          ].map((f) => (
+                            <div key={f.label} className="p-3 bg-neutral-50 rounded-md">
+                              <p className="text-xs text-neutral-500">{f.label}</p>
+                              <p className="text-sm font-medium text-neutral-900 mt-0.5 truncate">{f.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-neutral-500">Candidate info not available</p>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
-              <p className="mt-2 text-sm text-gray-500">
-                Applied on {new Date(application.appliedAt).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </p>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(application.status)}`}>
-              {application.status.replace(/_/g, ' ').toUpperCase()}
-            </span>
-          </div>
-        </div>
 
-        {/* Scores (for employer) */}
-        {isEmployer && (application.skillMatchScore || application.experienceMatchScore || application.overallScore) && (
-          <div className="p-6 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Match Scores</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {application.skillMatchScore !== undefined && (
-                <div className="bg-white p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Skill Match</p>
-                  <p className="text-2xl font-bold text-indigo-600">{application.skillMatchScore}%</p>
-                </div>
-              )}
-              {application.experienceMatchScore !== undefined && (
-                <div className="bg-white p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Experience Match</p>
-                  <p className="text-2xl font-bold text-indigo-600">{application.experienceMatchScore}%</p>
-                </div>
-              )}
-              {application.overallScore !== undefined && (
-                <div className="bg-white p-4 rounded-lg">
-                  <p className="text-sm text-gray-600">Overall Score</p>
-                  <p className="text-2xl font-bold text-indigo-600">{application.overallScore}%</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Cover Letter */}
-        {application.coverLetter && (
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Cover Letter</h2>
-            <p className="text-gray-700 whitespace-pre-wrap">{application.coverLetter}</p>
-          </div>
-        )}
-
-        {/* Resume */}
-        {application.resume && (
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Resume</h2>
-            <div className="space-y-4">
-              {/* Download Button */}
-              <a
-                href={application.resume}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Download Resume
-              </a>
-
-              {/* Preview for employers */}
-              {isEmployer && (
-                <div className="border-2 border-gray-200 rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 p-3 border-b border-gray-200">
-                    <h3 className="text-sm font-medium text-gray-700">Resume Preview</h3>
-                  </div>
-                  {application.resume.toLowerCase().endsWith('.pdf') ? (
-                    <iframe
-                      src={application.resume}
-                      className="w-full h-96"
-                      title="Resume Preview"
-                    />
+                  {app.coverLetter ? (
+                    <div>
+                      <h3 className="text-sm font-semibold text-neutral-900 mb-2">Cover Letter</h3>
+                      <div className="p-4 bg-neutral-50 rounded-md text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
+                        {app.coverLetter}
+                      </div>
+                    </div>
                   ) : (
-                    <div className="p-4 bg-gray-50">
-                      <p className="text-sm text-gray-600">
-                        Preview not available for this file type. Please download to view.
-                      </p>
+                    <div className="p-4 bg-neutral-50 rounded-md text-center">
+                      <p className="text-sm text-neutral-400">No cover letter provided</p>
                     </div>
                   )}
                 </div>
               )}
+
+              {/* Resume tab */}
+              {activeTab === 'resume' && (
+                <div className="space-y-4 animate-fade-in">
+                  {app.resume ? (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <a
+                          href={app.resume}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          className="btn btn-md btn-primary"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download Resume
+                        </a>
+                        <a
+                          href={app.resume}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-md btn-secondary"
+                        >
+                          Open in new tab ↗
+                        </a>
+                      </div>
+
+                      {isEmployer && app.resume.toLowerCase().endsWith('.pdf') && (
+                        <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                          <div className="bg-neutral-50 px-4 py-2.5 border-b border-neutral-200 flex items-center gap-2">
+                            <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="text-xs text-neutral-500 font-medium">Resume Preview</span>
+                          </div>
+                          <iframe src={app.resume} className="w-full h-[500px]" title="Resume Preview" />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <svg className="w-10 h-10 text-neutral-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-sm font-medium text-neutral-500">No resume uploaded</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Notes tab */}
+              {activeTab === 'notes' && (
+                <div className="animate-fade-in">
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <svg className="w-10 h-10 text-neutral-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <p className="text-sm font-medium text-neutral-500">Notes coming soon</p>
+                    <p className="text-xs text-neutral-400 mt-1">Collaborative notes will appear here.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
 
-        {/* Actions (for employer) */}
-        {isEmployer && (
-          <div className="p-6 bg-gray-50">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Actions</h2>
-            
-            {/* Schedule Interview Button */}
-            {(application.status === 'shortlisted' || application.status === 'applied') && (
-              <button
-                onClick={() => setShowScheduleModal(true)}
-                className="mb-4 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors inline-flex items-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Schedule Interview
-              </button>
+          {/* View job link */}
+          <div className="flex gap-3">
+            <Link to={`/jobs/${app.job._id}`} className="btn btn-sm btn-secondary">
+              View Job Posting →
+            </Link>
+            {isEmployer && (
+              <Link to="/interviews" className="btn btn-sm btn-secondary">
+                View Interviews →
+              </Link>
             )}
-
-            <h3 className="text-md font-semibold text-gray-900 mb-3 mt-4">Update Status</h3>
-            <div className="flex flex-wrap gap-2">
-              {['shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'].map((status) => (
-                <button
-                  key={status}
-                  onClick={() => updateStatus(status)}
-                  disabled={updating || application.status === status}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    application.status === status
-                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'
-                  }`}
-                >
-                  {status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Schedule Interview Modal */}
-      {showScheduleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-900">Schedule Interview</h2>
-                <button
-                  onClick={() => setShowScheduleModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleScheduleInterview} className="p-6">
-              <div className="space-y-4">
-                {/* Candidate Info */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">Candidate</h3>
-                  <p className="text-gray-700">
-                    {application.candidate?.firstName} {application.candidate?.lastName}
-                  </p>
-                  <p className="text-sm text-gray-600">{application.candidate?.email}</p>
-                </div>
-
-                {/* Job Info */}
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold text-gray-900 mb-2">Position</h3>
-                  <p className="text-gray-700">{application.job?.title}</p>
-                </div>
-
-                {/* Interview Round */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Interview Round *
-                  </label>
-                  <select
-                    name="round"
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="L1">Round 1 - Technical Screening</option>
-                    <option value="L2">Round 2 - System Design</option>
-                    <option value="L3">Round 3 - Behavioral</option>
-                    <option value="final">Final Round</option>
-                  </select>
-                </div>
-
-                {/* Date & Time */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Date *
-                    </label>
-                    <input
-                      type="date"
-                      name="date"
-                      required
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Time *
-                    </label>
-                    <input
-                      type="time"
-                      name="time"
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Duration */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Duration (minutes) *
-                  </label>
-                  <select
-                    name="duration"
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="30">30 minutes</option>
-                    <option value="45">45 minutes</option>
-                    <option value="60">60 minutes</option>
-                    <option value="90">90 minutes</option>
-                  </select>
-                </div>
-
-                {/* Mode */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Interview Mode *
-                  </label>
-                  <select
-                    name="mode"
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  >
-                    <option value="online">Video Call</option>
-                    <option value="in_person">In-Person</option>
-                    <option value="phone">Phone Call</option>
-                  </select>
-                </div>
-
-                {/* Location (for in-person) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Location / Meeting Link
-                  </label>
-                  <input
-                    type="text"
-                    name="location"
-                    placeholder="Office address or leave blank for auto-generated link"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-
-                {/* Meeting Link */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Meeting Link (optional)
-                  </label>
-                  <input
-                    type="url"
-                    name="meetingLink"
-                    placeholder="https://meet.google.com/... (auto-generated if empty)"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Leave blank to auto-generate a meeting link
-                  </p>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="mt-6 flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowScheduleModal(false)}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={scheduling}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                >
-                  {scheduling ? 'Scheduling...' : 'Schedule Interview'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
+      </div>
+
+      {/* Schedule modal */}
+      {showSchedule && (
+        <ScheduleModal
+          application={app}
+          user={user}
+          onClose={() => setShowSchedule(false)}
+          onScheduled={fetchDetail}
+        />
       )}
     </div>
   );
