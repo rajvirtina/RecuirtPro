@@ -325,9 +325,10 @@ export default function Layout() {
       >
         {sidebarContent}
 
-        {/* Collapse toggle */}
+        {/* Collapse toggle — A11Y-001: aria-label on icon-only button */}
         <button
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-white border border-neutral-200 shadow-sm flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors"
         >
           <ChevronLeftIcon className={clsx('transition-transform duration-200', collapsed && 'rotate-180')} />
@@ -350,6 +351,7 @@ export default function Layout() {
         <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-neutral-200 px-4 h-14 flex items-center gap-3">
           <button
             onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation menu"  /* A11Y-001 */
             className="p-1.5 rounded-md text-neutral-600 hover:bg-neutral-100 transition-colors"
           >
             <MenuIcon />

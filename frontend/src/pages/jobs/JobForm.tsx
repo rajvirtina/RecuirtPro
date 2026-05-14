@@ -5,6 +5,7 @@ import apiClient from '../../services/api';
 import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
+import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
@@ -146,11 +147,16 @@ export default function JobForm() {
   const user     = useAuthStore((state) => state.user);
   const isEdit   = !!id;
 
-  const [step, setStep]       = useState<Step>(1);
-  const [loading, setLoading] = useState(false);
+  const [step, setStep]         = useState<Step>(1);
+  const [loading, setLoading]   = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [data, setData]       = useState<JobFormData>(EMPTY);
-  const [errors, setErrors]   = useState<Partial<Record<keyof JobFormData, string>>>({});
+  const [data, setData]         = useState<JobFormData>(EMPTY);
+  const [errors, setErrors]     = useState<Partial<Record<keyof JobFormData, string>>>({});
+  const [submitted, setSubmitted] = useState(false);
+
+  // UX-004: Warn before leaving with unsaved changes
+  const isDirty = JSON.stringify(data) !== JSON.stringify(EMPTY) && !submitted;
+  useUnsavedChanges(isDirty);
 
   /* ── Load for edit ─────────────────────────────────────────── */
   useEffect(() => {
@@ -224,6 +230,7 @@ export default function JobForm() {
         await apiClient.post('/jobs', data);
         toast.success('Job posted successfully!');
       }
+      setSubmitted(true);
       navigate('/jobs');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'post'} job`);

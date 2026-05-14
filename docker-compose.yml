@@ -28,28 +28,38 @@ services:
     networks:
       - recruitpro-network
 
-  # Uncomment when ready to run the backend in Docker
-  # backend:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   container_name: recruitpro-backend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "5001:5001"
-  #   environment:
-  #     NODE_ENV: production
-  #     MONGODB_URI: mongodb://admin:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/recruitpro?authSource=admin
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #   env_file:
-  #     - ./backend/.env.production
-  #   depends_on:
-  #     - mongodb
-  #     - redis
-  #     - llm-service
-  #   networks:
-  #     - recruitpro-network
+  # BUG-004: Backend service (Dockerfile is production-ready)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: recruitpro-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-5001}:5001"
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-admin}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/recruitpro?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PORT: 5001
+    env_file:
+      - ./backend/.env.production
+    depends_on:
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_started
+      llm-service:
+        condition: service_healthy
+    networks:
+      - recruitpro-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   llm-service:
     build:

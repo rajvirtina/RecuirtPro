@@ -13,12 +13,14 @@ const DANGEROUS_DEFAULTS = [
   'default-secret-change-me',
   'refresh-secret-change-me',
   'default-encryption-key-change-me',
+  'default-secret-key',        // BUG-003: LLM service default
 ];
 
 if (process.env.NODE_ENV === 'production') {
-  const jwtSecret = process.env.JWT_SECRET || '';
+  const jwtSecret     = process.env.JWT_SECRET || '';
   const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || '';
   const encryptionKey = process.env.ENCRYPTION_KEY || '';
+  const llmKey        = process.env.LLM_API_SECRET_KEY || '';
 
   if (!jwtSecret || DANGEROUS_DEFAULTS.includes(jwtSecret)) {
     throw new Error('FATAL: JWT_SECRET must be set to a secure value in production.');
@@ -28,6 +30,10 @@ if (process.env.NODE_ENV === 'production') {
   }
   if (!encryptionKey || DANGEROUS_DEFAULTS.includes(encryptionKey)) {
     throw new Error('FATAL: ENCRYPTION_KEY must be set to a secure value in production.');
+  }
+  // BUG-003: Reject default LLM secret in production
+  if (!llmKey || DANGEROUS_DEFAULTS.includes(llmKey)) {
+    throw new Error('FATAL: LLM_API_SECRET_KEY must be set to a secure value in production.');
   }
 }
 
@@ -43,12 +49,12 @@ export const config = {
   // Database
   mongoUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/recruitpro',
   
-  // JWT
+  // JWT — BUG-002: access token is short-lived (15m), refresh token stays long
   jwt: {
     secret: process.env.JWT_SECRET || 'default-secret-change-me',
-    expire: process.env.JWT_EXPIRE || '7d',
+    expire: process.env.JWT_EXPIRE || '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'refresh-secret-change-me',
-    refreshExpire: process.env.JWT_REFRESH_EXPIRE || '30d',
+    refreshExpire: process.env.JWT_REFRESH_EXPIRE || '7d',
   },
   
   // CORS — removed hardcoded internal IP (4.13)
