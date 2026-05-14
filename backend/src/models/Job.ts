@@ -84,14 +84,19 @@ const jobSchema = new Schema<IJobDocument>(
     responsibilities: {
       type: [String],
       validate: {
-        validator: (arr: string[]) => arr.every((s) => s.trim().length > 0 && s.length <= 500),
+        // Guard: pass when field is absent; only validate actual array entries
+        validator: (arr: unknown) =>
+          !Array.isArray(arr) ||
+          arr.every((s) => typeof s === 'string' && s.trim().length > 0 && s.length <= 500),
         message: 'Each responsibility must be non-empty and ≤ 500 characters',
       },
     },
     requirements: {
       type: [String],
       validate: {
-        validator: (arr: string[]) => arr.every((s) => s.trim().length > 0 && s.length <= 500),
+        validator: (arr: unknown) =>
+          !Array.isArray(arr) ||
+          arr.every((s) => typeof s === 'string' && s.trim().length > 0 && s.length <= 500),
         message: 'Each requirement must be non-empty and ≤ 500 characters',
       },
     },
@@ -99,13 +104,17 @@ const jobSchema = new Schema<IJobDocument>(
       type: [String],
       required: true,
       validate: [
-        // VAL-003: reject empty-string skills
+        // VAL-003: reject empty-string skills; guard against non-array (undefined/null)
         {
-          validator: (arr: string[]) => arr.every((s) => s.trim().length > 0),
+          validator: (arr: unknown) =>
+            !Array.isArray(arr) ||
+            arr.every((s) => typeof s === 'string' && s.trim().length > 0),
           message: 'Skills must not contain empty strings',
         },
         {
-          validator: (arr: string[]) => arr.every((s) => s.length <= 100),
+          validator: (arr: unknown) =>
+            !Array.isArray(arr) ||
+            arr.every((s) => typeof s === 'string' && s.length <= 100),
           message: 'Each skill name must be ≤ 100 characters',
         },
       ],
