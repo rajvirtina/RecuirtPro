@@ -14,6 +14,7 @@ import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import CompleteRegistration from './pages/auth/CompleteRegistration';
+import VerifyCompanyEmail from './pages/auth/VerifyCompanyEmail';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/jobs/Jobs';
 import JobDetail from './pages/jobs/JobDetail';
@@ -90,6 +91,9 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/complete-registration" element={<CompleteRegistration />} />
       </Route>
+
+      {/* Public verification */}
+      <Route path="/verify-company-email" element={<VerifyCompanyEmail />} />
 
       {/* Proctoring check - Public route */}
       <Route path="/proctoring-check/:interviewId" element={<ProctoringCheck />} />
