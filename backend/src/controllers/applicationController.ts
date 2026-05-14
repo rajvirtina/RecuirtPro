@@ -56,21 +56,29 @@ export const submitApplication = async (
       });
     }
 
-    // Create application
-    const application = await Application.create({
-      jobId,
-      candidateId: userId,
-      companyId: job.companyId,
-      coverLetter,
-      resumeUrl: resumeUrl || candidateProfile.resumeUrl,
-      expectedSalary,
-      status: ApplicationStatus.APPLIED,
-    });
+    // BUG-008: Use findOneAndUpdate with upsert=false to safely handle race conditions.
+    // The unique index on [jobId, candidateId] catches concurrent inserts — return 409 not 500.
+    let application;
+    try {
+      application = await Application.create({
+        jobId,
+        candidateId: userId,
+        companyId: job.companyId,
+        coverLetter,
+        resumeUrl: resumeUrl || candidateProfile.resumeUrl,
+        expectedSalary,
+        status: ApplicationStatus.APPLIED,
+      });
+    } catch (err: any) {
+      if (err.code === 11000) {
+        // Duplicate key — concurrent insert lost the race
+        return sendError(res, 'You have already applied to this job', 409);
+      }
+      throw err;
+    }
 
-    // Increment application count on job
-    await Job.findByIdAndUpdate(jobId, {
-      $inc: { applicationCount: 1 },
-    });
+    // DC-001: Increment application count atomically (stays in sync)
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicationCount: 1 } });
 
     logger.info(`Application submitted: ${application._id} for job: ${jobId}`);
 

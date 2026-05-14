@@ -27,7 +27,15 @@ router.post(
     body('applicationId').notEmpty().isMongoId().withMessage('Valid application ID is required'),
     body('jobId').notEmpty().isMongoId().withMessage('Valid job ID is required'),
     body('candidateId').notEmpty().isMongoId().withMessage('Valid candidate ID is required'),
-    body('scheduledTime').notEmpty().isISO8601().withMessage('Valid scheduled time is required'),
+    body('scheduledTime')
+      .notEmpty().isISO8601().withMessage('Valid scheduled time is required')
+      .custom((val: string) => {
+        // VAL-005: Reject past dates
+        if (new Date(val) <= new Date()) {
+          throw new Error('Interview must be scheduled in the future');
+        }
+        return true;
+      }),
     body('duration').optional().isInt({ min: 15, max: 480 }).withMessage('Duration must be between 15-480 minutes'),
     body('mode').optional().isIn(['onsite', 'online', 'hybrid']),
     body('location').optional().isString(),

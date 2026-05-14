@@ -7,8 +7,6 @@ import { sendError } from '../utils/response';
 
 /**
  * Check if user is a Super Admin.
- * Primary: explicit isSuperAdminUser flag.
- * Fallback: admin role without companyId (backward compatibility).
  */
 export const isSuperAdmin = (user: AuthRequest['user']): boolean => {
   if (!user) return false;
@@ -17,16 +15,15 @@ export const isSuperAdmin = (user: AuthRequest['user']): boolean => {
 };
 
 /**
- * Get the tenant companyId for filtering — returns null for super admin (global access)
+ * Get the tenant companyId — returns null for super admin (global access)
  */
 export const getTenantCompanyId = (user: AuthRequest['user']): string | null => {
-  if (isSuperAdmin(user)) return null; // super admin sees everything
+  if (isSuperAdmin(user)) return null;
   return user?.companyId || null;
 };
 
 /**
- * Middleware: Require authenticated user to have a companyId (blocks super admin)
- * Use on routes that MUST be tenant-scoped.
+ * Require authenticated user to have a companyId (blocks super admin on tenant-only routes)
  */
 export const requireTenant = (
   req: Request,
@@ -41,7 +38,22 @@ export const requireTenant = (
 };
 
 /**
- * Protect routes - Verify JWT token
+ * Extract token from request — BUG-001: prefer httpOnly cookie, fall back to Bearer header.
+ */
+function extractToken(req: Request): string | undefined {
+  // 1. httpOnly cookie (most secure — not accessible by JS)
+  if (req.cookies?.accessToken) {
+    return req.cookies.accessToken as string;
+  }
+  // 2. Authorization header (for mobile clients / API consumers)
+  if (req.headers.authorization?.startsWith('Bearer ')) {
+    return req.headers.authorization.split(' ')[1];
+  }
+  return undefined;
+}
+
+/**
+ * Protect routes — verify JWT token (cookie-first, Bearer fallback)
  */
 export const protect = async (
   req: Request,
@@ -49,45 +61,39 @@ export const protect = async (
   next: NextFunction
 ): Promise<void | Response> => {
   try {
-    let token: string | undefined;
+    const token = extractToken(req);
 
-    // Check for token in headers
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    // Make sure token exists
     if (!token) {
       return sendError(res, 'Not authorized to access this route', 401);
     }
 
     try {
-      // Verify token
       const decoded = jwt.verify(token, config.jwt.secret) as {
         id: string;
         email: string;
         role: UserRole;
       };
 
-      // Get user from token
       const user = await User.findById(decoded.id).select('-password');
 
       if (!user) {
         return sendError(res, 'User not found', 404);
       }
 
+      // BUG-013: soft-deleted check
       if (user.deletedAt) {
-        return sendError(res, 'User account has been deleted', 403);
+        return sendError(res, 'User account has been deactivated. Please contact support.', 403);
       }
 
       if (user.status !== 'active') {
-        return sendError(res, 'User account is not active', 403);
+        return sendError(res, 'User account is not active. Please verify your email or contact support.', 403);
       }
 
-      // Attach user to request
+      // BUG-011: enforce email verification when the feature flag is on
+      if (config.features.emailVerification && !user.emailVerified) {
+        return sendError(res, 'Please verify your email address before accessing this feature.', 403);
+      }
+
       (req as AuthRequest).user = {
         ...user.toObject(),
         _id: (user._id as any).toString(),
@@ -95,11 +101,11 @@ export const protect = async (
       } as any;
 
       next();
-    } catch (error) {
-      return sendError(res, 'Not authorized to access this route', 401);
+    } catch (jwtError) {
+      return sendError(res, 'Token invalid or expired. Please log in again.', 401);
     }
   } catch (error) {
-    return sendError(res, 'Server error', 500);
+    return sendError(res, 'Server error during authentication', 500);
   }
 };
 
@@ -117,7 +123,7 @@ export const authorize = (...roles: UserRole[]) => {
     if (!roles.includes(user.role)) {
       return sendError(
         res,
-        `User role ${user.role} is not authorized to access this route`,
+        `Role '${user.role}' is not permitted to access this route`,
         403
       );
     }
@@ -127,7 +133,7 @@ export const authorize = (...roles: UserRole[]) => {
 };
 
 /**
- * Optional authentication - doesn't fail if no token
+ * Optional authentication — does not fail if no token present
  */
 export const optionalAuth = async (
   req: Request,
@@ -135,20 +141,11 @@ export const optionalAuth = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    let token: string | undefined;
-
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+    const token = extractToken(req);
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, config.jwt.secret) as {
-          id: string;
-        };
+        const decoded = jwt.verify(token, config.jwt.secret) as { id: string };
         const user = await User.findById(decoded.id).select('-password');
         if (user && !user.deletedAt && user.status === 'active') {
           (req as AuthRequest).user = {
@@ -157,13 +154,47 @@ export const optionalAuth = async (
             companyId: user.companyId?.toString(),
           } as any;
         }
-      } catch (error) {
-        // Token invalid, but continue without user
+      } catch {
+        // Invalid token — continue without user
       }
     }
 
     next();
-  } catch (error) {
+  } catch {
     next();
   }
+};
+
+/**
+ * BUG-009: CSRF protection middleware.
+ * Validates that state-changing requests from browser include X-CSRF-Token
+ * matching the csrf-token cookie (double-submit cookie pattern).
+ * Skipped for requests using Bearer token auth (API clients).
+ */
+export const csrfProtect = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void | Response => {
+  // Only apply CSRF check when request came via cookie auth, not Bearer
+  const usesCookie = !!req.cookies?.accessToken;
+  const usesBearerOnly = !!req.headers.authorization?.startsWith('Bearer ') && !usesCookie;
+
+  if (usesBearerOnly) {
+    return next(); // API consumers using Bearer are not CSRF targets
+  }
+
+  const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
+  if (safeMethods.includes(req.method)) {
+    return next();
+  }
+
+  const cookieCsrf = req.cookies?.csrfToken as string | undefined;
+  const headerCsrf = req.headers['x-csrf-token'] as string | undefined;
+
+  if (!cookieCsrf || !headerCsrf || cookieCsrf !== headerCsrf) {
+    return sendError(res, 'Invalid CSRF token', 403);
+  }
+
+  next();
 };

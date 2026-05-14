@@ -74,16 +74,41 @@ const jobSchema = new Schema<IJobDocument>(
       type: String,
       required: [true, 'Job title is required'],
       trim: true,
+      maxlength: [200, 'Job title cannot exceed 200 characters'], // BUG-005/VAL-002
     },
     description: {
       type: String,
       required: [true, 'Job description is required'],
+      maxlength: [20000, 'Job description cannot exceed 20,000 characters'], // BUG-005/VAL-002
     },
-    responsibilities: [String],
-    requirements: [String],
+    responsibilities: {
+      type: [String],
+      validate: {
+        validator: (arr: string[]) => arr.every((s) => s.trim().length > 0 && s.length <= 500),
+        message: 'Each responsibility must be non-empty and ≤ 500 characters',
+      },
+    },
+    requirements: {
+      type: [String],
+      validate: {
+        validator: (arr: string[]) => arr.every((s) => s.trim().length > 0 && s.length <= 500),
+        message: 'Each requirement must be non-empty and ≤ 500 characters',
+      },
+    },
     skills: {
       type: [String],
       required: true,
+      validate: [
+        // VAL-003: reject empty-string skills
+        {
+          validator: (arr: string[]) => arr.every((s) => s.trim().length > 0),
+          message: 'Skills must not contain empty strings',
+        },
+        {
+          validator: (arr: string[]) => arr.every((s) => s.length <= 100),
+          message: 'Each skill name must be ≤ 100 characters',
+        },
+      ],
     },
     experienceMin: {
       type: Number,

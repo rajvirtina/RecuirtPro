@@ -9,6 +9,48 @@ import { config } from '../config';
 import { AuthRequest, UserStatus, AuditAction } from '../types';
 import { AuditLog } from '../models/AuditLog';
 
+/* ── BUG-001: httpOnly cookie helpers ─────────────────────────── */
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: config.env === 'production',
+  sameSite: 'strict' as const,
+};
+
+/** Set the access-token httpOnly cookie (15 min) */
+function setAccessCookie(res: Response, token: string): void {
+  res.cookie('accessToken', token, {
+    ...COOKIE_OPTS,
+    maxAge: 15 * 60 * 1000, // 15 minutes
+  });
+}
+
+/** Set the refresh-token httpOnly cookie (7 days) */
+function setRefreshCookie(res: Response, token: string): void {
+  res.cookie('refreshToken', token, {
+    ...COOKIE_OPTS,
+    path: '/api/v1/auth/refresh', // only sent to refresh endpoint
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+}
+
+/** Set a readable CSRF token (non-httpOnly — readable by JS for X-CSRF-Token header) */
+function setCsrfCookie(res: Response): string {
+  const csrf = crypto.randomBytes(32).toString('hex');
+  res.cookie('csrfToken', csrf, {
+    secure: config.env === 'production',
+    sameSite: 'strict' as const,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+  return csrf;
+}
+
+/** Clear all auth cookies on logout */
+function clearAuthCookies(res: Response): void {
+  res.clearCookie('accessToken', COOKIE_OPTS);
+  res.clearCookie('refreshToken', { ...COOKIE_OPTS, path: '/api/v1/auth/refresh' });
+  res.clearCookie('csrfToken');
+}
+
 /**
  * @desc    Register a new user
  * @route   POST /api/v1/auth/register
@@ -164,8 +206,13 @@ export const register = async (
     }
 
     // Generate tokens
-    const accessToken = user.generateAuthToken();
+    const accessToken  = user.generateAuthToken();
     const refreshToken = user.generateRefreshToken();
+
+    // BUG-001: Set httpOnly auth cookies
+    setAccessCookie(res, accessToken);
+    setRefreshCookie(res, refreshToken);
+    const csrfToken = setCsrfCookie(res);
 
     logger.info(`New user registered: ${user.email}`);
 
@@ -180,6 +227,7 @@ export const register = async (
       },
       accessToken,
       refreshToken,
+      csrfToken,
     }, 'Registration successful. Please check your email to verify your account.', 201);
   } catch (error) {
     next(error);
@@ -224,8 +272,13 @@ export const login = async (
     await user.save();
 
     // Generate tokens
-    const accessToken = user.generateAuthToken();
+    const accessToken  = user.generateAuthToken();
     const refreshToken = user.generateRefreshToken();
+
+    // BUG-001: Set httpOnly cookies + CSRF token
+    setAccessCookie(res, accessToken);
+    setRefreshCookie(res, refreshToken);
+    const csrfToken = setCsrfCookie(res);
 
     logger.info(`User logged in: ${user.email}`);
 
@@ -240,8 +293,10 @@ export const login = async (
         emailVerified: user.emailVerified,
         isMfaEnabled: user.mfaEnabled || false,
       },
+      // Still return tokens in body for backwards-compatibility with mobile/API clients
       accessToken,
       refreshToken,
+      csrfToken,
     }, 'Login successful');
   } catch (error) {
     next(error);
@@ -283,14 +338,17 @@ export const logout = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Invalidate all refresh tokens for this user (B-06/SEC-07)
+    // Invalidate all refresh tokens for this user
     const user = await User.findById(req.user?._id);
     if (user) {
       await user.invalidateRefreshTokens();
     }
-    
+
+    // BUG-001: Clear httpOnly auth cookies
+    clearAuthCookies(res);
+
     logger.info(`User logged out: ${req.user?.email}`);
-    
+
     sendSuccess(res, null, 'Logout successful');
   } catch (error) {
     next(error);
@@ -308,29 +366,34 @@ export const refresh = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { refreshToken } = req.body;
+    // BUG-001: Accept refresh token from httpOnly cookie first, then body fallback
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
     if (!refreshToken) {
-      sendError(res, 'Refresh token is required', 400);
+      sendError(res, 'Refresh token is required', 401);
       return;
     }
 
-    // Verify refresh token
     const decoded = await User.verifyRefreshToken(refreshToken);
-    
-    const user = await User.findById(decoded.id);
-    
+    const user    = await User.findById(decoded.id);
+
     if (!user || user.deletedAt) {
       sendError(res, 'Invalid refresh token', 401);
       return;
     }
 
-    // Generate new access token
-    const accessToken = user.generateAuthToken();
+    // Generate new access token + rotate refresh token
+    const accessToken        = user.generateAuthToken();
+    const newRefreshToken    = user.generateRefreshToken();
 
-    sendSuccess(res, { accessToken }, 'Token refreshed successfully');
-  } catch (error) {
-    sendError(res, 'Invalid refresh token', 401);
+    // BUG-001: Rotate cookies
+    setAccessCookie(res, accessToken);
+    setRefreshCookie(res, newRefreshToken);
+    const csrfToken = setCsrfCookie(res);
+
+    sendSuccess(res, { accessToken, csrfToken }, 'Token refreshed successfully');
+  } catch {
+    sendError(res, 'Invalid or expired refresh token', 401);
   }
 };
 
