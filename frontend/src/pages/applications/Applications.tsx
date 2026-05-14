@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyApplications } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
+import { useDebounce } from '../../hooks/useDebounce';
 import toast from 'react-hot-toast';
 
 const STATUS_TABS = [
@@ -89,12 +90,15 @@ export default function Applications() {
     }
   };
 
+  // UX-005: Debounce search to avoid filtering on every keystroke
+  const debouncedSearch = useDebounce(search, 300);
+
   /* ── Client-side search filter ────────────────────────────── */
-  const displayed = search.trim()
+  const displayed = debouncedSearch.trim()
     ? applications.filter((a: any) => {
         const name  = `${a.candidateId?.firstName ?? ''} ${a.candidateId?.lastName ?? ''}`.toLowerCase();
         const title = (a.jobId?.title ?? a.job?.title ?? '').toLowerCase();
-        const q     = search.toLowerCase();
+        const q     = debouncedSearch.toLowerCase();
         return name.includes(q) || title.includes(q);
       })
     : applications;
@@ -153,8 +157,8 @@ export default function Applications() {
         )}
       </div>
 
-      {/* Table */}
-      <div className="card overflow-hidden">
+      {/* Table — MOB-002: overflow-x-auto for mobile horizontal scroll */}
+      <div className="card overflow-hidden overflow-x-auto">
         {loading ? (
           <div>{[...Array(6)].map((_, i) => <SkeletonRow key={i} />)}</div>
         ) : displayed.length === 0 ? (

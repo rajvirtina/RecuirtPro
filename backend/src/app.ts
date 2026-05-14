@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import mongoSanitize from 'express-mongo-sanitize';
+import cookieParser from 'cookie-parser'; // BUG-001: httpOnly cookie support
 import config from './config';
 import { errorHandler, notFound, limiter, xssSanitize } from './middleware';
 import { stream } from './utils/logger';
@@ -77,6 +78,7 @@ if (config.env === 'production') {
 }
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser()); // BUG-001: parse httpOnly cookies
 
 // SEC-12: Protect uploads behind authentication instead of serving publicly.
 // Resumes are served via the /api/v1/applications/:id/resume endpoint which

@@ -47,6 +47,7 @@ export function ConfirmDialog({
       onClick={handleClick}
       onClose={onCancel}
       className="rounded-xl shadow-lg p-0 w-full max-w-sm border border-neutral-200
+                 max-h-[90dvh] overflow-y-auto
                  backdrop:bg-neutral-900/50 backdrop:backdrop-blur-sm
                  open:animate-fade-in"
     >
