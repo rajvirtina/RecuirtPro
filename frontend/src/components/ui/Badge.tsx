@@ -36,36 +36,44 @@ export function Badge({ variant = 'gray', children, className, dot }: BadgeProps
   );
 }
 
-/* Map application/job status → badge variant */
+/* Normalise before lookup — handles mixed-case and space-separated API values */
 export function statusVariant(status: string): BadgeVariant {
+  const normalised = status.toLowerCase().trim().replace(/\s+/g, '_');
+
   const map: Record<string, BadgeVariant> = {
-    applied:            'blue',
-    shortlisted:        'yellow',
-    interview_scheduled:'purple',
-    in_progress:        'purple',
-    selected:           'green',
-    hired:              'green',
-    offer_released:     'green',
-    rejected:           'red',
-    on_hold:            'gray',
-    withdrawn:          'gray',
-    published:          'green',
-    draft:              'yellow',
-    closed:             'gray',
-    expired:            'gray',
-    on_hold_job:        'yellow',
-    scheduled:          'purple',
-    confirmed:          'green',
-    completed:          'green',
-    cancelled:          'red',
+    applied:             'blue',
+    shortlisted:         'yellow',
+    interview_scheduled: 'purple',
+    in_progress:         'purple',
+    selected:            'green',
+    hired:               'green',
+    offer_released:      'green',
+    rejected:            'red',
+    on_hold:             'gray',
+    withdrawn:           'gray',
+    published:           'green',
+    draft:               'yellow',
+    closed:              'gray',
+    expired:             'gray',
+    on_hold_job:         'yellow',
+    scheduled:           'purple',
+    confirmed:           'green',
+    completed:           'green',
+    cancelled:           'red',
+    no_show:             'red',
+    rescheduled:         'yellow',
   };
-  return map[status] ?? 'gray';
+
+  return map[normalised] ?? 'gray';
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const label = status
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (l) => l.toUpperCase());
   return (
     <Badge variant={statusVariant(status)} dot>
-      {status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
+      {label}
     </Badge>
   );
 }

@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { Job } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
+import { Input } from '../../components/ui/Input';
 import { EmptyJobs } from '../../components/ui/EmptyState';
 import { SkeletonCard } from '../../components/ui/Skeleton';
+import { useState } from 'react';
 
 function Icon({ d, className = 'w-4 h-4' }: { d: string; className?: string }) {
   return (
@@ -117,19 +119,28 @@ function JobCard({ job, isEmployer }: { job: Job; isEmployer: boolean }) {
 }
 
 export default function Jobs() {
-  const user = useAuthStore((state) => state.user);
-  const navigate = useNavigate();
-  const isEmployer = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
+  const user       = useAuthStore((state) => state.user);
+  const navigate   = useNavigate();
+  const isEmployer = ['employer', 'hr', 'admin'].includes(user?.role ?? '');
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [search, setSearch] = useState('');
+  /* ── URL-synced filters ──────────────────────────────────── */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusFilter = searchParams.get('status') ?? '';
+  const search       = searchParams.get('search') ?? '';
+
+  function setFilter(key: string, value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (value) next.set(key, value); else next.delete(key);
+      return next;
+    }, { replace: true });
+  }
+
+  const [jobs, setJobs]           = useState<Job[]>([]);
+  const [loading, setLoading]     = useState(true);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
 
-  useEffect(() => {
-    fetchJobs(1);
-  }, [statusFilter]);
+  useEffect(() => { fetchJobs(1); }, [statusFilter]);
 
   const fetchJobs = async (page = 1) => {
     try {
@@ -140,8 +151,8 @@ export default function Jobs() {
       const res = await apiClient.get(`/jobs?page=${page}&limit=12${candidateStatus}${companyFilter}${statusQ}`);
       setJobs((res.data as any) || []);
       setPagination((res as any).pagination || { page, totalPages: 1, total: (res.data as any)?.length ?? 0 });
-    } catch (e) {
-      console.error(e);
+    } catch {
+      /* silently handle — no toast needed for read failures on initial load */
     } finally {
       setLoading(false);
     }
@@ -178,27 +189,25 @@ export default function Jobs() {
 
       {/* Search + filters bar */}
       <div className="flex flex-col sm:flex-row gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search jobs, skills, location…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="field-input pl-9"
-          />
-        </div>
+        <Input
+          placeholder="Search jobs, skills, location…"
+          value={search}
+          onChange={(e) => setFilter('search', e.target.value)}
+          className="max-w-sm"
+          icon={
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          }
+        />
 
         {/* Status filter tabs — employer only */}
         {isEmployer && (
-          <div className="flex gap-1 bg-neutral-100 p-1 rounded-md">
+          <div className="flex gap-1 bg-neutral-100 p-1 rounded-md shrink-0">
             {FILTER_TABS.map((t) => (
               <button
                 key={t.value}
-                onClick={() => setStatusFilter(t.value)}
+                onClick={() => setFilter('status', t.value)}
                 className={`px-3 py-1.5 text-sm font-medium rounded-sm transition-all ${
                   statusFilter === t.value
                     ? 'bg-white text-neutral-900 shadow-xs'

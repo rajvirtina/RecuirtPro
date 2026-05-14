@@ -35,6 +35,7 @@ import HRManagement from './pages/admin/HRManagement';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import SuperAdminPanel from './pages/superadmin/SuperAdminPanel';
 import Profile from './pages/Profile';
+import Analytics from './pages/Analytics';
 import ProctoringCheck from './pages/proctoring/ProctoringCheck';
 import ProctoringDashboard from './pages/proctoring/ProctoringDashboard';
 import NotFound from './pages/NotFound';
@@ -127,6 +128,7 @@ function App() {
         <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
         <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
         <Route path="/offers" element={<RoleGuard roles={['admin', 'hr', 'employer']}><OfferManagement /></RoleGuard>} />
+        <Route path="/analytics" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Analytics /></RoleGuard>} />
         <Route path="/proctoring/monitor" element={<RoleGuard roles={['admin', 'hr', 'employer']}><ProctoringDashboard /></RoleGuard>} />
         <Route path="/admin" element={<RoleGuard roles={['admin']}><AdminDashboard /></RoleGuard>} />
         <Route path="/admin/hr-management" element={<RoleGuard roles={['admin']}><HRManagement /></RoleGuard>} />
