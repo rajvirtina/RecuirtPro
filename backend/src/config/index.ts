@@ -3,9 +3,9 @@ import path from 'path';
 
 // Load .env from backend root (works from both src/ and dist/)
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-// Also try .env.production if NODE_ENV is production
+// Also try .env.production if NODE_ENV is production (override .env values)
 if (process.env.NODE_ENV === 'production') {
-  dotenv.config({ path: path.resolve(__dirname, '../../.env.production') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env.production'), override: true });
 }
 
 // SEC-06: Reject default secrets in production
