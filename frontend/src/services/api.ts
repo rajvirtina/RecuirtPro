@@ -8,10 +8,12 @@ function getCsrfToken(): string {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
+type QueueEntry = { resolve: (token: string) => void; reject: (err: unknown) => void };
+
 class ApiClient {
   private client: AxiosInstance;
   private isRefreshing = false;
-  private refreshQueue: Array<(token: string) => void> = [];
+  private refreshQueue: QueueEntry[] = [];
 
   constructor() {
     this.client = axios.create({
@@ -45,12 +47,13 @@ class ApiClient {
           original._retry = true;
 
           if (this.isRefreshing) {
-            // Queue callers while a refresh is in progress
-            return new Promise((resolve) => {
-              this.refreshQueue.push((token: string) => {
-                original.headers.Authorization = `Bearer ${token}`;
-                resolve(this.client.request(original));
-              });
+            // Queue callers while a refresh is in progress.
+            // Both resolve AND reject are stored so the promise always settles.
+            return new Promise<any>((resolve, reject) => {
+              this.refreshQueue.push({ resolve, reject });
+            }).then((token: string) => {
+              original.headers.Authorization = `Bearer ${token}`;
+              return this.client.request(original);
             });
           }
 
@@ -65,18 +68,24 @@ class ApiClient {
             );
             const { accessToken } = res.data.data ?? res.data;
 
-            if (accessToken) {
-              localStorage.setItem('token', accessToken);
-              original.headers.Authorization = `Bearer ${accessToken}`;
-              this.refreshQueue.forEach((cb) => cb(accessToken));
+            if (!accessToken) {
+              // Server returned 200 but no token — treat as auth failure
+              throw new Error('No access token returned from refresh endpoint');
             }
 
+            localStorage.setItem('token', accessToken);
+            // Settle all queued callers with the new token
+            this.refreshQueue.forEach(({ resolve }) => resolve(accessToken));
+
+            original.headers.Authorization = `Bearer ${accessToken}`;
             return this.client.request(original);
-          } catch {
-            // Refresh failed — clear local state and redirect
+          } catch (refreshError) {
+            // Refresh failed — reject every queued caller so their Promises settle
+            this.refreshQueue.forEach(({ reject }) => reject(refreshError));
             localStorage.removeItem('token');
             localStorage.removeItem('refreshToken');
             window.location.href = '/login';
+            return Promise.reject(refreshError);
           } finally {
             this.isRefreshing = false;
             this.refreshQueue = [];
