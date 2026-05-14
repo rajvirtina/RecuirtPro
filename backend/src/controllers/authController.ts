@@ -366,10 +366,13 @@ export const verifyEmail = async (
       return;
     }
 
-    // Mark email as verified
+    // Mark email as verified and activate user if pending
     user.emailVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
+    if (user.status === UserStatus.PENDING_VERIFICATION) {
+      user.status = UserStatus.ACTIVE;
+    }
     await user.save();
 
     logger.info(`Email verified: ${user.email}`);
