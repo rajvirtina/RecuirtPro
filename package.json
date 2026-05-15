@@ -3,31 +3,12 @@
   "version": "1.0.0",
   "description": "Recruitment Process Automation Platform",
   "private": true,
-  "workspaces": [
-    "backend",
-    "frontend"
-  ],
   "scripts": {
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && npm run dev",
     "build": "cd backend && npm install --omit=dev",
-    "build:full": "npm run build:backend && npm run build:frontend",
-    "build:backend": "cd backend && npm install && npm run build",
-    "build:frontend": "cd frontend && npm install && npm run build",
-    "build:hostinger": "cd backend && npm install --omit=dev",
-    "start": "cd backend && npm start",
-    "start:prod": "NODE_ENV=production cd backend && node dist/server.js",
-    "lint": "npm run lint:backend && npm run lint:frontend",
-    "lint:backend": "cd backend && npm run lint",
-    "lint:frontend": "cd frontend && npm run lint",
-    "test": "npm run test:backend && npm run test:frontend",
-    "test:backend": "cd backend && npm test",
-    "test:frontend": "cd frontend && npm test"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2"
+    "start": "cd backend && node dist/server.js",
+    "dev": "cd backend && npm run dev",
+    "build:full": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
   },
   "engines": {
     "node": ">=18.0.0",
