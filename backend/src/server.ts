@@ -23,6 +23,7 @@ let server: any;
 const startServer = async () => {
   try {
     console.log('Starting server...');
+    console.log('__dirname:', __dirname);
     console.log('NODE_ENV:', config.env);
     console.log('PORT:', config.port);
     console.log('MONGODB_URI:', config.mongoUri ? config.mongoUri.substring(0, 30) + '...' : 'NOT SET');
