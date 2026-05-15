@@ -31,9 +31,9 @@ if (process.env.NODE_ENV === 'production') {
   if (!encryptionKey || DANGEROUS_DEFAULTS.includes(encryptionKey)) {
     throw new Error('FATAL: ENCRYPTION_KEY must be set to a secure value in production.');
   }
-  // BUG-003: Reject default LLM secret in production
+  // LLM service is optional — warn but don't crash if not configured
   if (!llmKey || DANGEROUS_DEFAULTS.includes(llmKey)) {
-    throw new Error('FATAL: LLM_API_SECRET_KEY must be set to a secure value in production.');
+    console.warn('WARNING: LLM_API_SECRET_KEY not set — AI features will be disabled.');
   }
 }
 
