@@ -1,13 +1,25 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Load .env from backend root (works from both src/ and dist/)
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-// Also try .env.production if NODE_ENV is production (override .env values except PORT)
+// Load .env — try multiple paths to handle different Hostinger deploy structures
+const envPaths = [
+  path.resolve(__dirname, '../../.env'),           // backend/dist/config → backend/.env
+  path.resolve(__dirname, '../../../backend/.env'), // backend/dist/config → backend/.env (alt)
+  path.resolve(process.cwd(), '.env'),              // cwd-relative
+  path.resolve(process.cwd(), 'backend/.env'),
+];
+for (const p of envPaths) { dotenv.config({ path: p }); }
+
 if (process.env.NODE_ENV === 'production') {
   const hostPort = process.env.PORT; // preserve Hostinger-injected port
-  dotenv.config({ path: path.resolve(__dirname, '../../.env.production'), override: true });
-  if (hostPort) process.env.PORT = hostPort; // restore it if overwritten
+  const prodPaths = [
+    path.resolve(__dirname, '../../.env.production'),
+    path.resolve(__dirname, '../../../backend/.env.production'),
+    path.resolve(process.cwd(), '.env.production'),
+    path.resolve(process.cwd(), 'backend/.env.production'),
+  ];
+  for (const p of prodPaths) { dotenv.config({ path: p, override: true }); }
+  if (hostPort) process.env.PORT = hostPort; // restore Hostinger's port
 }
 
 // SEC-06: Reject default secrets in production
