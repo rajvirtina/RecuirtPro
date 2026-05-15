@@ -15,11 +15,11 @@ node_modules/
 **/.env.development
 **/.env.staging
 
-# Build outputs
-dist/
+# Build outputs (frontend/dist and backend/dist are committed for Hostinger deployment)
 build/
-**/dist/
 **/build/
+llm-service/dist/
+desktop-app/dist/
 
 # Logs
 logs/
