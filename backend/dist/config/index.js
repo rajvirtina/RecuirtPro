@@ -6,14 +6,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.config = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
-// Load .env from backend root (works from both src/ and dist/)
-dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../.env') });
-// Also try .env.production if NODE_ENV is production (override .env values except PORT)
+// Load .env — try multiple paths to handle different Hostinger deploy structures
+const envPaths = [
+    path_1.default.resolve(__dirname, '../../.env'), // backend/dist/config → backend/.env
+    path_1.default.resolve(__dirname, '../../../backend/.env'), // backend/dist/config → backend/.env (alt)
+    path_1.default.resolve(process.cwd(), '.env'), // cwd-relative
+    path_1.default.resolve(process.cwd(), 'backend/.env'),
+];
+for (const p of envPaths) {
+    dotenv_1.default.config({ path: p });
+}
 if (process.env.NODE_ENV === 'production') {
     const hostPort = process.env.PORT; // preserve Hostinger-injected port
-    dotenv_1.default.config({ path: path_1.default.resolve(__dirname, '../../.env.production'), override: true });
+    const prodPaths = [
+        path_1.default.resolve(__dirname, '../../.env.production'),
+        path_1.default.resolve(__dirname, '../../../backend/.env.production'),
+        path_1.default.resolve(process.cwd(), '.env.production'),
+        path_1.default.resolve(process.cwd(), 'backend/.env.production'),
+    ];
+    for (const p of prodPaths) {
+        dotenv_1.default.config({ path: p, override: true });
+    }
     if (hostPort)
-        process.env.PORT = hostPort; // restore it if overwritten
+        process.env.PORT = hostPort; // restore Hostinger's port
 }
 // SEC-06: Reject default secrets in production
 const DANGEROUS_DEFAULTS = [
