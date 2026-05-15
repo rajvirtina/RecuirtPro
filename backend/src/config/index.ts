@@ -3,9 +3,11 @@ import path from 'path';
 
 // Load .env from backend root (works from both src/ and dist/)
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-// Also try .env.production if NODE_ENV is production (override .env values)
+// Also try .env.production if NODE_ENV is production (override .env values except PORT)
 if (process.env.NODE_ENV === 'production') {
+  const hostPort = process.env.PORT; // preserve Hostinger-injected port
   dotenv.config({ path: path.resolve(__dirname, '../../.env.production'), override: true });
+  if (hostPort) process.env.PORT = hostPort; // restore it if overwritten
 }
 
 // SEC-06: Reject default secrets in production
