@@ -10,10 +10,10 @@ node_modules/
 .env.production.local
 **/.env
 **/.env.hostinger
-**/.env.production
 **/.env.local
 **/.env.development
 **/.env.staging
+# NOTE: backend/.env.production is force-tracked for Hostinger deployment
 
 # Build outputs (frontend/dist and backend/dist are committed for Hostinger deployment)
 build/
