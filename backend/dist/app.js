@@ -149,37 +149,29 @@ app.use('/api/v1/offers', offers_1.default);
 app.use('/api/v1/notifications', notifications_1.default);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
-// Serve frontend in production, otherwise show API info
+// Serve frontend in production
 if (config_1.default.env === 'production') {
     const fs = require('fs');
-    const frontendDist = path_1.default.join(__dirname, '../../frontend/dist');
-    const indexPath = path_1.default.join(frontendDist, 'index.html');
-    if (fs.existsSync(indexPath)) {
+    // Primary: backend/public/ (co-located, works on Hostinger with root=backend)
+    // Fallback: ../../frontend/dist (monorepo structure)
+    const candidates = [
+        path_1.default.join(__dirname, '../public'),
+        path_1.default.join(__dirname, '../../public'),
+        path_1.default.join(__dirname, '../../frontend/dist'),
+        path_1.default.join(__dirname, '../../../frontend/dist'),
+    ];
+    const frontendDist = candidates.find(p => fs.existsSync(path_1.default.join(p, 'index.html')));
+    if (frontendDist) {
+        const indexPath = path_1.default.join(frontendDist, 'index.html');
         console.log(`Frontend found at: ${frontendDist}`);
         app.use(express_1.default.static(frontendDist));
-        app.get('*', (_req, res) => {
-            res.sendFile(indexPath);
-        });
+        app.get('*', (_req, res) => res.sendFile(indexPath));
     }
     else {
-        console.warn(`Frontend NOT found at: ${frontendDist}`);
-        console.warn(`Resolved __dirname: ${__dirname}`);
-        // Try alternative path (Hostinger may have different structure)
-        const altDist = path_1.default.join(__dirname, '../../../frontend/dist');
-        const altIndex = path_1.default.join(altDist, 'index.html');
-        if (fs.existsSync(altIndex)) {
-            console.log(`Frontend found at alternate path: ${altDist}`);
-            app.use(express_1.default.static(altDist));
-            app.get('*', (_req, res) => {
-                res.sendFile(altIndex);
-            });
-        }
-        else {
-            console.warn(`Frontend also NOT found at: ${altDist}`);
-            app.get('/', (_req, res) => {
-                res.json({ success: true, message: 'RecuirtPro API', version: '1.0.0', note: 'Frontend not found' });
-            });
-        }
+        console.warn(`Frontend not found. __dirname: ${__dirname}`);
+        app.get('/', (_req, res) => {
+            res.json({ success: true, message: 'RecuirtPro API', version: '1.0.0', note: 'Frontend not found' });
+        });
     }
 }
 else {
