@@ -313,8 +313,6 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen flex bg-neutral-50">
-      {/* ── Skip to main content (WCAG 2.4.1) ──────────────────────── */}
-      <a href="#main-content" className="skip-link">Skip to content</a>
 
       {/* ── Desktop sidebar ─────────────────────────────────────────── */}
       <aside
