@@ -90,7 +90,9 @@ export const protect = async (
       }
 
       // BUG-011: enforce email verification when the feature flag is on
-      if (config.features.emailVerification && !user.emailVerified) {
+      // Super admins (seeded directly) are exempt from email verification
+      const userIsSuperAdmin = user.role === UserRole.ADMIN && !user.companyId;
+      if (config.features.emailVerification && !user.emailVerified && !userIsSuperAdmin) {
         return sendError(res, 'Please verify your email address before accessing this feature.', 403);
       }
 
