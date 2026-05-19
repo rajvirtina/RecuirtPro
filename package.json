@@ -4,7 +4,8 @@
   "description": "Recruitment Process Automation Platform",
   "private": true,
   "scripts": {
-    "build": "cd backend && npm install --omit=dev && npm run build",
+    "postinstall": "cd backend && npm install && npm run build",
+    "build": "cd backend && npm install && npm run build",
     "start": "cd backend && node dist/server.js",
     "dev": "cd backend && npm run dev",
     "build:full": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
