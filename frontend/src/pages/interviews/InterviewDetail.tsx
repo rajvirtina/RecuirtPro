@@ -66,10 +66,6 @@ export default function InterviewDetail() {
     try {
       setLoading(true);
       const response = await apiClient.get(`/interviews/${id}`);
-      console.log('Interview API response:', response);
-      console.log('Interview data:', response.data);
-      console.log('Feedback array:', response.data?.feedback);
-      console.log('Final decision:', response.data?.finalDecision);
       setInterview(response.data as any);
     } catch (error: any) {
       setMessage({
@@ -203,12 +199,18 @@ export default function InterviewDetail() {
 
   const datetime = formatDateTime(interview.scheduledTime);
   const upcoming = isUpcoming(interview.scheduledTime);
+  // HR / Employer / Admin: full pipeline access
   const isEmployer = user?.role === 'employer' || user?.role === 'admin' || user?.role === 'hr';
-
-  console.log('User role:', user?.role);
-  console.log('Interview status:', interview.status);
-  console.log('Is Employer/HR/Admin:', isEmployer);
-  console.log('Should show feedback form:', isEmployer && (interview.status === 'completed' || interview.status === 'in_progress'));
+  // Interviewer: panel-member of this specific interview
+  const isPanelMember =
+    user?.role === 'interviewer' &&
+    Array.isArray(interview.panel) &&
+    interview.panel.some(
+      (m: any) =>
+        (m.userId?._id ?? m.userId)?.toString() === user?._id?.toString()
+    );
+  // Anyone who should see interviewer-level UI (join meeting, start, feedback)
+  const canActAsInterviewer = isEmployer || isPanelMember;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -247,7 +249,7 @@ export default function InterviewDetail() {
             </span>
           </div>
 
-          {isEmployer && interview.candidate && (
+          {canActAsInterviewer && interview.candidate && (
             <div className="mb-4">
               <h2 className="text-sm font-medium text-gray-500 mb-1">Candidate</h2>
               <p className="text-lg text-gray-900">
@@ -302,8 +304,8 @@ export default function InterviewDetail() {
             )}
 
             <div className="flex items-center gap-3">
-              {/* For HR/Employer/Admin: Direct meeting link */}
-              {(user?.role === 'hr' || user?.role === 'employer' || user?.role === 'admin') && (
+              {/* HR / Employer / Admin / assigned Interviewer: direct meeting link */}
+              {canActAsInterviewer && (
                 <Link
                   to={`/interviews/${id}/room`}
                   className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-center transition-colors"
@@ -391,8 +393,8 @@ export default function InterviewDetail() {
           </div>
         )}
 
-        {/* Feedback - Full details for HR/Employer/Admin only */}
-        {isEmployer && interview.feedback && Array.isArray(interview.feedback) && interview.feedback.length > 0 && (
+        {/* Feedback - visible to HR/Employer/Admin and assigned panel interviewers */}
+        {canActAsInterviewer && interview.feedback && Array.isArray(interview.feedback) && interview.feedback.length > 0 && (
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Interview Feedback</h2>
             <div className="space-y-4">
@@ -461,8 +463,8 @@ export default function InterviewDetail() {
           </div>
         )}
 
-        {/* Next Round Decision - For Candidates only (no detailed feedback) */}
-        {!isEmployer && interview.finalDecision && (
+        {/* Next Round Decision - Candidates only */}
+        {user?.role === 'candidate' && interview.finalDecision && (
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Interview Result</h2>
             <div className="p-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border-2 border-indigo-200 text-center">
@@ -485,8 +487,8 @@ export default function InterviewDetail() {
           </div>
         )}
 
-        {/* HR Feedback Form */}
-        {isEmployer && (interview.status === 'completed' || interview.status === 'in_progress' || interview.status === 'confirmed') && (
+        {/* Feedback Form — shown to HR/Employer/Admin and assigned panel interviewers */}
+        {canActAsInterviewer && (interview.status === 'completed' || interview.status === 'in_progress' || interview.status === 'confirmed') && (
           <div className="p-6 border-b border-gray-200 bg-gray-50">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Interview Feedback & Next Round Decision</h2>
@@ -646,73 +648,66 @@ export default function InterviewDetail() {
           <div className="flex flex-wrap gap-3">
             {/* Removed duplicate Join Interview buttons - now handled in Meeting Information section above */}
 
+            {/* HR/Employer/Admin: full controls when scheduled */}
             {isEmployer && interview.status === 'scheduled' && (
               <>
-                <button
-                  onClick={() => updateStatus('confirmed')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('confirmed')} disabled={updating}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors">
                   Confirm
                 </button>
-                <button
-                  onClick={() => updateStatus('in_progress')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('in_progress')} disabled={updating}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
                   Start Interview
                 </button>
-                <button
-                  onClick={() => updateStatus('completed')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('completed')} disabled={updating}
+                  className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium transition-colors">
                   Mark as Completed
                 </button>
-                <button
-                  onClick={() => updateStatus('rescheduled')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('rescheduled')} disabled={updating}
+                  className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 font-medium transition-colors">
                   Reschedule
                 </button>
-                <button
-                  onClick={() => updateStatus('cancelled')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('cancelled')} disabled={updating}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors">
                   Cancel
                 </button>
               </>
+            )}
+
+            {/* Assigned interviewer (panel member): can start when scheduled */}
+            {isPanelMember && interview.status === 'scheduled' && (
+              <button onClick={() => updateStatus('in_progress')} disabled={updating}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
+                Start Interview
+              </button>
             )}
 
             {isEmployer && interview.status === 'confirmed' && (
               <>
-                <button
-                  onClick={() => updateStatus('in_progress')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('in_progress')} disabled={updating}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
                   Start Interview
                 </button>
-                <button
-                  onClick={() => updateStatus('completed')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('completed')} disabled={updating}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors">
                   Mark as Completed
                 </button>
-                <button
-                  onClick={() => updateStatus('cancelled')}
-                  disabled={updating}
-                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors"
-                >
+                <button onClick={() => updateStatus('cancelled')} disabled={updating}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors">
                   Cancel
                 </button>
               </>
             )}
 
-            {isEmployer && interview.status === 'in_progress' && (
+            {/* Assigned interviewer: can start when confirmed */}
+            {isPanelMember && interview.status === 'confirmed' && (
+              <button onClick={() => updateStatus('in_progress')} disabled={updating}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors">
+                Start Interview
+              </button>
+            )}
+
+            {canActAsInterviewer && interview.status === 'in_progress' && (
               <button
                 onClick={() => updateStatus('completed')}
                 disabled={updating}

@@ -109,8 +109,17 @@ export default function AdminHRManagement() {
     setEmailDomainError('');
 
     try {
-      await apiClient.post('/admin/invite-hr', formData);
-      alert('HR invitation sent successfully!');
+      const res = await apiClient.post('/admin/invite-hr', formData);
+      const data = res.data as any;
+      if (data?.invitationUrl) {
+        alert(
+          `HR user created!\n\n` +
+          `⚠️ Email was not delivered — share this invitation link manually:\n\n${data.invitationUrl}\n\n` +
+          `(${data.devNote || 'Configure SMTP in .env to send emails automatically'})`
+        );
+      } else {
+        alert('HR invitation sent successfully!');
+      }
       setShowInviteModal(false);
       setFormData({
         email: '',
@@ -123,7 +132,7 @@ export default function AdminHRManagement() {
       fetchHRUsers();
       fetchStats();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to send invitation');
+      alert(error.response?.data?.message || error.message || 'Failed to send invitation');
     }
   };
 
@@ -296,7 +305,13 @@ export default function AdminHRManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="capitalize text-sm text-gray-900">{user.role}</span>
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      user.role === 'hr' ? 'bg-blue-100 text-blue-800' :
+                      user.role === 'interviewer' ? 'bg-purple-100 text-purple-800' :
+                      'bg-orange-100 text-orange-800'
+                    }`}>
+                      {user.role === 'hr' ? 'HR Manager' : user.role === 'interviewer' ? 'Interviewer' : 'Employer'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
@@ -395,10 +410,21 @@ export default function AdminHRManagement() {
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   >
-                    <option value="hr">HR</option>
-                    <option value="interviewer">Interviewer</option>
-                    <option value="employer">Employer</option>
+                    <option value="hr">HR Manager — Posts jobs, reviews applications, manages candidates</option>
+                    <option value="interviewer">Interviewer — Conducts interviews and submits feedback only</option>
+                    <option value="employer">Employer — Views applications and approves/rejects candidates</option>
                   </select>
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md text-xs text-gray-600 space-y-1">
+                    {formData.role === 'hr' && (
+                      <p><strong>HR Manager:</strong> Full access to job postings, applications, and candidate pipeline. Can invite candidates and schedule interviews.</p>
+                    )}
+                    {formData.role === 'interviewer' && (
+                      <p><strong>Interviewer:</strong> Limited to interviews assigned to them. Can view candidate profiles and submit interview feedback. Cannot post jobs or access full pipeline.</p>
+                    )}
+                    {formData.role === 'employer' && (
+                      <p><strong>Employer / Hiring Manager:</strong> Can view and shortlist applicants for their department. Approves final hiring decisions. Cannot post jobs or manage other HR users.</p>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Department</label>
