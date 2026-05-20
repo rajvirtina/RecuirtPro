@@ -310,12 +310,15 @@ export default function JobDetail() {
               >
                 Edit Job
               </button>
-              <button
-                onClick={handleDelete}
-                className="px-6 py-3 bg-white text-red-600 border border-red-600 rounded-lg hover:bg-red-50 font-medium transition-colors"
-              >
-                Delete Job
-              </button>
+              {/* Employers cannot delete jobs — that is an HR/Admin action */}
+              {(user?.role === 'hr' || user?.role === 'admin') && (
+                <button
+                  onClick={handleDelete}
+                  className="px-6 py-3 bg-white text-red-600 border border-red-600 rounded-lg hover:bg-red-50 font-medium transition-colors"
+                >
+                  Delete Job
+                </button>
+              )}
             </>
           )}
 

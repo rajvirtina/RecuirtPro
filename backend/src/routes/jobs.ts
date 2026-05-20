@@ -98,12 +98,12 @@ router.put(
 /**
  * @route   DELETE /api/v1/jobs/:id
  * @desc    Delete job (soft delete)
- * @access  Private (Employer, HR, Admin)
+ * @access  Private (HR, Admin only — Employers may not delete jobs)
  */
 router.delete(
   '/:id',
   protect,
-  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  authorize(UserRole.HR, UserRole.ADMIN),
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,
   deleteJob

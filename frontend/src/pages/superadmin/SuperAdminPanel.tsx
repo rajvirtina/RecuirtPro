@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 interface Company {
   _id: string;
   name: string;
+  slug: string;
   email: string;
   phone?: string;
   website?: string;
@@ -397,6 +398,7 @@ export default function SuperAdminPanel() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company Code</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Verified</th>
@@ -414,6 +416,11 @@ export default function SuperAdminPanel() {
                         {company.website && (
                           <span className="text-xs text-indigo-600">{company.website}</span>
                         )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-gray-100 text-xs font-mono font-medium text-gray-800 select-all" title="Share this code with candidates during registration">
+                          {company.slug}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{company.email}</td>
                       <td className="px-6 py-4">
@@ -716,6 +723,15 @@ export default function SuperAdminPanel() {
                     <div>
                       <label className="text-xs font-medium text-gray-500 uppercase">Company Name</label>
                       <p className="text-sm font-semibold text-gray-900">{selectedCompany.company.name}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 uppercase">Company Code (for candidate registration)</label>
+                      <p className="mt-1">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-sm font-mono font-semibold text-indigo-800 select-all">
+                          {(selectedCompany.company as any).slug}
+                        </span>
+                        <span className="ml-2 text-xs text-gray-500">Share with candidates when they register</span>
+                      </p>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-gray-500 uppercase">Email</label>

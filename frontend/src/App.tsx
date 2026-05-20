@@ -55,15 +55,13 @@ const RoleGuard = ({ children, roles }: { children: React.ReactNode; roles: stri
   return <>{children}</>;
 };
 
-// Dashboard redirect - admin roles skip dashboard
+// Dashboard redirect — routes each role to its natural home page
 const DashboardRedirect = () => {
   const { user } = useAuthStore();
-  if (user?.role === 'admin' && !user?.companyId) {
-    return <Navigate to="/superadmin" replace />;
-  }
-  if (user?.role === 'admin') {
-    return <Navigate to="/admin" replace />;
-  }
+  if (user?.role === 'admin' && !user?.companyId) return <Navigate to="/superadmin" replace />;
+  if (user?.role === 'admin') return <Navigate to="/admin" replace />;
+  // Interviewers have no general dashboard — their home is the interviews list
+  if (user?.role === 'interviewer') return <Navigate to="/interviews" replace />;
   return <Dashboard />;
 };
 
@@ -120,8 +118,8 @@ function App() {
         <Route path="/jobs/new" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
         <Route path="/jobs/:id" element={<JobDetail />} />
         <Route path="/jobs/:id/edit" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
-        <Route path="/applications" element={<Applications />} />
-        <Route path="/applications/:id" element={<ApplicationDetail />} />
+        <Route path="/applications" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><Applications /></RoleGuard>} />
+        <Route path="/applications/:id" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><ApplicationDetail /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />

@@ -142,19 +142,37 @@ export const inviteHR = async (
 
     // Send invitation email
     const invitationUrl = `${config.frontendUrl}/complete-registration?token=${invitationToken}`;
-    
-    try {
-      // In dev mode with SKIP_EMAIL, sendEmail will log to console
-      const skipEmail = process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true';
 
-      // Only validate email config if we're actually going to send
-      if (!skipEmail && (!config.email.host || !config.email.user || !config.email.password)) {
-        logger.error('Email configuration not set. SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured in .env');
-        await User.findByIdAndDelete(newUser._id);
-        sendError(res, 'Email service not configured. Please contact administrator.', 500);
+    const isDev = config.env === 'development' || process.env.NODE_ENV === 'development';
+    const skipEmail = isDev && process.env.SKIP_EMAIL === 'true';
+    const emailNotConfigured = !config.email.host || !config.email.user || !config.email.password;
+
+    // In development with no email config, keep the user and return the invitation URL
+    if (!skipEmail && emailNotConfigured) {
+      if (isDev) {
+        logger.warn(`[DEV] Email not configured — HR user created. Invitation URL: ${invitationUrl}`);
+        sendSuccess(res, {
+          user: {
+            id: newUser._id,
+            email: newUser.email,
+            firstName: newUser.firstName,
+            lastName: newUser.lastName,
+            role: newUser.role,
+            status: newUser.status,
+          },
+          invitationSent: false,
+          invitationUrl,
+          devNote: 'Email not configured. Share this invitation URL manually with the user.',
+        }, 'HR user created. Email not configured — use the invitation URL below.', 201);
         return;
       }
+      logger.error('Email configuration not set. SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured in .env');
+      await User.findByIdAndDelete(newUser._id);
+      sendError(res, 'Email service not configured. Please contact administrator.', 500);
+      return;
+    }
 
+    try {
       await sendEmail({
         to: newUser.email,
         subject: 'Welcome to RecuirtPro - Complete Your Registration',
@@ -192,12 +210,30 @@ export const inviteHR = async (
         passwordConfigured: !!config.email.password,
         portConfigured: config.email.port,
       });
-      
-      // Delete the created user if email fails
+
+      // In dev mode keep the user and surface the URL; in prod roll back
+      if (isDev) {
+        logger.warn(`[DEV] Email send failed — HR user kept. Invitation URL: ${invitationUrl}`);
+        sendSuccess(res, {
+          user: {
+            id: newUser._id,
+            email: newUser.email,
+            firstName: newUser.firstName,
+            lastName: newUser.lastName,
+            role: newUser.role,
+            status: newUser.status,
+          },
+          invitationSent: false,
+          invitationUrl,
+          devNote: 'Email delivery failed. Share this invitation URL manually with the user.',
+        }, 'HR user created. Email delivery failed — use the invitation URL below.', 201);
+        return;
+      }
+
       await User.findByIdAndDelete(newUser._id);
-      
+
       let errorMessage = 'Failed to send invitation email. Please try again.';
-      
+
       if (emailError instanceof Error) {
         if (emailError.message.includes('Invalid login') || emailError.message.includes('Username and Password not accepted')) {
           errorMessage = 'Gmail authentication failed. Please update .env with a valid App Password. ' +
@@ -207,7 +243,7 @@ export const inviteHR = async (
           errorMessage = 'Email service configuration error. Please verify SMTP settings in .env file.';
         }
       }
-      
+
       sendError(res, errorMessage, 500);
     }
   } catch (error) {

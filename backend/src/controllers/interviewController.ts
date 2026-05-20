@@ -227,6 +227,11 @@ export const getInterviewById = async (
       isCompanyMember = interview.companyId.toString() === tenantId;
     }
 
+    // Interviewers may only view interviews they are assigned to as panel members
+    if (req.user?.role === 'interviewer' && !isPanelMember && !isCandidate) {
+      return sendError(res, 'Interviewers may only view their assigned interviews', 403);
+    }
+
     if (!isCandidate && !isCompanyMember && !isPanelMember && !isSuperAdmin(req.user)) {
       return sendError(res, 'Not authorized to view this interview', 403);
     }
@@ -335,6 +340,11 @@ export const updateInterviewStatus = async (
     if (tenantId && interview.companyId) {
       isCompanyMember = interview.companyId.toString() === tenantId;
     }
+    // Interviewers may only update status for their assigned interviews
+    if (req.user?.role === 'interviewer' && !isPanelMember) {
+      return sendError(res, 'Interviewers may only update status for assigned interviews', 403);
+    }
+
     const isAuthorized =
       isSuperAdmin(req.user) ||
       isPanelMember ||
@@ -455,6 +465,11 @@ export const submitInterviewFeedback = async (
     if (tenantId && interview.companyId) {
       isCompanyMember = interview.companyId.toString() === tenantId;
     }
+    // Interviewers may only submit feedback for interviews they are assigned to
+    if (req.user?.role === 'interviewer' && !isPanelMember) {
+      return sendError(res, 'Interviewers may only submit feedback for assigned interviews', 403);
+    }
+
     const isAuthorized =
       isSuperAdmin(req.user) ||
       isPanelMember ||
@@ -527,6 +542,11 @@ export const startInterview = async (
     if (tenantId && interview.companyId) {
       isCompanyMember = interview.companyId.toString() === tenantId;
     }
+    // Interviewers may only start interviews they are assigned to
+    if (req.user?.role === 'interviewer' && !isPanelMember && !isCandidate) {
+      return sendError(res, 'Interviewers may only start their assigned interviews', 403);
+    }
+
     const isAuthorized =
       isSuperAdmin(req.user) ||
       isPanelMember ||

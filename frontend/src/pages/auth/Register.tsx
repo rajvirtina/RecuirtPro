@@ -78,7 +78,7 @@ export default function Register() {
       setCompanyLookupError('');
       setCompanyLookup(null);
       const response = await apiClient.get(`/jobs/company/${slug.trim().toLowerCase()}/info`);
-      const company = response.data?.data;
+      const company = response.data;
       setCompanyLookup({ name: company.name, logo: company.logo, slug: company.slug });
     } catch (err: any) {
       setCompanyLookupError('No company found with this code. Please check with your recruiter.');

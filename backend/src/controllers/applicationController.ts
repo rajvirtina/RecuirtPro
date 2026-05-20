@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { Application, Job, CandidateProfile, User } from '../models';
+import { Application, Job, CandidateProfile, User, Interview } from '../models';
 import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
@@ -118,6 +118,9 @@ export const getApplications = async (
     if (req.user?.role === 'candidate') {
       // Candidates can only see their own applications
       query.candidateId = req.user._id;
+    } else if (req.user?.role === 'interviewer') {
+      // Interviewers have no business browsing the application pipeline
+      return sendError(res, 'Interviewers are not authorised to access the applications list', 403);
     } else {
       // TENANT ISOLATION: All non-candidate, non-super-admin users are scoped to their company
       const tenantId = getTenantCompanyId(req.user);
@@ -184,7 +187,19 @@ export const getApplicationById = async (
     const isOwner = application.candidateId._id.toString() === req.user?._id;
     const tenantId = getTenantCompanyId(req.user);
     const isSuperAdminUser = isSuperAdmin(req.user);
-    
+
+    // Interviewers may only view an application if they are a panel member of an interview for it
+    if (req.user?.role === 'interviewer') {
+      const hasAssignment = await Interview.exists({
+        applicationId: application._id,
+        'panel.userId': req.user._id,
+      });
+      if (!hasAssignment) {
+        return sendError(res, 'Interviewers may only view applications for interviews they are assigned to', 403);
+      }
+      return sendSuccess(res, application, 'Application retrieved successfully');
+    }
+
     // Company members can only view applications for their company's jobs
     let isAuthorizedCompanyMember = false;
     if (tenantId && application.companyId) {

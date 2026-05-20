@@ -3,6 +3,7 @@
  */
 
 import { Response } from 'express';
+import mongoose from 'mongoose';
 import { AuthRequest, JobStatus, ApplicationStatus, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import { Job, Application, Interview, User, ProctoringEvent } from '../models';
@@ -24,13 +25,13 @@ export const getEmployerDashboard = async (
     // TENANT ISOLATION: Only super admin gets global view
     const tenantId = getTenantCompanyId(req.user);
 
-    // Build query filter
+    // Build query filter — use ObjectId so aggregation $match types align with stored values
     const jobFilter: any = { deletedAt: null };
     const applicationFilter: any = {};
     const interviewFilter: any = {};
 
     if (tenantId) {
-      jobFilter.companyId = tenantId;
+      jobFilter.companyId = new mongoose.Types.ObjectId(tenantId);
     }
 
     // PERF-02: Replace 21 sequential countDocuments with aggregation pipelines
@@ -363,10 +364,10 @@ export const getRecruitmentAnalytics = async (
       dateFilter.$lte = new Date(endDate as string);
     }
 
-    // Build query filter
+    // Build query filter — use ObjectId so aggregation $match types align with stored values
     const jobFilter: any = { deletedAt: null };
     if (tenantId) {
-      jobFilter.companyId = tenantId;
+      jobFilter.companyId = new mongoose.Types.ObjectId(tenantId);
     }
     if (Object.keys(dateFilter).length > 0) {
       jobFilter.createdAt = dateFilter;
@@ -508,7 +509,7 @@ export const exportReport = async (
     // Build query filter
     const jobFilter: any = { deletedAt: null };
     if (tenantId) {
-      jobFilter.companyId = tenantId;
+      jobFilter.companyId = new mongoose.Types.ObjectId(tenantId);
     }
 
     let reportData: any = {};
