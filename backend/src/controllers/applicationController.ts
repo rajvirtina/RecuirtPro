@@ -1,5 +1,8 @@
 import { Response } from 'express';
 import { Application, Job, CandidateProfile, User, Interview } from '../models';
+import { AIInterviewSession } from '../models/AIInterviewSession';
+import { ProctoringEvent } from '../models';
+import { ActivityEvent } from '../models/ActivityEvent';
 import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
@@ -298,6 +301,16 @@ export const updateApplicationStatus = async (
 
     await application.save();
 
+    // Log activity event
+    const actorName = `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Unknown';
+    await ActivityEvent.create({
+      applicationId: id,
+      actorId: req.user?._id,
+      actorName,
+      type: 'stage_changed',
+      metadata: { from: currentStatus, to: status },
+    });
+
     logger.info(
       `Application ${id} status updated to ${status} by ${req.user?._id}`
     );
@@ -481,6 +494,140 @@ export const downloadResume = async (
   } catch (error: any) {
     logger.error('Error in downloadResume:', error);
     return sendError(res, error.message || 'Error downloading resume', 500);
+  }
+};
+
+/**
+ * @desc    Get AI assessment report for an application
+ * @route   GET /api/v1/applications/:id/ai-report
+ * @access  Private (HR / Employer / Admin)
+ */
+export const getAIReport = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+
+    const application = await Application.findById(id)
+      .populate('jobId', 'title description skills')
+      .populate('candidateId', 'firstName lastName email profileImage');
+
+    if (!application || application.deletedAt) {
+      return sendError(res, 'Application not found', 404);
+    }
+
+    // Tenant isolation
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && application.companyId?.toString() !== tenantId) {
+      return sendError(res, 'Not authorised to view this report', 403);
+    }
+
+    // Find the interview linked to this application
+    const interview = await Interview.findOne({ applicationId: id }).lean();
+    if (!interview) {
+      return sendError(res, 'No interview found for this application', 404);
+    }
+
+    // Find the AI interview session
+    const session = await AIInterviewSession.findOne({ interviewId: interview._id }).lean();
+    if (!session) {
+      return sendError(res, 'No AI interview session found for this application', 404);
+    }
+
+    // Proctoring events for the interview
+    const proctoringEvents = await ProctoringEvent.find({ interviewId: interview._id })
+      .sort({ timestamp: 1 })
+      .lean();
+
+    const candidate = application.candidateId as any;
+    const job       = application.jobId as any;
+
+    // Compute problem-solving score (technical + situational questions)
+    const questions  = session.questions;
+    const responses  = session.responses;
+
+    const psResponses = responses.filter((_, i) =>
+      ['technical', 'situational'].includes(questions[i]?.type ?? '')
+    );
+    const cfResponses = responses.filter((_, i) =>
+      ['behavioral', 'hr'].includes(questions[i]?.type ?? '')
+    );
+
+    const avgNorm = (arr: typeof responses) =>
+      arr.length > 0
+        ? Math.round(arr.reduce((s, r) => s + r.scores.overall, 0) / arr.length * 10)
+        : null;
+
+    const problemSolving = avgNorm(psResponses) ?? session.analysis?.technicalScore ?? 0;
+    const culturalFit    = avgNorm(cfResponses) ?? session.analysis?.communicationScore ?? 0;
+
+    // Build transcript items (align responses with questions by index)
+    const transcript = responses.map((r, i) => ({
+      questionNumber:      i + 1,
+      question:            r.questionText,
+      questionType:        questions[i]?.type ?? 'behavioral',
+      response:            r.responseText,
+      scores: {
+        technicalAccuracy:   r.scores.technicalAccuracy,
+        communicationClarity:r.scores.communicationClarity,
+        confidence:          r.scores.confidence,
+        overall:             r.scores.overall,
+      },
+      feedback:            r.feedback,
+      improvementTip:      r.improvementTip,
+      passed:              r.passed,
+      responseTimeSeconds: r.responseTimeSeconds,
+      answeredAt:          r.answeredAt,
+    }));
+
+    const report = {
+      applicationId: application._id,
+      applicationStatus: application.status,
+      candidate: {
+        id:           candidate._id,
+        name:         `${candidate.firstName} ${candidate.lastName}`,
+        email:        candidate.email,
+        profileImage: candidate.profileImage,
+      },
+      job: { id: job._id, title: job.title },
+      interview: {
+        id:       interview._id,
+        date:     (interview as any).completedAt || interview.scheduledTime,
+        duration: interview.duration,
+        round:    interview.round || 'L1',
+        aiModel:  'GPT-4o-mini',
+      },
+      recommendation:   session.analysis?.recommendation ?? 'hold',
+      scores: {
+        communication:  session.analysis?.communicationScore ?? 0,
+        technical:      session.analysis?.technicalScore     ?? 0,
+        confidence:     session.analysis?.confidenceScore    ?? 0,
+        overall:        session.analysis?.overallScore       ?? 0,
+        problemSolving,
+        culturalFit,
+      },
+      aiSummary:        session.analysis?.summary      ?? '',
+      strengths:        session.analysis?.strengths    ?? [],
+      improvements:     session.analysis?.improvements ?? [],
+      transcript,
+      proctoringEvents: proctoringEvents.map(e => ({
+        id:          e._id,
+        type:        e.eventType,
+        timestamp:   e.timestamp,
+        severity:    e.severity,
+        description: e.description,
+        snapshotUrl: (e as any).snapshotUrl,
+      })),
+      sessionStatus:     session.status,
+      questionsAnswered: session.analysis?.questionsAnswered ?? responses.length,
+      questionsPassed:   session.analysis?.questionsPassed   ?? 0,
+    };
+
+    return sendSuccess(res, report, 'AI report retrieved successfully');
+  } catch (error: any) {
+    logger.error('Error in getAIReport:', error);
+    return sendError(res, error.message || 'Error fetching AI report', 500);
   }
 };
 

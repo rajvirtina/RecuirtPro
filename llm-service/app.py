@@ -569,6 +569,12 @@ async def general_exception_handler(request, exc):
 # STARTUP
 # =========================
 
+from routers.evaluate import router as evaluate_router
+from routers.parsing  import router as parsing_router
+app.include_router(evaluate_router)
+app.include_router(parsing_router)
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("RecruitPro LLM Service starting...")

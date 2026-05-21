@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../services/api';
+import { Input } from '../../components/ui/Input';
 import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 
 interface InvitationData {
@@ -209,59 +210,41 @@ export default function Register() {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                First Name
-              </label>
-              <input
-                id="firstName"
-                name="firstName"
-                type="text"
-                required
-                value={formData.firstName}
-                onChange={handleChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="John"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                Last Name
-              </label>
-              <input
-                id="lastName"
-                name="lastName"
-                type="text"
-                required
-                value={formData.lastName}
-                onChange={handleChange}
-                className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Doe"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              Email address
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
+            <Input
+              label="First Name"
+              id="firstName"
+              name="firstName"
+              type="text"
               required
-              value={formData.email}
+              value={formData.firstName}
               onChange={handleChange}
-              disabled={!!invitationData}
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="john.doe@example.com"
+              placeholder="John"
             />
-            {invitationData && (
-              <p className="mt-1 text-xs text-gray-500">Email from invitation (cannot be changed)</p>
-            )}
+            <Input
+              label="Last Name"
+              id="lastName"
+              name="lastName"
+              type="text"
+              required
+              value={formData.lastName}
+              onChange={handleChange}
+              placeholder="Doe"
+            />
           </div>
+
+          <Input
+            label="Email address"
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={formData.email}
+            onChange={handleChange}
+            disabled={!!invitationData}
+            placeholder="john.doe@example.com"
+            hint={invitationData ? 'Email from invitation (cannot be changed)' : undefined}
+          />
 
           {!invitationToken && (
             <div>
@@ -289,20 +272,14 @@ export default function Register() {
                 Company Code <span className="text-red-500">*</span>
               </label>
               <div className="mt-1 relative">
-                <input
+                <Input
                   id="companySlug"
                   name="companySlug"
                   type="text"
                   required={showCompanyField}
                   value={formData.companySlug}
                   onChange={handleChange}
-                  className={`appearance-none relative block w-full px-3 py-2 border placeholder-gray-400 text-gray-900 rounded-lg focus:outline-none focus:ring-2 sm:text-sm ${
-                    companyLookupError
-                      ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                      : companyLookup
-                      ? 'border-green-300 focus:ring-green-500 focus:border-green-500'
-                      : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                  }`}
+                  error={companyLookupError || undefined}
                   placeholder="e.g. ambiquest or techiworld"
                 />
                 {lookingUpCompany && (
@@ -350,42 +327,30 @@ export default function Register() {
             </div>
           )}
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Create a strong password"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)
-            </p>
-          </div>
+          <Input
+            label="Password"
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={formData.password}
+            onChange={handleChange}
+            placeholder="Create a strong password"
+            hint="Must be 8+ characters with uppercase, lowercase, number, and special character (!@#$%^&*)"
+          />
 
-          <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-              Confirm Password
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              className="mt-1 appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Confirm your password"
-            />
-          </div>
+          <Input
+            label="Confirm Password"
+            id="confirmPassword"
+            name="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={formData.confirmPassword}
+            onChange={handleChange}
+            placeholder="Confirm your password"
+          />
 
           <div>
             <button

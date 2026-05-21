@@ -312,4 +312,18 @@ router.get(
   applicationController.downloadResume
 );
 
+/**
+ * @route  GET /api/v1/applications/:id/ai-report
+ * @desc   Get AI assessment report for a completed AI interview
+ * @access HR / Employer / Admin
+ */
+router.get(
+  '/:id/ai-report',
+  protect,
+  authorize(UserRole.HR, UserRole.EMPLOYER, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Valid application ID is required')],
+  validate,
+  applicationController.getAIReport
+);
+
 export default router;

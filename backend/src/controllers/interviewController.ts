@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { Interview, Application, Job, User, InterviewTemplate, Question, ProctoringEvent } from '../models';
+import { ActivityEvent } from '../models/ActivityEvent';
 import { AuthRequest, InterviewStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
@@ -84,6 +85,16 @@ export const scheduleInterview = async (
       remarks: `Interview scheduled for ${scheduledTime}`,
     });
     await application.save();
+
+    // Log activity event
+    const actorName = `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Unknown';
+    await ActivityEvent.create({
+      applicationId,
+      actorId: req.user?._id,
+      actorName,
+      type: 'interview_scheduled',
+      metadata: { platform: mode, scheduledAt: scheduledTime },
+    });
 
     logger.info(`Interview scheduled: ${interview._id} for application: ${applicationId}`);
 

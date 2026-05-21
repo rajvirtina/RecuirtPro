@@ -7,7 +7,7 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
 import { EmptyInterviews } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 interface Interview {
   _id: string;
@@ -20,6 +20,9 @@ interface Interview {
   round?: string;
   panel: any[];
   proctoringEnabled?: boolean;
+  feedbackStatus?: 'pending' | 'partial' | 'completed';
+  feedbackCount?: number;
+  feedbackTotal?: number;
 }
 
 const FILTER_TABS = [
@@ -207,6 +210,28 @@ export default function Interviews() {
                           >
                             Cancel
                           </Button>
+                        )}
+
+                        {/* Scorecard Status */}
+                        {isEmployer && (iv.status === 'completed' || iv.feedbackStatus) && (
+                          <Link to={`/interviews/${iv._id}/feedback`}>
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                              iv.feedbackStatus === 'completed'
+                                ? 'bg-success-50 text-success-700'
+                                : iv.feedbackStatus === 'partial'
+                                ? 'bg-warning-50 text-warning-700'
+                                : 'bg-neutral-100 text-neutral-500'
+                            }`}>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              {iv.feedbackStatus === 'completed'
+                                ? 'Feedback Complete'
+                                : iv.feedbackStatus === 'partial'
+                                ? `${iv.feedbackCount || 0}/${iv.feedbackTotal || 0} Scorecards`
+                                : 'Awaiting Feedback'}
+                            </span>
+                          </Link>
                         )}
                       </div>
                     </div>

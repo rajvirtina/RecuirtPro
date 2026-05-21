@@ -34,6 +34,17 @@ export interface IApplicationDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   deletedAt?: Date;
+
+  // AI resume parsing results
+  parsedSkills: string[];
+  parsedExperienceYears?: number;
+  parsedEducation: Array<{ degree: string; institution: string }>;
+  parsedNoticePeriod?: string;
+  parsedAt?: Date;
+
+  // AI ranking results
+  missingSkills: string[];
+  matchingSkills: string[];
 }
 
 const statusHistorySchema = new Schema<IStatusHistory>(
@@ -128,6 +139,20 @@ const applicationSchema = new Schema<IApplicationDocument>(
       ref: 'User',
     },
     deletedAt: Date,
+
+    // AI resume parsing results
+    parsedSkills:          { type: [String], default: [] },
+    parsedExperienceYears: { type: Number, min: 0, max: 100 },
+    parsedEducation: {
+      type: [{ degree: String, institution: String }],
+      default: [],
+    },
+    parsedNoticePeriod: String,
+    parsedAt:           Date,
+
+    // AI ranking results
+    missingSkills:   { type: [String], default: [] },
+    matchingSkills:  { type: [String], default: [] },
   },
   {
     timestamps: true,
@@ -140,6 +165,7 @@ applicationSchema.index({ candidateId: 1, status: 1 });
 applicationSchema.index({ companyId: 1, status: 1 });
 applicationSchema.index({ overallScore: -1 });
 applicationSchema.index({ appliedAt: -1 });
+applicationSchema.index({ parsedAt: 1 }, { sparse: true });
 
 // Update timestamp fields on status change (B-07/B-08 fix: removed duplicate
 // statusHistory push — history is now managed only in the controller, which

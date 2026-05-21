@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '../../services/api';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { format } from 'date-fns';
 
 interface Company {
@@ -78,6 +80,10 @@ export default function SuperAdminPanel() {
     role: 'admin',
   });
 
+  // Confirm dialogs
+  const [confirmDeleteCompany, setConfirmDeleteCompany] = useState<string | null>(null);
+  const [confirmDeleteAdmin, setConfirmDeleteAdmin] = useState<string | null>(null);
+
   useEffect(() => {
     fetchCompanies();
     fetchAdmins();
@@ -88,7 +94,7 @@ export default function SuperAdminPanel() {
       const response = await apiClient.get('/admin/companies');
       setCompanies(response.data || []);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch companies');
+      toast.error(err.response?.data?.message || 'Failed to fetch companies');
     }
   };
 
@@ -97,7 +103,7 @@ export default function SuperAdminPanel() {
       const response = await apiClient.get('/admin/users?role=admin,hr');
       setAdmins(response.data || []);
     } catch (err: any) {
-      console.error('Failed to fetch admins:', err);
+      toast.error(err.response?.data?.message || 'Failed to fetch admins');
     }
   };
 
@@ -107,7 +113,7 @@ export default function SuperAdminPanel() {
       setSelectedCompany(response.data || null);
       setShowCompanyDetail(true);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to fetch company details');
+      toast.error(err.response?.data?.message || 'Failed to fetch company details');
     }
   };
 
@@ -117,13 +123,12 @@ export default function SuperAdminPanel() {
       setError('');
       setSuccess('');
       await apiClient.post('/admin/companies', companyForm);
-      setSuccess('Company created successfully! Verification email sent.');
+      toast.success('Company created successfully! Verification email sent.');
       setShowCompanyForm(false);
       setCompanyForm({ name: '', email: '', phone: '', website: '' });
       await fetchCompanies();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create company');
+      toast.error(err.response?.data?.message || 'Failed to create company');
     }
   };
 
@@ -147,42 +152,39 @@ export default function SuperAdminPanel() {
       }
 
       await apiClient.post('/admin/users', adminForm);
-      setSuccess('Company admin created successfully!');
+      toast.success('Company admin created successfully!');
       setShowAdminForm(false);
       setAdminForm({ firstName: '', lastName: '', email: '', password: '', companyId: '', role: 'admin' });
       await fetchAdmins();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create admin');
+      toast.error(err.response?.data?.message || 'Failed to create admin');
     }
   };
 
   const deleteCompany = async (companyId: string) => {
-    if (!confirm('Are you sure? This will delete all associated data.')) return;
     try {
       setError('');
       await apiClient.delete(`/admin/companies/${companyId}`);
-      setSuccess('Company deleted successfully');
+      toast.success('Deleted successfully', { description: 'This action cannot be undone.' });
       setShowCompanyDetail(false);
+      setConfirmDeleteCompany(null);
       await fetchCompanies();
       await fetchAdmins();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete company');
+      toast.error(err.response?.data?.message || 'Failed to delete company');
     }
   };
 
   const deleteAdmin = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this admin?')) return;
     try {
       setError('');
       await apiClient.delete(`/admin/users/${userId}`);
-      setSuccess('Admin deleted successfully');
+      toast.success('Deleted successfully', { description: 'This action cannot be undone.' });
       setShowAdminDetail(false);
+      setConfirmDeleteAdmin(null);
       await fetchAdmins();
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to delete admin');
+      toast.error(err.response?.data?.message || 'Failed to delete admin');
     }
   };
 
@@ -190,10 +192,9 @@ export default function SuperAdminPanel() {
     try {
       setError('');
       await apiClient.post(`/admin/companies/${companyId}/resend-verification`);
-      setSuccess('Verification email resent successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success('Verification email resent successfully!');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to resend verification email');
+      toast.error(err.response?.data?.message || 'Failed to resend verification email');
     }
   };
 
@@ -201,10 +202,9 @@ export default function SuperAdminPanel() {
     try {
       setError('');
       await apiClient.post(`/admin/users/${userId}/resend-verification`);
-      setSuccess('Verification email resent successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success('Verification email resent successfully!');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to resend verification email');
+      toast.error(err.response?.data?.message || 'Failed to resend verification email');
     }
   };
 
@@ -226,13 +226,12 @@ export default function SuperAdminPanel() {
     try {
       setError('');
       await apiClient.put(`/admin/companies/${selectedCompany.company._id}`, companyEditForm);
-      setSuccess('Company updated successfully');
+      toast.success('Company updated successfully');
       setEditingCompany(false);
       await fetchCompanies();
       await fetchCompanyDetail(selectedCompany.company._id);
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update company');
+      toast.error(err.response?.data?.message || 'Failed to update company');
     }
   };
 
@@ -251,16 +250,15 @@ export default function SuperAdminPanel() {
     try {
       setError('');
       await apiClient.put(`/admin/users/${selectedAdmin._id}`, adminEditForm);
-      setSuccess('Admin updated successfully');
+      toast.success('Admin updated successfully');
       setEditingAdmin(false);
       await fetchAdmins();
       // refresh the selected admin data
       const response = await apiClient.get('/admin/users?role=admin,hr');
       const updated = (response.data || []).find((a: CompanyAdmin) => a._id === selectedAdmin._id);
       if (updated) setSelectedAdmin(updated);
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update admin');
+      toast.error(err.response?.data?.message || 'Failed to update admin');
     }
   };
 
@@ -448,7 +446,7 @@ export default function SuperAdminPanel() {
                             </button>
                           )}
                           <button
-                            onClick={(e) => { e.stopPropagation(); deleteCompany(company._id); }}
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteCompany(company._id); }}
                             className="text-red-600 hover:text-red-900 font-medium">
                             Delete
                           </button>
@@ -604,7 +602,7 @@ export default function SuperAdminPanel() {
                               </button>
                             )}
                             <button
-                              onClick={(e) => { e.stopPropagation(); deleteAdmin(admin._id); }}
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteAdmin(admin._id); }}
                               className="text-red-600 hover:text-red-900 font-medium">
                               Delete
                             </button>
@@ -811,7 +809,7 @@ export default function SuperAdminPanel() {
                       Edit Company
                     </button>
                   )}
-                  <button onClick={() => deleteCompany(selectedCompany.company._id)}
+                  <button onClick={() => setConfirmDeleteCompany(selectedCompany.company._id)}
                     className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
                     Delete Company
                   </button>
@@ -945,7 +943,7 @@ export default function SuperAdminPanel() {
                     </button>
                   )}
                   {selectedAdmin.companyId && (
-                    <button onClick={() => deleteAdmin(selectedAdmin._id)}
+                    <button onClick={() => setConfirmDeleteAdmin(selectedAdmin._id)}
                       className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
                       Delete Admin
                     </button>
@@ -960,6 +958,26 @@ export default function SuperAdminPanel() {
           </div>
         </div>
       )}
+
+      {/* Confirm Dialogs */}
+      <ConfirmDialog
+        open={!!confirmDeleteCompany}
+        title="Delete company?"
+        message="This will permanently delete the company and all associated data. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => confirmDeleteCompany && deleteCompany(confirmDeleteCompany)}
+        onCancel={() => setConfirmDeleteCompany(null)}
+      />
+      <ConfirmDialog
+        open={!!confirmDeleteAdmin}
+        title="Delete admin?"
+        message="Are you sure you want to delete this admin? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => confirmDeleteAdmin && deleteAdmin(confirmDeleteAdmin)}
+        onCancel={() => setConfirmDeleteAdmin(null)}
+      />
     </div>
   );
 }

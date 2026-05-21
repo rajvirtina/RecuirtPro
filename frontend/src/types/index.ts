@@ -93,6 +93,18 @@ export interface Application {
   overallScore?: number;
   appliedAt: string;
   job?: Job;
+  resumeUrl?: string;
+
+  // AI resume parsing
+  parsedSkills?: string[];
+  parsedExperienceYears?: number;
+  parsedEducation?: { degree: string; institution: string }[];
+  parsedNoticePeriod?: string;
+  parsedAt?: string;
+
+  // AI ranking results
+  missingSkills?: string[];
+  matchingSkills?: string[];
 }
 
 export interface Interview {

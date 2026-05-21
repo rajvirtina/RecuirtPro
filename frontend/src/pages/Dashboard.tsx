@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuthStore } from '../store/authStore';
 import apiClient from '../services/api';
 import { StatCard } from '../components/ui/StatCard';
@@ -371,7 +372,7 @@ export default function Dashboard() {
     const endpoint = user.role === 'candidate' ? '/dashboard/candidate' : '/dashboard/employer';
     apiClient.get(endpoint)
       .then((res) => setStats(res.data?.data ?? res.data))
-      .catch(console.error)
+      .catch(() => toast.error('Failed to load dashboard data'))
       .finally(() => setLoading(false));
   }, [user]);
 

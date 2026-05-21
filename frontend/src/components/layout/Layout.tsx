@@ -1,8 +1,10 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../../store/authStore';
 import { Avatar } from '../ui/Avatar';
+import apiClient from '../../services/api';
 
 /* ── Icons ──────────────────────────────────────────────────────────── */
 function DashboardIcon({ className }: { className?: string }) {
@@ -102,6 +104,14 @@ function ProctoringIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function PipelineIcon({ className }: { className?: string }) {
+  return (
+    <svg className={clsx('w-5 h-5', className)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+        d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+    </svg>
+  );
+}
 function LogoutIcon({ className }: { className?: string }) {
   return (
     <svg className={clsx('w-5 h-5', className)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,9 +162,11 @@ const companyAdminNav: NavItem[] = [
   { name: 'HR Management', href: '/admin/hr-management',Icon: HRIcon,        group: 'admin' },
   { name: 'Jobs',          href: '/jobs',               Icon: JobsIcon,      group: 'main' },
   { name: 'Applications',  href: '/applications',       Icon: AppsIcon,      group: 'main' },
+  { name: 'Pipeline',      href: '/pipeline',           Icon: PipelineIcon,  group: 'main' },
   { name: 'Interviews',    href: '/interviews',         Icon: InterviewIcon, group: 'main' },
   { name: 'Analytics',     href: '/analytics',          Icon: AnalyticsIcon, group: 'main' },
   { name: 'Proctoring',    href: '/proctoring/monitor', Icon: ProctoringIcon,group: 'tools' },
+  { name: 'Settings',      href: '/settings',           Icon: AdminIcon,     group: 'tools' },
   { name: 'Profile',       href: '/profile',            Icon: ProfileIcon,   group: 'account' },
 ];
 
@@ -162,11 +174,13 @@ const defaultNav: NavItem[] = [
   { name: 'Dashboard',    href: '/dashboard',   Icon: DashboardIcon,  group: 'main' },
   { name: 'Jobs',         href: '/jobs',        Icon: JobsIcon,       group: 'main' },
   { name: 'Applications', href: '/applications',Icon: AppsIcon,       group: 'main' },
+  { name: 'Pipeline',     href: '/pipeline',    Icon: PipelineIcon,   group: 'main' },
   { name: 'Interviews',   href: '/interviews',  Icon: InterviewIcon,  group: 'main' },
   { name: 'Offers',       href: '/offers',      Icon: OfferIcon,      group: 'main' },
   { name: 'Analytics',    href: '/analytics',   Icon: AnalyticsIcon,  group: 'main' },
   { name: 'Questions',    href: '/questions',   Icon: QuestionIcon,   group: 'tools' },
   { name: 'Sourcing',     href: '/sourcing',    Icon: SourcingIcon,   group: 'tools' },
+  { name: 'Settings',     href: '/settings',    Icon: AdminIcon,      group: 'tools' },
   { name: 'Profile',      href: '/profile',     Icon: ProfileIcon,    group: 'account' },
 ];
 
@@ -206,6 +220,22 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // Fetch company branding
+  const { data: companyData } = useQuery({
+    queryKey: ['companySettings'],
+    queryFn: () => apiClient.get('/companies/settings').then(r => r.data.data),
+    enabled: !!user && user.role !== 'candidate',
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Apply branding CSS variable
+  useEffect(() => {
+    if (companyData?.branding?.primaryColor) {
+      document.documentElement.style.setProperty('--color-primary-600', companyData.branding.primaryColor);
+    }
+    return () => { document.documentElement.style.removeProperty('--color-primary-600'); };
+  }, [companyData?.branding?.primaryColor]);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -233,14 +263,20 @@ export default function Layout() {
         'flex items-center gap-2.5 px-4 py-4 border-b border-neutral-100',
         collapsed && 'justify-center px-2',
       )}>
-        <div className="w-8 h-8 bg-primary-600 rounded-md flex items-center justify-center shrink-0">
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </div>
+        {companyData?.branding?.logoUrl ? (
+          <img src={companyData.branding.logoUrl} alt="Logo" className="w-8 h-8 object-contain rounded-md shrink-0" />
+        ) : (
+          <div className="w-8 h-8 bg-primary-600 rounded-md flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </div>
+        )}
         {!collapsed && (
-          <span className="font-semibold text-neutral-900 text-base tracking-tight">RecuirtPro</span>
+          <span className="font-semibold text-neutral-900 text-base tracking-tight">
+            {companyData?.name || 'RecuirtPro'}
+          </span>
         )}
       </div>
 

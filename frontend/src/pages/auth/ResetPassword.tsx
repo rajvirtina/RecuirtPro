@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import apiClient from '../../services/api';
+import { Input } from '../../components/ui/Input';
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -151,15 +152,12 @@ export default function ResetPassword() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              New Password *
-            </label>
-            <input
+            <Input
+              label="New Password"
               type="password"
               required
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
               placeholder="Minimum 8 characters"
             />
             {strength && (
@@ -180,18 +178,13 @@ export default function ResetPassword() {
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Confirm New Password *
-            </label>
-            <input
-              type="password"
-              required
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-            />
-          </div>
+          <Input
+            label="Confirm New Password"
+            type="password"
+            required
+            value={formData.confirmPassword}
+            onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+          />
 
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <p className="text-xs text-gray-600 font-semibold mb-2">

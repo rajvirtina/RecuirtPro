@@ -1,0 +1,13 @@
+# Hostinger .htaccess — routes all traffic to the Node.js app
+# This is only needed if Hostinger uses Apache as a reverse proxy
+
+DirectoryIndex disabled
+
+RewriteEngine On
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# Let Node.js handle everything
+RewriteRule ^(.*)$ http://127.0.0.1:%{ENV:PORT}/$1 [P,L]

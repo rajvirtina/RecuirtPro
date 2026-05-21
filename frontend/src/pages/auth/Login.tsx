@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 
 type UserType = 'employee' | 'employer';
 
@@ -85,20 +86,17 @@ export default function Login() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Email */}
-        <div>
-          <label htmlFor="email" className="field-label">Email address</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={formData.email}
-            onChange={handleChange}
-            placeholder={activeTab === 'employee' ? 'you@example.com' : 'hr@company.com'}
-            className="field-input"
-          />
-        </div>
+        <Input
+          label="Email address"
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          required
+          value={formData.email}
+          onChange={handleChange}
+          placeholder={activeTab === 'employee' ? 'you@example.com' : 'hr@company.com'}
+        />
 
         {/* Password */}
         <div>
@@ -109,7 +107,7 @@ export default function Login() {
             </Link>
           </div>
           <div className="relative">
-            <input
+            <Input
               id="password"
               name="password"
               type={showPassword ? 'text' : 'password'}
@@ -118,7 +116,7 @@ export default function Login() {
               value={formData.password}
               onChange={handleChange}
               placeholder="Enter your password"
-              className="field-input pr-10"
+              className="pr-10"
             />
             <button
               type="button"

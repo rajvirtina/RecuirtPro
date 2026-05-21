@@ -27,6 +27,12 @@ import notificationRoutes from './routes/notifications';
 import hrRoutes from './routes/hr';
 import gdprRoutes from './routes/gdprRoutes';
 import invitationRoutes from './routes/invitations';
+import aiInterviewRoutes   from './routes/aiInterviewRoutes';
+import resumeParserRoutes  from './routes/resumeParserRoutes';
+import analyticsRoutes         from './routes/analyticsRoutes';
+import proctoringSessionRoutes from './routes/proctoringSessionRoutes';
+import noteRoutes from './routes/notes';
+import companySettingsRoutes from './routes/companySettings';
 // import userRoutes from './routes/user';
 // ... other routes
 
@@ -156,6 +162,14 @@ app.use('/api/v1/gdpr', gdprRoutes);
 app.use('/api/v1/invitations', invitationRoutes);
 app.use('/api/v1/offers', offerRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/ai-interviews', aiInterviewRoutes);
+// Resume parser routes mount at /api/v1 — paths defined inside the router
+app.use('/api/v1', resumeParserRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
+// Session-based proctoring (public consent/violation + protected report)
+app.use('/api/v1/proctoring', proctoringSessionRoutes);
+app.use('/api/v1', noteRoutes);
+app.use('/api/v1/companies', companySettingsRoutes);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 

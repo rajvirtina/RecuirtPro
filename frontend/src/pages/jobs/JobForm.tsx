@@ -6,7 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Input, Select, Textarea } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 import { clsx } from 'clsx';
 
 interface JobFormData {

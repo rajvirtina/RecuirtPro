@@ -19,12 +19,14 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/jobs/Jobs';
 import JobDetail from './pages/jobs/JobDetail';
-import JobForm from './pages/jobs/JobForm';
+import JobForm           from './pages/jobs/JobForm';
+import JobCreateWizard   from './pages/jobs/JobCreateWizard';
 import CompanyJobs from './pages/jobs/CompanyJobs';
 import CandidateJobs from './pages/jobs/CandidateJobs';
 import ApplyJob from './pages/jobs/ApplyJob';
 import Applications from './pages/applications/Applications';
 import ApplicationDetail from './pages/applications/ApplicationDetail';
+import AIAssessmentReport from './pages/applications/AIAssessmentReport';
 import Interviews from './pages/interviews/Interviews';
 import InterviewDetail from './pages/interviews/InterviewDetail';
 import VideoMeetingRoom from './pages/interviews/VideoMeetingRoom';
@@ -37,7 +39,12 @@ import SuperAdminPanel from './pages/superadmin/SuperAdminPanel';
 import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import ProctoringCheck from './pages/proctoring/ProctoringCheck';
+import AIInterviewRoom from './pages/ai-interview/AIInterviewRoom';
 import ProctoringDashboard from './pages/proctoring/ProctoringDashboard';
+import CandidateSelfSchedule from './pages/schedule/CandidateSelfSchedule';
+import InterviewerScorecard from './pages/interviews/InterviewerScorecard';
+import PipelineBoard from './pages/pipeline/PipelineBoard';
+import Settings from './pages/settings/Settings';
 import NotFound from './pages/NotFound';
 
 // Protected route component
@@ -102,6 +109,15 @@ function App() {
       {/* Company-specific job listings - Public route */}
       <Route path="/company/:slug/jobs" element={<CompanyJobs />} />
 
+      {/* AI Interview Room - Public route, session token is the credential */}
+      <Route path="/ai-interview/:sessionId" element={<AIInterviewRoom />} />
+
+      {/* Candidate self-scheduling - Public route, token is the credential */}
+      <Route path="/schedule/:token" element={<CandidateSelfSchedule />} />
+
+      {/* Interviewer scorecard - accessible via token without login */}
+      <Route path="/interviews/:id/feedback" element={<InterviewerScorecard />} />
+
       {/* Protected routes */}
       <Route
         element={
@@ -115,23 +131,26 @@ function App() {
         <Route path="/candidate/jobs" element={<CandidateJobs />} />
         <Route path="/jobs/:id/apply" element={<ApplyJob />} />
         <Route path="/jobs" element={<Jobs />} />
-        <Route path="/jobs/new" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
+        <Route path="/jobs/new" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobCreateWizard /></RoleGuard>} />
         <Route path="/jobs/:id" element={<JobDetail />} />
         <Route path="/jobs/:id/edit" element={<RoleGuard roles={['admin', 'hr', 'employer']}><JobForm /></RoleGuard>} />
         <Route path="/applications" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><Applications /></RoleGuard>} />
         <Route path="/applications/:id" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><ApplicationDetail /></RoleGuard>} />
+        <Route path="/applications/:id/ai-report" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><AIAssessmentReport /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
         <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
         <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
         <Route path="/offers" element={<RoleGuard roles={['admin', 'hr', 'employer']}><OfferManagement /></RoleGuard>} />
+        <Route path="/pipeline" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><PipelineBoard /></RoleGuard>} />
         <Route path="/analytics" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Analytics /></RoleGuard>} />
         <Route path="/proctoring/monitor" element={<RoleGuard roles={['admin', 'hr', 'employer']}><ProctoringDashboard /></RoleGuard>} />
         <Route path="/admin" element={<RoleGuard roles={['admin']}><AdminDashboard /></RoleGuard>} />
         <Route path="/admin/hr-management" element={<RoleGuard roles={['admin']}><HRManagement /></RoleGuard>} />
         <Route path="/superadmin" element={<RoleGuard roles={['admin']}><SuperAdminPanel /></RoleGuard>} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/settings" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Settings /></RoleGuard>} />
       </Route>
 
       {/* 404 */}

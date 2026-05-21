@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { Job } from '../../types';
@@ -155,7 +156,7 @@ export default function Jobs() {
       setJobs((res.data as any) || []);
       setPagination((res as any).pagination || { page, totalPages: 1, total: (res.data as any)?.length ?? 0 });
     } catch {
-      /* silently handle — no toast needed for read failures on initial load */
+      toast.error('Failed to load jobs');
     } finally {
       setLoading(false);
     }
