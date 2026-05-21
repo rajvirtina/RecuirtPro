@@ -113,8 +113,13 @@ const register = async (req, res, next) => {
                     (0, response_1.sendError)(res, 'Company code is required to register as a candidate. Please enter your company\'s code.', 400);
                     return;
                 }
+                const searchTerm = companySlug.trim().toLowerCase();
                 const company = await models_1.Company.findOne({
-                    slug: companySlug.trim().toLowerCase(),
+                    $or: [
+                        { slug: searchTerm },
+                        { name: { $regex: `^${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+                        { slug: { $regex: `^${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, $options: 'i' } },
+                    ],
                     deletedAt: null,
                     status: { $in: ['active', 'pending_verification'] },
                 });

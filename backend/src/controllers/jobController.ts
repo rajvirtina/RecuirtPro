@@ -63,7 +63,16 @@ export const getJobs = async (req: AuthRequest, res: Response, next: NextFunctio
 export const getCompanyInfoBySlug = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { slug } = req.params;
-    const company = await Company.findOne({ slug: slug.toLowerCase(), deletedAt: null, status: { $in: ['active', 'pending_verification'] } });
+    const searchTerm = slug.trim().toLowerCase();
+    const company = await Company.findOne({
+      $or: [
+        { slug: searchTerm },
+        { name: { $regex: `^${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } },
+        { slug: { $regex: `^${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, $options: 'i' } },
+      ],
+      deletedAt: null,
+      status: { $in: ['active', 'pending_verification'] },
+    });
     if (!company) {
       sendError(res, 'Company not found', 404);
       return;
