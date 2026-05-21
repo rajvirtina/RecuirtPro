@@ -1,35 +1,36 @@
 import { Router } from 'express';
 import * as noteController from '../controllers/noteController';
-import { authenticate, authorize } from '../middleware/auth';
+import { protect, authorize } from '../middleware/auth';
+import { UserRole } from '../types';
 
 const router = Router();
 
 // All routes require authentication
-router.use(authenticate);
+router.use(protect);
 
 // Notes
 router.get(
   '/applications/:id/notes',
-  authorize('employer', 'hr', 'admin', 'super_admin'),
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
   noteController.getNotes
 );
 
 router.post(
   '/applications/:id/notes',
-  authorize('employer', 'hr', 'admin', 'super_admin'),
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
   noteController.createNote
 );
 
 router.delete(
   '/applications/:id/notes/:noteId',
-  authorize('employer', 'hr', 'admin', 'super_admin'),
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
   noteController.deleteNote
 );
 
 // Timeline
 router.get(
   '/applications/:id/timeline',
-  authorize('employer', 'hr', 'admin', 'super_admin'),
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
   noteController.getTimeline
 );
 

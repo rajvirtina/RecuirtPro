@@ -3,7 +3,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import * as ctrl from '../controllers/companySettingsController';
-import { authenticate, authorize } from '../middleware/auth';
+import { protect, authorize } from '../middleware/auth';
+import { UserRole } from '../types';
 
 // Ensure logos upload directory
 const logoDir = path.join(__dirname, '../../uploads/logos');
@@ -27,13 +28,13 @@ const logoUpload = multer({
 });
 
 const router = Router();
-router.use(authenticate);
+router.use(protect);
 
 router.get('/settings', ctrl.getCompanySettings);
-router.patch('/settings', authorize('employer', 'hr', 'admin'), ctrl.updateCompanySettings);
-router.patch('/branding', authorize('employer', 'admin'), ctrl.updateBranding);
-router.post('/branding/logo', authorize('employer', 'admin'), logoUpload.single('logo'), ctrl.uploadLogo);
+router.patch('/settings', authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN), ctrl.updateCompanySettings);
+router.patch('/branding', authorize(UserRole.EMPLOYER, UserRole.ADMIN), ctrl.updateBranding);
+router.post('/branding/logo', authorize(UserRole.EMPLOYER, UserRole.ADMIN), logoUpload.single('logo'), ctrl.uploadLogo);
 router.get('/pipeline-stages', ctrl.getPipelineStages);
-router.put('/pipeline-stages', authorize('employer', 'hr', 'admin'), ctrl.updatePipelineStages);
+router.put('/pipeline-stages', authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN), ctrl.updatePipelineStages);
 
 export default router;

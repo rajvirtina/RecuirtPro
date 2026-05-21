@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { Note } from '../models/Note';
 import { ActivityEvent } from '../models/ActivityEvent';
 import { Application } from '../models';
-import { AuthRequest } from '../types';
+import { AuthRequest, UserRole } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 import { getTenantCompanyId } from '../middleware/auth';
@@ -14,17 +14,17 @@ import { getTenantCompanyId } from '../middleware/auth';
 export const getNotes = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { page = 1, limit = 20 } = clampPagination(req.query);
+    const { pageNum, limitNum } = clampPagination(req.query.page, req.query.limit);
 
-    const query = { applicationId: id, deletedAt: null };
-    const total = await Note.countDocuments(query);
-    const notes = await Note.find(query)
+    const filter = { applicationId: id, deletedAt: null };
+    const total = await Note.countDocuments(filter);
+    const notes = await Note.find(filter)
       .sort({ createdAt: -1 })
-      .skip((+page - 1) * +limit)
-      .limit(+limit)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
       .lean();
 
-    return sendPaginatedResponse(res, notes, total, +page, +limit);
+    return sendPaginatedResponse(res, notes, pageNum, limitNum, total);
   } catch (error: any) {
     logger.error('Error in getNotes:', error);
     return sendError(res, error.message || 'Error fetching notes', 500);
@@ -48,7 +48,7 @@ export const createNote = async (req: AuthRequest, res: Response) => {
     }
 
     // Verify application exists and user has access
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     const application = await Application.findOne({ _id: id, ...(companyId ? { companyId } : {}) });
     if (!application) {
       return sendError(res, 'Application not found', 404);
@@ -95,7 +95,7 @@ export const deleteNote = async (req: AuthRequest, res: Response) => {
 
     // Only author or admin can delete
     const isAuthor = note.authorId.toString() === req.user?._id?.toString();
-    const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
+    const isAdmin = req.user?.role === UserRole.ADMIN;
     if (!isAuthor && !isAdmin) {
       return sendError(res, 'Not authorized to delete this note', 403);
     }
@@ -117,17 +117,17 @@ export const deleteNote = async (req: AuthRequest, res: Response) => {
 export const getTimeline = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { page = 1, limit = 20 } = clampPagination(req.query);
+    const { pageNum, limitNum } = clampPagination(req.query.page, req.query.limit);
 
-    const query = { applicationId: id };
-    const total = await ActivityEvent.countDocuments(query);
-    const events = await ActivityEvent.find(query)
+    const filter = { applicationId: id };
+    const total = await ActivityEvent.countDocuments(filter);
+    const events = await ActivityEvent.find(filter)
       .sort({ createdAt: -1 })
-      .skip((+page - 1) * +limit)
-      .limit(+limit)
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
       .lean();
 
-    return sendPaginatedResponse(res, events, total, +page, +limit);
+    return sendPaginatedResponse(res, events, pageNum, limitNum, total);
   } catch (error: any) {
     logger.error('Error in getTimeline:', error);
     return sendError(res, error.message || 'Error fetching timeline', 500);

@@ -217,7 +217,7 @@ export const getTimeToHire = async (req: AuthRequest, res: Response): Promise<vo
           as:           'job',
         },
       },
-      { $unwind: { path: '$job', preserveNullAndEmpty: true } },
+      { $unwind: { path: '$job', preserveNullAndEmptyArrays: true } },
       {
         $group: {
           _id:    { $ifNull: ['$job.department', 'Unspecified'] },

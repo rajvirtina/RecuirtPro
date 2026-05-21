@@ -10,7 +10,7 @@ import { getTenantCompanyId } from '../middleware/auth';
  */
 export const getCompanySettings = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     const company = await Company.findById(companyId).lean();
@@ -39,7 +39,7 @@ export const getCompanySettings = async (req: AuthRequest, res: Response) => {
  */
 export const updateCompanySettings = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     const { name, website, industry, size, settings, notifications } = req.body;
@@ -75,7 +75,7 @@ export const updateCompanySettings = async (req: AuthRequest, res: Response) => 
  */
 export const updateBranding = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     const { primaryColor, faviconUrl, logoUrl } = req.body;
@@ -105,7 +105,7 @@ export const updateBranding = async (req: AuthRequest, res: Response) => {
  */
 export const uploadLogo = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     if (!req.file) return sendError(res, 'No file uploaded', 400);
@@ -127,7 +127,7 @@ export const uploadLogo = async (req: AuthRequest, res: Response) => {
  */
 export const getPipelineStages = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     const company = await Company.findById(companyId).select('defaultPipelineStages').lean();
@@ -145,7 +145,7 @@ export const getPipelineStages = async (req: AuthRequest, res: Response) => {
  */
 export const updatePipelineStages = async (req: AuthRequest, res: Response) => {
   try {
-    const companyId = getTenantCompanyId(req);
+    const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
     const { stages } = req.body;
