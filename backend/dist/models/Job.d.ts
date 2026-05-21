@@ -34,7 +34,7 @@ export interface IJobDocument extends Document {
     deletedAt?: Date;
 }
 export declare const Job: mongoose.Model<IJobDocument, {}, {}, {}, mongoose.Document<unknown, {}, IJobDocument, {}, {}> & IJobDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

@@ -61,7 +61,7 @@ export interface ISourcedCandidateDocument extends Document {
     updatedAt: Date;
 }
 export declare const SourcedCandidate: mongoose.Model<ISourcedCandidateDocument, {}, {}, {}, mongoose.Document<unknown, {}, ISourcedCandidateDocument, {}, {}> & ISourcedCandidateDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

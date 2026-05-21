@@ -64,8 +64,8 @@ router.put('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOY
 /**
  * @route   DELETE /api/v1/jobs/:id
  * @desc    Delete job (soft delete)
- * @access  Private (Employer, HR, Admin)
+ * @access  Private (HR, Admin only — Employers may not delete jobs)
  */
-router.delete('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Invalid job ID')], validator_1.validate, jobController_1.deleteJob);
+router.delete('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Invalid job ID')], validator_1.validate, jobController_1.deleteJob);
 exports.default = router;
 //# sourceMappingURL=jobs.js.map

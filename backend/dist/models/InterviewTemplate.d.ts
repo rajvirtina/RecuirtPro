@@ -29,7 +29,7 @@ export interface IInterviewTemplateDocument extends Document {
     updatedAt: Date;
 }
 export declare const InterviewTemplate: mongoose.Model<IInterviewTemplateDocument, {}, {}, {}, mongoose.Document<unknown, {}, IInterviewTemplateDocument, {}, {}> & IInterviewTemplateDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

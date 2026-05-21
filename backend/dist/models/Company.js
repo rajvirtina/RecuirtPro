@@ -100,6 +100,36 @@ const companySchema = new mongoose_1.Schema({
             type: Number,
             default: 365,
         },
+        timezone: { type: String, default: 'Asia/Kolkata' },
+        dateFormat: { type: String, default: 'DD/MM/YYYY' },
+        currency: { type: String, default: 'INR' },
+        language: { type: String, default: 'en' },
+    },
+    branding: {
+        logoUrl: String,
+        primaryColor: { type: String, default: '#4f46e5' },
+        faviconUrl: String,
+    },
+    defaultPipelineStages: {
+        type: [{
+                id: { type: String, required: true },
+                label: { type: String, required: true },
+                order: { type: Number, required: true },
+                color: { type: String, default: '#6366f1' },
+                emailTemplateId: { type: mongoose_1.Schema.Types.ObjectId, ref: 'EmailTemplate', default: null },
+            }],
+        default: [
+            { id: 'applied', label: 'Applied', order: 0, color: '#6366f1' },
+            { id: 'screening', label: 'Screening', order: 1, color: '#f59e0b' },
+            { id: 'interview', label: 'Interview', order: 2, color: '#3b82f6' },
+            { id: 'offer', label: 'Offer', order: 3, color: '#10b981' },
+            { id: 'hired', label: 'Hired', order: 4, color: '#22c55e' },
+        ],
+    },
+    notifications: {
+        emailOnNewApplication: { type: Boolean, default: true },
+        emailOnStageChange: { type: Boolean, default: true },
+        smsEnabled: { type: Boolean, default: false },
     },
     status: {
         type: String,

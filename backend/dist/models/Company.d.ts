@@ -1,4 +1,11 @@
 import mongoose, { Document } from 'mongoose';
+export interface IPipelineStage {
+    id: string;
+    label: string;
+    order: number;
+    color: string;
+    emailTemplateId?: mongoose.Types.ObjectId | null;
+}
 export interface ICompanyDocument extends Document {
     name: string;
     slug: string;
@@ -16,11 +23,26 @@ export interface ICompanyDocument extends Document {
         country?: string;
         zipCode?: string;
     };
+    branding?: {
+        logoUrl?: string;
+        primaryColor?: string;
+        faviconUrl?: string;
+    };
     settings?: {
         enableProctoring?: boolean;
         enableNaukriIntegration?: boolean;
         enableLinkedInIntegration?: boolean;
         dataRetentionDays?: number;
+        timezone?: string;
+        dateFormat?: string;
+        currency?: string;
+        language?: string;
+    };
+    defaultPipelineStages?: IPipelineStage[];
+    notifications?: {
+        emailOnNewApplication?: boolean;
+        emailOnStageChange?: boolean;
+        smsEnabled?: boolean;
     };
     emailVerified: boolean;
     emailVerificationToken?: string;
@@ -31,7 +53,7 @@ export interface ICompanyDocument extends Document {
     deletedAt?: Date;
 }
 export declare const Company: mongoose.Model<ICompanyDocument, {}, {}, {}, mongoose.Document<unknown, {}, ICompanyDocument, {}, {}> & ICompanyDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

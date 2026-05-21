@@ -34,7 +34,7 @@ export interface ICandidateProfileDocument extends Document {
     updatedAt: Date;
 }
 export declare const CandidateProfile: mongoose.Model<ICandidateProfileDocument, {}, {}, {}, mongoose.Document<unknown, {}, ICandidateProfileDocument, {}, {}> & ICandidateProfileDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

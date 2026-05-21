@@ -12,7 +12,7 @@ export interface IInvitationDocument extends Document {
     updatedAt: Date;
 }
 export declare const Invitation: mongoose.Model<IInvitationDocument, {}, {}, {}, mongoose.Document<unknown, {}, IInvitationDocument, {}, {}> & IInvitationDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

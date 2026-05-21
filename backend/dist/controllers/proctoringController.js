@@ -3,8 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRecentProctoringEvents = exports.getInterviewStatus = exports.sendHeartbeat = exports.reportDesktopEvent = exports.getSystemCheckStatus = exports.reviewProctoringEvent = exports.getProctoringEvents = exports.logProctoringEvent = exports.verifySystemReadiness = void 0;
+exports.getProctoringReportByApplication = exports.logSessionViolation = exports.recordConsent = exports.getRecentProctoringEvents = exports.getInterviewStatus = exports.sendHeartbeat = exports.reportDesktopEvent = exports.getSystemCheckStatus = exports.reviewProctoringEvent = exports.getProctoringEvents = exports.logProctoringEvent = exports.verifySystemReadiness = void 0;
 const models_1 = require("../models");
+const AIInterviewSession_1 = require("../models/AIInterviewSession");
+const ConsentLog_1 = __importDefault(require("../models/ConsentLog"));
+const models_2 = require("../models");
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -535,4 +538,189 @@ const getRecentProctoringEvents = async (req, res) => {
     }
 };
 exports.getRecentProctoringEvents = getRecentProctoringEvents;
+// ─── Session-based proctoring (AI interview public flow) ─────────────────────
+/** Violation-type → ProctoringEventType mapping */
+const SESSION_VIOLATION_MAP = {
+    tab_switch: types_1.ProctoringEventType.TAB_SWITCH,
+    window_blur: types_1.ProctoringEventType.WINDOW_BLUR,
+    multiple_faces: types_1.ProctoringEventType.MULTIPLE_FACES,
+    no_face: types_1.ProctoringEventType.NO_FACE_DETECTED,
+    copy_attempt: types_1.ProctoringEventType.SUSPICIOUS_BEHAVIOR,
+};
+const SESSION_VIOLATION_DESC = {
+    tab_switch: 'Candidate switched or minimised the interview tab',
+    window_blur: 'Interview window lost focus for more than 3 seconds',
+    multiple_faces: 'Multiple faces detected in webcam feed',
+    no_face: 'No face detected in webcam feed',
+    copy_attempt: 'Candidate attempted to copy text from the interview',
+};
+/** Resolve and validate an AIInterviewSession by its public token */
+async function resolveSessionOrFail(sessionId, res) {
+    const session = await AIInterviewSession_1.AIInterviewSession.findOne({ sessionId }).lean();
+    if (!session) {
+        (0, response_1.sendError)(res, 'Session not found or expired', 404);
+        return null;
+    }
+    if (session.status === 'expired' || new Date() > session.expiresAt) {
+        await AIInterviewSession_1.AIInterviewSession.updateOne({ sessionId }, { status: 'expired' });
+        (0, response_1.sendError)(res, 'Session has expired', 410);
+        return null;
+    }
+    return session;
+}
+/**
+ * @desc  Record candidate proctoring consent for an AI interview session
+ * @route POST /api/v1/proctoring/session/:sessionId/consent
+ * @auth  None (session token is the credential)
+ */
+const recordConsent = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const { consented, timestamp, userAgent } = req.body;
+        const session = await resolveSessionOrFail(sessionId, res);
+        if (!session)
+            return;
+        // Fetch candidate info for the consent log
+        const candidate = await models_2.User.findById(session.candidateId)
+            .select('email firstName lastName')
+            .lean();
+        await ConsentLog_1.default.create({
+            userId: session.candidateId,
+            userEmail: candidate?.email ?? 'unknown',
+            userName: candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Candidate',
+            consentType: 'monitoring',
+            consentVersion: '1.0',
+            granted: Boolean(consented),
+            timestamp: timestamp ? new Date(timestamp) : new Date(),
+            userAgent: userAgent ?? (req.headers['user-agent'] ?? ''),
+            interviewId: session.interviewId,
+            companyId: session.companyId,
+        });
+        // Mark consent on the session
+        await AIInterviewSession_1.AIInterviewSession.updateOne({ sessionId }, { consentGiven: Boolean(consented), consentGivenAt: new Date() });
+        // Log a proctoring event so HR can see consent was captured
+        await models_1.ProctoringEvent.create({
+            interviewId: session.interviewId,
+            candidateId: session.candidateId,
+            eventType: consented ? types_1.ProctoringEventType.CONSENT_GIVEN : types_1.ProctoringEventType.CONSENT_DENIED,
+            severity: 'low',
+            description: consented
+                ? 'Candidate granted proctoring consent'
+                : 'Candidate declined proctoring consent',
+            timestamp: new Date(),
+        });
+        return (0, response_1.sendSuccess)(res, { consented }, 'Consent recorded');
+    }
+    catch (error) {
+        logger_1.default.error('recordConsent error:', error);
+        return (0, response_1.sendError)(res, error.message || 'Failed to record consent', 500);
+    }
+};
+exports.recordConsent = recordConsent;
+/**
+ * @desc  Log a real-time violation during an AI interview session
+ * @route POST /api/v1/proctoring/session/:sessionId/violation
+ * @auth  None (session token is the credential)
+ */
+const logSessionViolation = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const { type, severity, timestamp, screenshotBase64 } = req.body;
+        const session = await resolveSessionOrFail(sessionId, res);
+        if (!session)
+            return;
+        const eventType = SESSION_VIOLATION_MAP[type] ?? types_1.ProctoringEventType.VIOLATION;
+        const description = SESSION_VIOLATION_DESC[type] ?? `Proctoring violation: ${type}`;
+        const event = await models_1.ProctoringEvent.create({
+            interviewId: session.interviewId,
+            candidateId: session.candidateId,
+            eventType,
+            severity: severity ?? 'medium',
+            description,
+            timestamp: timestamp ? new Date(timestamp) : new Date(),
+            // Store small webcam frames (face violations) as data URLs; skip if too large
+            snapshotUrl: screenshotBase64 && screenshotBase64.length < 150000
+                ? screenshotBase64
+                : undefined,
+            metadata: {
+                source: 'ai_interview_browser',
+                sessionId,
+                violationType: type,
+            },
+            reviewed: false,
+        });
+        // Emit to HR dashboard in real-time
+        (0, socketController_1.emitViolation)(session.interviewId.toString(), event);
+        return (0, response_1.sendSuccess)(res, { logged: true, eventId: event._id }, 'Violation logged');
+    }
+    catch (error) {
+        logger_1.default.error('logSessionViolation error:', error);
+        return (0, response_1.sendError)(res, 'Failed to log violation', 500);
+    }
+};
+exports.logSessionViolation = logSessionViolation;
+/**
+ * @desc  Structured proctoring report for an application (used by ApplicationDetail Proctoring tab)
+ * @route GET /api/v1/proctoring/application/:applicationId/report
+ * @auth  HR / Admin / Employer
+ */
+const getProctoringReportByApplication = async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+        const tenantId = req.user?.companyId;
+        // Find the interview(s) linked to this application
+        const interview = await models_1.Interview.findOne({ applicationId })
+            .select('_id companyId proctoringEnabled status scheduledTime duration candidateId')
+            .lean();
+        if (!interview) {
+            return (0, response_1.sendSuccess)(res, { hasData: false, events: [], summary: null }, 'No interview found for this application');
+        }
+        // Tenant isolation
+        if (tenantId && interview.companyId?.toString() !== tenantId) {
+            return (0, response_1.sendError)(res, 'Not authorised to view this report', 403);
+        }
+        // Fetch all proctoring events for the interview, sorted by time
+        const events = await models_1.ProctoringEvent.find({ interviewId: interview._id })
+            .sort({ timestamp: 1 })
+            .lean();
+        const total = events.length;
+        const riskLevel = total >= 6 ? 'HIGH' : total >= 3 ? 'MEDIUM' : 'LOW';
+        const bySeverity = {
+            critical: events.filter(e => e.severity === 'critical').length,
+            high: events.filter(e => e.severity === 'high').length,
+            medium: events.filter(e => e.severity === 'medium').length,
+            low: events.filter(e => e.severity === 'low').length,
+        };
+        const byType = {};
+        events.forEach(e => { byType[e.eventType] = (byType[e.eventType] ?? 0) + 1; });
+        const reviewed = events.filter(e => e.reviewed).length;
+        const assessment = total >= 6
+            ? 'Multiple violations detected — manual review is strongly recommended before advancing this candidate.'
+            : total >= 3
+                ? 'Some violations detected — a brief review is recommended.'
+                : total > 0
+                    ? 'Minor monitoring events recorded — no immediate concerns.'
+                    : 'No proctoring violations recorded. Session completed cleanly.';
+        return (0, response_1.sendSuccess)(res, {
+            hasData: total > 0,
+            riskLevel,
+            interviewId: interview._id,
+            proctoringEnabled: interview.proctoringEnabled,
+            summary: {
+                total,
+                reviewed,
+                unreviewed: total - reviewed,
+                bySeverity,
+                byType,
+            },
+            assessment,
+            events,
+        }, 'Proctoring report retrieved');
+    }
+    catch (error) {
+        logger_1.default.error('getProctoringReportByApplication error:', error);
+        return (0, response_1.sendError)(res, error.message || 'Failed to retrieve proctoring report', 500);
+    }
+};
+exports.getProctoringReportByApplication = getProctoringReportByApplication;
 //# sourceMappingURL=proctoringController.js.map

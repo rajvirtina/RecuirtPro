@@ -15,7 +15,7 @@ export interface IRateLimitLog extends Document {
     updatedAt: Date;
 }
 export declare const RateLimitLog: mongoose.Model<IRateLimitLog, {}, {}, {}, mongoose.Document<unknown, {}, IRateLimitLog, {}, {}> & IRateLimitLog & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

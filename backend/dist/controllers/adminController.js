@@ -119,16 +119,34 @@ const inviteHR = async (req, res) => {
         });
         // Send invitation email
         const invitationUrl = `${config_1.config.frontendUrl}/complete-registration?token=${invitationToken}`;
-        try {
-            // In dev mode with SKIP_EMAIL, sendEmail will log to console
-            const skipEmail = process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true';
-            // Only validate email config if we're actually going to send
-            if (!skipEmail && (!config_1.config.email.host || !config_1.config.email.user || !config_1.config.email.password)) {
-                logger_1.default.error('Email configuration not set. SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured in .env');
-                await models_1.User.findByIdAndDelete(newUser._id);
-                (0, response_1.sendError)(res, 'Email service not configured. Please contact administrator.', 500);
+        const isDev = config_1.config.env === 'development' || process.env.NODE_ENV === 'development';
+        const skipEmail = isDev && process.env.SKIP_EMAIL === 'true';
+        const emailNotConfigured = !config_1.config.email.host || !config_1.config.email.user || !config_1.config.email.password;
+        // In development with no email config, keep the user and return the invitation URL
+        if (!skipEmail && emailNotConfigured) {
+            if (isDev) {
+                logger_1.default.warn(`[DEV] Email not configured — HR user created. Invitation URL: ${invitationUrl}`);
+                (0, response_1.sendSuccess)(res, {
+                    user: {
+                        id: newUser._id,
+                        email: newUser.email,
+                        firstName: newUser.firstName,
+                        lastName: newUser.lastName,
+                        role: newUser.role,
+                        status: newUser.status,
+                    },
+                    invitationSent: false,
+                    invitationUrl,
+                    devNote: 'Email not configured. Share this invitation URL manually with the user.',
+                }, 'HR user created. Email not configured — use the invitation URL below.', 201);
                 return;
             }
+            logger_1.default.error('Email configuration not set. SMTP_HOST, SMTP_USER, and SMTP_PASSWORD must be configured in .env');
+            await models_1.User.findByIdAndDelete(newUser._id);
+            (0, response_1.sendError)(res, 'Email service not configured. Please contact administrator.', 500);
+            return;
+        }
+        try {
             await (0, emailService_1.sendEmail)({
                 to: newUser.email,
                 subject: 'Welcome to RecuirtPro - Complete Your Registration',
@@ -165,7 +183,24 @@ const inviteHR = async (req, res) => {
                 passwordConfigured: !!config_1.config.email.password,
                 portConfigured: config_1.config.email.port,
             });
-            // Delete the created user if email fails
+            // In dev mode keep the user and surface the URL; in prod roll back
+            if (isDev) {
+                logger_1.default.warn(`[DEV] Email send failed — HR user kept. Invitation URL: ${invitationUrl}`);
+                (0, response_1.sendSuccess)(res, {
+                    user: {
+                        id: newUser._id,
+                        email: newUser.email,
+                        firstName: newUser.firstName,
+                        lastName: newUser.lastName,
+                        role: newUser.role,
+                        status: newUser.status,
+                    },
+                    invitationSent: false,
+                    invitationUrl,
+                    devNote: 'Email delivery failed. Share this invitation URL manually with the user.',
+                }, 'HR user created. Email delivery failed — use the invitation URL below.', 201);
+                return;
+            }
             await models_1.User.findByIdAndDelete(newUser._id);
             let errorMessage = 'Failed to send invitation email. Please try again.';
             if (emailError instanceof Error) {

@@ -282,5 +282,11 @@ router.delete('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.CAN
  *         description: Resume not found
  */
 router.get('/:id/resume', auth_1.protect, [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid application ID is required')], validator_1.validate, applicationController.downloadResume);
+/**
+ * @route  GET /api/v1/applications/:id/ai-report
+ * @desc   Get AI assessment report for a completed AI interview
+ * @access HR / Employer / Admin
+ */
+router.get('/:id/ai-report', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.HR, types_1.UserRole.EMPLOYER, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid application ID is required')], validator_1.validate, applicationController.getAIReport);
 exports.default = router;
 //# sourceMappingURL=applications.js.map

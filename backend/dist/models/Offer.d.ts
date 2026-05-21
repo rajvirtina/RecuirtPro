@@ -60,7 +60,7 @@ export interface IOfferDocument extends Document {
     updatedAt: Date;
 }
 export declare const Offer: mongoose.Model<IOfferDocument, {}, {}, {}, mongoose.Document<unknown, {}, IOfferDocument, {}, {}> & IOfferDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

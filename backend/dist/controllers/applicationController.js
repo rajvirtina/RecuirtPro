@@ -3,8 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkApplicationStatus = exports.downloadResume = exports.getApplicationStats = exports.withdrawApplication = exports.updateApplicationStatus = exports.getApplicationById = exports.getApplications = exports.submitApplication = void 0;
+exports.checkApplicationStatus = exports.getAIReport = exports.downloadResume = exports.getApplicationStats = exports.withdrawApplication = exports.updateApplicationStatus = exports.getApplicationById = exports.getApplications = exports.submitApplication = void 0;
 const models_1 = require("../models");
+const AIInterviewSession_1 = require("../models/AIInterviewSession");
+const models_2 = require("../models");
+const ActivityEvent_1 = require("../models/ActivityEvent");
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -96,6 +99,10 @@ const getApplications = async (req, res) => {
             // Candidates can only see their own applications
             query.candidateId = req.user._id;
         }
+        else if (req.user?.role === 'interviewer') {
+            // Interviewers have no business browsing the application pipeline
+            return (0, response_1.sendError)(res, 'Interviewers are not authorised to access the applications list', 403);
+        }
         else {
             // TENANT ISOLATION: All non-candidate, non-super-admin users are scoped to their company
             const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
@@ -148,6 +155,17 @@ const getApplicationById = async (req, res) => {
         const isOwner = application.candidateId._id.toString() === req.user?._id;
         const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
         const isSuperAdminUser = (0, auth_1.isSuperAdmin)(req.user);
+        // Interviewers may only view an application if they are a panel member of an interview for it
+        if (req.user?.role === 'interviewer') {
+            const hasAssignment = await models_1.Interview.exists({
+                applicationId: application._id,
+                'panel.userId': req.user._id,
+            });
+            if (!hasAssignment) {
+                return (0, response_1.sendError)(res, 'Interviewers may only view applications for interviews they are assigned to', 403);
+            }
+            return (0, response_1.sendSuccess)(res, application, 'Application retrieved successfully');
+        }
         // Company members can only view applications for their company's jobs
         let isAuthorizedCompanyMember = false;
         if (tenantId && application.companyId) {
@@ -223,6 +241,15 @@ const updateApplicationStatus = async (req, res) => {
             remarks: notes,
         });
         await application.save();
+        // Log activity event
+        const actorName = `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Unknown';
+        await ActivityEvent_1.ActivityEvent.create({
+            applicationId: id,
+            actorId: req.user?._id,
+            actorName,
+            type: 'stage_changed',
+            metadata: { from: currentStatus, to: status },
+        });
         logger_1.default.info(`Application ${id} status updated to ${status} by ${req.user?._id}`);
         return (0, response_1.sendSuccess)(res, application, 'Application status updated');
     }
@@ -365,6 +392,119 @@ const downloadResume = async (req, res) => {
     }
 };
 exports.downloadResume = downloadResume;
+/**
+ * @desc    Get AI assessment report for an application
+ * @route   GET /api/v1/applications/:id/ai-report
+ * @access  Private (HR / Employer / Admin)
+ */
+const getAIReport = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const application = await models_1.Application.findById(id)
+            .populate('jobId', 'title description skills')
+            .populate('candidateId', 'firstName lastName email profileImage');
+        if (!application || application.deletedAt) {
+            return (0, response_1.sendError)(res, 'Application not found', 404);
+        }
+        // Tenant isolation
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        if (tenantId && application.companyId?.toString() !== tenantId) {
+            return (0, response_1.sendError)(res, 'Not authorised to view this report', 403);
+        }
+        // Find the interview linked to this application
+        const interview = await models_1.Interview.findOne({ applicationId: id }).lean();
+        if (!interview) {
+            return (0, response_1.sendError)(res, 'No interview found for this application', 404);
+        }
+        // Find the AI interview session
+        const session = await AIInterviewSession_1.AIInterviewSession.findOne({ interviewId: interview._id }).lean();
+        if (!session) {
+            return (0, response_1.sendError)(res, 'No AI interview session found for this application', 404);
+        }
+        // Proctoring events for the interview
+        const proctoringEvents = await models_2.ProctoringEvent.find({ interviewId: interview._id })
+            .sort({ timestamp: 1 })
+            .lean();
+        const candidate = application.candidateId;
+        const job = application.jobId;
+        // Compute problem-solving score (technical + situational questions)
+        const questions = session.questions;
+        const responses = session.responses;
+        const psResponses = responses.filter((_, i) => ['technical', 'situational'].includes(questions[i]?.type ?? ''));
+        const cfResponses = responses.filter((_, i) => ['behavioral', 'hr'].includes(questions[i]?.type ?? ''));
+        const avgNorm = (arr) => arr.length > 0
+            ? Math.round(arr.reduce((s, r) => s + r.scores.overall, 0) / arr.length * 10)
+            : null;
+        const problemSolving = avgNorm(psResponses) ?? session.analysis?.technicalScore ?? 0;
+        const culturalFit = avgNorm(cfResponses) ?? session.analysis?.communicationScore ?? 0;
+        // Build transcript items (align responses with questions by index)
+        const transcript = responses.map((r, i) => ({
+            questionNumber: i + 1,
+            question: r.questionText,
+            questionType: questions[i]?.type ?? 'behavioral',
+            response: r.responseText,
+            scores: {
+                technicalAccuracy: r.scores.technicalAccuracy,
+                communicationClarity: r.scores.communicationClarity,
+                confidence: r.scores.confidence,
+                overall: r.scores.overall,
+            },
+            feedback: r.feedback,
+            improvementTip: r.improvementTip,
+            passed: r.passed,
+            responseTimeSeconds: r.responseTimeSeconds,
+            answeredAt: r.answeredAt,
+        }));
+        const report = {
+            applicationId: application._id,
+            applicationStatus: application.status,
+            candidate: {
+                id: candidate._id,
+                name: `${candidate.firstName} ${candidate.lastName}`,
+                email: candidate.email,
+                profileImage: candidate.profileImage,
+            },
+            job: { id: job._id, title: job.title },
+            interview: {
+                id: interview._id,
+                date: interview.completedAt || interview.scheduledTime,
+                duration: interview.duration,
+                round: interview.round || 'L1',
+                aiModel: 'GPT-4o-mini',
+            },
+            recommendation: session.analysis?.recommendation ?? 'hold',
+            scores: {
+                communication: session.analysis?.communicationScore ?? 0,
+                technical: session.analysis?.technicalScore ?? 0,
+                confidence: session.analysis?.confidenceScore ?? 0,
+                overall: session.analysis?.overallScore ?? 0,
+                problemSolving,
+                culturalFit,
+            },
+            aiSummary: session.analysis?.summary ?? '',
+            strengths: session.analysis?.strengths ?? [],
+            improvements: session.analysis?.improvements ?? [],
+            transcript,
+            proctoringEvents: proctoringEvents.map(e => ({
+                id: e._id,
+                type: e.eventType,
+                timestamp: e.timestamp,
+                severity: e.severity,
+                description: e.description,
+                snapshotUrl: e.snapshotUrl,
+            })),
+            sessionStatus: session.status,
+            questionsAnswered: session.analysis?.questionsAnswered ?? responses.length,
+            questionsPassed: session.analysis?.questionsPassed ?? 0,
+        };
+        return (0, response_1.sendSuccess)(res, report, 'AI report retrieved successfully');
+    }
+    catch (error) {
+        logger_1.default.error('Error in getAIReport:', error);
+        return (0, response_1.sendError)(res, error.message || 'Error fetching AI report', 500);
+    }
+};
+exports.getAIReport = getAIReport;
 /**
  * @desc    Check if candidate has applied to a job
  * @route   GET /api/v1/applications/check/:jobId

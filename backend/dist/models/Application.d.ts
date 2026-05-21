@@ -32,9 +32,19 @@ export interface IApplicationDocument extends Document {
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
+    parsedSkills: string[];
+    parsedExperienceYears?: number;
+    parsedEducation: Array<{
+        degree: string;
+        institution: string;
+    }>;
+    parsedNoticePeriod?: string;
+    parsedAt?: Date;
+    missingSkills: string[];
+    matchingSkills: string[];
 }
 export declare const Application: mongoose.Model<IApplicationDocument, {}, {}, {}, mongoose.Document<unknown, {}, IApplicationDocument, {}, {}> & IApplicationDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

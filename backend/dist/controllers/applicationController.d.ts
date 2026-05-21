@@ -43,6 +43,12 @@ export declare const getApplicationStats: (req: AuthRequest, res: Response) => P
  */
 export declare const downloadResume: (req: AuthRequest, res: Response) => Promise<void | Response>;
 /**
+ * @desc    Get AI assessment report for an application
+ * @route   GET /api/v1/applications/:id/ai-report
+ * @access  Private (HR / Employer / Admin)
+ */
+export declare const getAIReport: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
  * @desc    Check if candidate has applied to a job
  * @route   GET /api/v1/applications/check/:jobId
  * @access  Private (Candidate)

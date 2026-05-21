@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Offer = exports.SourcingSearch = exports.SourcedCandidate = exports.SourcingIntegration = exports.Invitation = exports.ConsentLog = exports.RateLimitLog = exports.CalendarIntegration = exports.Notification = exports.AuditLog = exports.ProctoringEvent = exports.InterviewTemplate = exports.Question = exports.Interview = exports.Application = exports.CandidateProfile = exports.Job = exports.Company = exports.User = void 0;
+exports.ActivityEvent = exports.Note = exports.AIInterviewSession = exports.Offer = exports.SourcingSearch = exports.SourcedCandidate = exports.SourcingIntegration = exports.Invitation = exports.ConsentLog = exports.RateLimitLog = exports.CalendarIntegration = exports.Notification = exports.AuditLog = exports.ProctoringEvent = exports.InterviewTemplate = exports.Question = exports.Interview = exports.Application = exports.CandidateProfile = exports.Job = exports.Company = exports.User = void 0;
 // Export all models
 var User_1 = require("./User");
 Object.defineProperty(exports, "User", { enumerable: true, get: function () { return User_1.User; } });
@@ -43,4 +43,10 @@ var SourcingSearch_1 = require("./SourcingSearch");
 Object.defineProperty(exports, "SourcingSearch", { enumerable: true, get: function () { return SourcingSearch_1.SourcingSearch; } });
 var Offer_1 = require("./Offer");
 Object.defineProperty(exports, "Offer", { enumerable: true, get: function () { return Offer_1.Offer; } });
+var AIInterviewSession_1 = require("./AIInterviewSession");
+Object.defineProperty(exports, "AIInterviewSession", { enumerable: true, get: function () { return AIInterviewSession_1.AIInterviewSession; } });
+var Note_1 = require("./Note");
+Object.defineProperty(exports, "Note", { enumerable: true, get: function () { return Note_1.Note; } });
+var ActivityEvent_1 = require("./ActivityEvent");
+Object.defineProperty(exports, "ActivityEvent", { enumerable: true, get: function () { return ActivityEvent_1.ActivityEvent; } });
 //# sourceMappingURL=index.js.map

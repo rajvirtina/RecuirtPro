@@ -31,6 +31,12 @@ const notifications_1 = __importDefault(require("./routes/notifications"));
 const hr_1 = __importDefault(require("./routes/hr"));
 const gdprRoutes_1 = __importDefault(require("./routes/gdprRoutes"));
 const invitations_1 = __importDefault(require("./routes/invitations"));
+const aiInterviewRoutes_1 = __importDefault(require("./routes/aiInterviewRoutes"));
+const resumeParserRoutes_1 = __importDefault(require("./routes/resumeParserRoutes"));
+const analyticsRoutes_1 = __importDefault(require("./routes/analyticsRoutes"));
+const proctoringSessionRoutes_1 = __importDefault(require("./routes/proctoringSessionRoutes"));
+const notes_1 = __importDefault(require("./routes/notes"));
+const companySettings_1 = __importDefault(require("./routes/companySettings"));
 // import userRoutes from './routes/user';
 // ... other routes
 const app = (0, express_1.default)();
@@ -147,6 +153,14 @@ app.use('/api/v1/gdpr', gdprRoutes_1.default);
 app.use('/api/v1/invitations', invitations_1.default);
 app.use('/api/v1/offers', offers_1.default);
 app.use('/api/v1/notifications', notifications_1.default);
+app.use('/api/v1/ai-interviews', aiInterviewRoutes_1.default);
+// Resume parser routes mount at /api/v1 — paths defined inside the router
+app.use('/api/v1', resumeParserRoutes_1.default);
+app.use('/api/v1/analytics', analyticsRoutes_1.default);
+// Session-based proctoring (public consent/violation + protected report)
+app.use('/api/v1/proctoring', proctoringSessionRoutes_1.default);
+app.use('/api/v1', notes_1.default);
+app.use('/api/v1/companies', companySettings_1.default);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 // Serve frontend in production

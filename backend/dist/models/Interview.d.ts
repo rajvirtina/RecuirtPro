@@ -62,7 +62,7 @@ export interface IInterviewDocument extends Document {
     updatedAt: Date;
 }
 export declare const Interview: mongoose.Model<IInterviewDocument, {}, {}, {}, mongoose.Document<unknown, {}, IInterviewDocument, {}, {}> & IInterviewDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

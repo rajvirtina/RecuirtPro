@@ -12,7 +12,7 @@ declare class NotificationService {
      * Create an in-app notification
      */
     createNotification(input: CreateNotificationInput): Promise<import("mongoose").Document<unknown, {}, import("../models").INotificationDocument, {}, {}> & import("../models").INotificationDocument & Required<{
-        _id: unknown;
+        _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;
     }>;
@@ -20,7 +20,7 @@ declare class NotificationService {
      * Create bulk notifications (e.g., for all HR users in a company)
      */
     createBulkNotifications(userIds: string[], notification: Omit<CreateNotificationInput, 'userId'>): Promise<import("mongoose").MergeType<import("mongoose").Document<unknown, {}, import("../models").INotificationDocument, {}, {}> & import("../models").INotificationDocument & Required<{
-        _id: unknown;
+        _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;
     }, Omit<{

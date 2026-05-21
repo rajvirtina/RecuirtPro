@@ -17,7 +17,7 @@ export interface ICalendarIntegrationDocument extends Document {
     updatedAt: Date;
 }
 export declare const CalendarIntegration: mongoose.Model<ICalendarIntegrationDocument, {}, {}, {}, mongoose.Document<unknown, {}, ICalendarIntegrationDocument, {}, {}> & ICalendarIntegrationDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

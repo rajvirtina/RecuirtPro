@@ -1,4 +1,4 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
 /**
  * @desc    Verify system readiness for proctored interview
@@ -54,4 +54,22 @@ export declare const getInterviewStatus: (req: AuthRequest, res: Response) => Pr
  * @access  Private (HR/Admin)
  */
 export declare const getRecentProctoringEvents: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc  Record candidate proctoring consent for an AI interview session
+ * @route POST /api/v1/proctoring/session/:sessionId/consent
+ * @auth  None (session token is the credential)
+ */
+export declare const recordConsent: (req: Request, res: Response) => Promise<void | Response>;
+/**
+ * @desc  Log a real-time violation during an AI interview session
+ * @route POST /api/v1/proctoring/session/:sessionId/violation
+ * @auth  None (session token is the credential)
+ */
+export declare const logSessionViolation: (req: Request, res: Response) => Promise<void | Response>;
+/**
+ * @desc  Structured proctoring report for an application (used by ApplicationDetail Proctoring tab)
+ * @route GET /api/v1/proctoring/application/:applicationId/report
+ * @auth  HR / Admin / Employer
+ */
+export declare const getProctoringReportByApplication: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=proctoringController.d.ts.map

@@ -67,7 +67,7 @@ exports.getJobs = getJobs;
 const getCompanyInfoBySlug = async (req, res, next) => {
     try {
         const { slug } = req.params;
-        const company = await models_1.Company.findOne({ slug: slug.toLowerCase(), deletedAt: null, status: 'active' });
+        const company = await models_1.Company.findOne({ slug: slug.toLowerCase(), deletedAt: null, status: { $in: ['active', 'pending_verification'] } });
         if (!company) {
             (0, response_1.sendError)(res, 'Company not found', 404);
             return;

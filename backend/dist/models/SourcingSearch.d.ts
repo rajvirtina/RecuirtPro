@@ -26,7 +26,7 @@ export interface ISourcingSearchDocument extends Document {
     updatedAt: Date;
 }
 export declare const SourcingSearch: mongoose.Model<ISourcingSearchDocument, {}, {}, {}, mongoose.Document<unknown, {}, ISourcingSearchDocument, {}, {}> & ISourcingSearchDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

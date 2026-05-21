@@ -116,7 +116,7 @@ const register = async (req, res, next) => {
                 const company = await models_1.Company.findOne({
                     slug: companySlug.trim().toLowerCase(),
                     deletedAt: null,
-                    status: 'active',
+                    status: { $in: ['active', 'pending_verification'] },
                 });
                 if (!company) {
                     (0, response_1.sendError)(res, 'Invalid company code. Please verify the code with your recruiter and try again.', 400);

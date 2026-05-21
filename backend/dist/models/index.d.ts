@@ -17,4 +17,7 @@ export { SourcingIntegration, ISourcingIntegrationDocument } from './SourcingInt
 export { SourcedCandidate, ISourcedCandidateDocument } from './SourcedCandidate';
 export { SourcingSearch, ISourcingSearchDocument } from './SourcingSearch';
 export { Offer, IOfferDocument } from './Offer';
+export { AIInterviewSession, IAIInterviewSessionDocument } from './AIInterviewSession';
+export { Note, INoteDocument } from './Note';
+export { ActivityEvent, IActivityEventDocument } from './ActivityEvent';
 //# sourceMappingURL=index.d.ts.map

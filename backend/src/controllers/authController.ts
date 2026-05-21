@@ -131,7 +131,7 @@ export const register = async (
         const company = await Company.findOne({
           slug: companySlug.trim().toLowerCase(),
           deletedAt: null,
-          status: 'active',
+          status: { $in: ['active', 'pending_verification'] },
         });
         if (!company) {
           sendError(res, 'Invalid company code. Please verify the code with your recruiter and try again.', 400);

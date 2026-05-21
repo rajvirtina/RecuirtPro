@@ -7,6 +7,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportReport = exports.getRecruitmentAnalytics = exports.getCandidateDashboard = exports.getEmployerDashboard = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const models_1 = require("../models");
@@ -22,12 +23,12 @@ const getEmployerDashboard = async (req, res) => {
         const companyId = req.user?.companyId;
         // TENANT ISOLATION: Only super admin gets global view
         const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
-        // Build query filter
+        // Build query filter — use ObjectId so aggregation $match types align with stored values
         const jobFilter = { deletedAt: null };
         const applicationFilter = {};
         const interviewFilter = {};
         if (tenantId) {
-            jobFilter.companyId = tenantId;
+            jobFilter.companyId = new mongoose_1.default.Types.ObjectId(tenantId);
         }
         // PERF-02: Replace 21 sequential countDocuments with aggregation pipelines
         // Get job IDs first (needed for application/interview filters)
@@ -323,10 +324,10 @@ const getRecruitmentAnalytics = async (req, res) => {
         if (endDate) {
             dateFilter.$lte = new Date(endDate);
         }
-        // Build query filter
+        // Build query filter — use ObjectId so aggregation $match types align with stored values
         const jobFilter = { deletedAt: null };
         if (tenantId) {
-            jobFilter.companyId = tenantId;
+            jobFilter.companyId = new mongoose_1.default.Types.ObjectId(tenantId);
         }
         if (Object.keys(dateFilter).length > 0) {
             jobFilter.createdAt = dateFilter;
@@ -451,7 +452,7 @@ const exportReport = async (req, res) => {
         // Build query filter
         const jobFilter = { deletedAt: null };
         if (tenantId) {
-            jobFilter.companyId = tenantId;
+            jobFilter.companyId = new mongoose_1.default.Types.ObjectId(tenantId);
         }
         let reportData = {};
         if (reportType === 'summary') {

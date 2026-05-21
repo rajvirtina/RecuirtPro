@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startInterview = exports.submitInterviewFeedback = exports.cancelInterview = exports.updateInterviewStatus = exports.updateInterview = exports.getInterviewById = exports.getInterviews = exports.scheduleInterview = void 0;
 const models_1 = require("../models");
+const ActivityEvent_1 = require("../models/ActivityEvent");
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -66,6 +67,15 @@ const scheduleInterview = async (req, res) => {
             remarks: `Interview scheduled for ${scheduledTime}`,
         });
         await application.save();
+        // Log activity event
+        const actorName = `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Unknown';
+        await ActivityEvent_1.ActivityEvent.create({
+            applicationId,
+            actorId: req.user?._id,
+            actorName,
+            type: 'interview_scheduled',
+            metadata: { platform: mode, scheduledAt: scheduledTime },
+        });
         logger_1.default.info(`Interview scheduled: ${interview._id} for application: ${applicationId}`);
         return (0, response_1.sendSuccess)(res, interview, 'Interview scheduled successfully', 201);
     }
@@ -179,6 +189,10 @@ const getInterviewById = async (req, res) => {
         if (tenantId && interview.companyId) {
             isCompanyMember = interview.companyId.toString() === tenantId;
         }
+        // Interviewers may only view interviews they are assigned to as panel members
+        if (req.user?.role === 'interviewer' && !isPanelMember && !isCandidate) {
+            return (0, response_1.sendError)(res, 'Interviewers may only view their assigned interviews', 403);
+        }
         if (!isCandidate && !isCompanyMember && !isPanelMember && !(0, auth_1.isSuperAdmin)(req.user)) {
             return (0, response_1.sendError)(res, 'Not authorized to view this interview', 403);
         }
@@ -266,6 +280,10 @@ const updateInterviewStatus = async (req, res) => {
         let isCompanyMember = false;
         if (tenantId && interview.companyId) {
             isCompanyMember = interview.companyId.toString() === tenantId;
+        }
+        // Interviewers may only update status for their assigned interviews
+        if (req.user?.role === 'interviewer' && !isPanelMember) {
+            return (0, response_1.sendError)(res, 'Interviewers may only update status for assigned interviews', 403);
         }
         const isAuthorized = (0, auth_1.isSuperAdmin)(req.user) ||
             isPanelMember ||
@@ -361,6 +379,10 @@ const submitInterviewFeedback = async (req, res) => {
         if (tenantId && interview.companyId) {
             isCompanyMember = interview.companyId.toString() === tenantId;
         }
+        // Interviewers may only submit feedback for interviews they are assigned to
+        if (req.user?.role === 'interviewer' && !isPanelMember) {
+            return (0, response_1.sendError)(res, 'Interviewers may only submit feedback for assigned interviews', 403);
+        }
         const isAuthorized = (0, auth_1.isSuperAdmin)(req.user) ||
             isPanelMember ||
             isCompanyMember;
@@ -414,6 +436,10 @@ const startInterview = async (req, res) => {
         let isCompanyMember = false;
         if (tenantId && interview.companyId) {
             isCompanyMember = interview.companyId.toString() === tenantId;
+        }
+        // Interviewers may only start interviews they are assigned to
+        if (req.user?.role === 'interviewer' && !isPanelMember && !isCandidate) {
+            return (0, response_1.sendError)(res, 'Interviewers may only start their assigned interviews', 403);
         }
         const isAuthorized = (0, auth_1.isSuperAdmin)(req.user) ||
             isPanelMember ||

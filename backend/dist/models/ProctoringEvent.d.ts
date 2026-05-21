@@ -26,7 +26,7 @@ export interface IProctoringEventDocument extends Document {
     createdAt: Date;
 }
 export declare const ProctoringEvent: mongoose.Model<IProctoringEventDocument, {}, {}, {}, mongoose.Document<unknown, {}, IProctoringEventDocument, {}, {}> & IProctoringEventDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

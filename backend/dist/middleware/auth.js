@@ -77,7 +77,9 @@ const protect = async (req, res, next) => {
                 return (0, response_1.sendError)(res, 'User account is not active. Please verify your email or contact support.', 403);
             }
             // BUG-011: enforce email verification when the feature flag is on
-            if (config_1.default.features.emailVerification && !user.emailVerified) {
+            // Super admins (seeded directly) are exempt from email verification
+            const userIsSuperAdmin = user.role === types_1.UserRole.ADMIN && !user.companyId;
+            if (config_1.default.features.emailVerification && !user.emailVerified && !userIsSuperAdmin) {
                 return (0, response_1.sendError)(res, 'Please verify your email address before accessing this feature.', 403);
             }
             req.user = {

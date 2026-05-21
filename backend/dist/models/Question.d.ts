@@ -17,7 +17,7 @@ export interface IQuestionDocument extends Document {
     updatedAt: Date;
 }
 export declare const Question: mongoose.Model<IQuestionDocument, {}, {}, {}, mongoose.Document<unknown, {}, IQuestionDocument, {}, {}> & IQuestionDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;

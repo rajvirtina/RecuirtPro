@@ -21,7 +21,7 @@ export interface ISourcingIntegrationDocument extends Document {
     getDecryptedRefreshToken(): string | null;
 }
 export declare const SourcingIntegration: mongoose.Model<ISourcingIntegrationDocument, {}, {}, {}, mongoose.Document<unknown, {}, ISourcingIntegrationDocument, {}, {}> & ISourcingIntegrationDocument & Required<{
-    _id: unknown;
+    _id: mongoose.Types.ObjectId;
 }> & {
     __v: number;
 }, any>;
