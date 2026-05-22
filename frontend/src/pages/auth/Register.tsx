@@ -30,6 +30,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [invitationData, setInvitationData] = useState<InvitationData | null>(null);
+  // Shown after registration when email verification is required
+  const [verificationPending, setVerificationPending] = useState<string | null>(null);
   const [verifyingToken, setVerifyingToken] = useState(false);
   const [companyLookup, setCompanyLookup] = useState<CompanyLookup | null>(null);
   const [companyLookupError, setCompanyLookupError] = useState('');
@@ -142,8 +144,20 @@ export default function Register() {
 
     try {
       const { confirmPassword, ...registerData } = formData;
-      await register(registerData);
-      navigate('/dashboard');
+      // authService.register returns requiresEmailVerification when the backend
+      // withholds tokens (user must verify email before signing in).
+      const { authService } = await import('../../services/authService');
+      const result = await authService.register({ ...registerData, role: registerData.role as any });
+
+      if (result.requiresEmailVerification) {
+        // Don't auto-login — show a "check your email" screen
+        setVerificationPending(registerData.email);
+      } else {
+        // Dev mode or verification disabled — tokens were issued, sync the store
+        // The authService already stored the token; sync via the store action
+        await register(registerData);
+        navigate('/dashboard');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || 'Registration failed. Please try again.');
     } finally {
@@ -153,6 +167,43 @@ export default function Register() {
 
   const isCandidate = formData.role === 'candidate';
   const showCompanyField = !invitationToken && isCandidate;
+
+  // ── Email verification pending screen ───────────────────────────
+  if (verificationPending) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center space-y-5">
+          <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Check your email</h2>
+            <p className="mt-2 text-gray-600 text-sm leading-relaxed">
+              We've sent a verification link to{' '}
+              <strong className="text-indigo-700">{verificationPending}</strong>.
+              <br />
+              Please click the link in that email to activate your account before signing in.
+            </p>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+            Didn't receive it? Check your spam folder or contact your recruiter.
+          </div>
+
+          <a
+            href="/login"
+            className="inline-block mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 underline"
+          >
+            Back to Sign In
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">

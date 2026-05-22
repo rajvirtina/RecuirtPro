@@ -226,6 +226,7 @@ function NotificationsSection() {
       emailOnNewApplication: data.notifications?.emailOnNewApplication ?? true,
       emailOnStageChange: data.notifications?.emailOnStageChange ?? true,
       smsEnabled: data.notifications?.smsEnabled ?? false,
+      dailyDigest: data.notifications?.dailyDigest ?? false,
     });
   }
 
@@ -251,6 +252,7 @@ function NotificationsSection() {
         <ToggleRow label="Email me when new applications arrive" checked={!!notifs?.emailOnNewApplication} onChange={() => toggle('emailOnNewApplication')} />
         <ToggleRow label="Email me when candidate stage changes" checked={!!notifs?.emailOnStageChange} onChange={() => toggle('emailOnStageChange')} />
         <ToggleRow label="SMS notifications" checked={!!notifs?.smsEnabled} onChange={() => toggle('smsEnabled')} disabled hint="Requires SMS_API_KEY to be configured" />
+        <ToggleRow label="Daily hiring digest email at 9am" checked={!!notifs?.dailyDigest} onChange={() => toggle('dailyDigest')} />
       </div>
 
       <div className="flex justify-end pt-2">

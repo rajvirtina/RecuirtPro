@@ -45,6 +45,7 @@ export interface ICompanyDocument extends Document {
     emailOnNewApplication?: boolean;
     emailOnStageChange?: boolean;
     smsEnabled?: boolean;
+    dailyDigest?: boolean;
   };
   emailVerified: boolean;
   emailVerificationToken?: string;
@@ -151,6 +152,7 @@ const companySchema = new Schema<ICompanyDocument>(
       emailOnNewApplication: { type: Boolean, default: true },
       emailOnStageChange: { type: Boolean, default: true },
       smsEnabled: { type: Boolean, default: false },
+      dailyDigest: { type: Boolean, default: false },
     },
     status: {
       type: String,

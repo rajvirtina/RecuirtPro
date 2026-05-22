@@ -18,7 +18,7 @@ export const submitApplication = async (
   res: Response
 ): Promise<void | Response> => {
   try {
-    const { jobId, coverLetter, expectedSalary } = req.body;
+    const { jobId, coverLetter, expectedSalary, currentSalary, preferredLocation, currentLocation } = req.body;
     const userId = req.user?._id;
 
     // Get resume URL from uploaded file or body
@@ -66,10 +66,13 @@ export const submitApplication = async (
       application = await Application.create({
         jobId,
         candidateId: userId,
-        companyId: job.companyId,
-        coverLetter,
-        resumeUrl: resumeUrl || candidateProfile.resumeUrl,
-        expectedSalary,
+        companyId:   job.companyId,
+        coverLetter:       coverLetter   || undefined,
+        resumeUrl:         resumeUrl     || candidateProfile.resumeUrl,
+        expectedSalary:    expectedSalary   ? Number(expectedSalary)   : undefined,
+        currentSalary:     currentSalary    ? Number(currentSalary)    : undefined,
+        preferredLocation: preferredLocation || undefined,
+        currentLocation:   currentLocation   || undefined,
         status: ApplicationStatus.APPLIED,
       });
     } catch (err: any) {

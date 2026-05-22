@@ -14,6 +14,7 @@ const INTEGRATIONS: Integration[] = [
   { id: 'google-calendar', name: 'Google Calendar', icon: '📅', connected: false, authType: 'oauth' },
   { id: 'zoho', name: 'Zoho', icon: '🔗', connected: false, authType: 'oauth' },
   { id: 'naukri', name: 'Naukri', icon: '💼', connected: false, authType: 'apikey' },
+  { id: 'github-jobs', name: 'GitHub Jobs', icon: '🐙', connected: false, authType: 'apikey' },
 ];
 
 export default function IntegrationsConfig() {

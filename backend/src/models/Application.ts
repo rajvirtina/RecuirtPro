@@ -14,6 +14,10 @@ export interface IApplicationDocument extends Document {
   companyId: mongoose.Types.ObjectId;
   resumeUrl?: string;
   coverLetter?: string;
+  expectedSalary?: number;
+  currentSalary?: number;
+  preferredLocation?: string;
+  currentLocation?: string;
   status: ApplicationStatus;
   statusHistory: IStatusHistory[];
   skillMatchScore?: number;
@@ -85,8 +89,12 @@ const applicationSchema = new Schema<IApplicationDocument>(
       ref: 'Company',
       required: true,
     },
-    resumeUrl: String,
-    coverLetter: String,
+    resumeUrl:         String,
+    coverLetter:       String,
+    expectedSalary:    { type: Number, min: 0 },
+    currentSalary:     { type: Number, min: 0 },
+    preferredLocation: String,
+    currentLocation:   String,
     status: {
       type: String,
       enum: Object.values(ApplicationStatus),

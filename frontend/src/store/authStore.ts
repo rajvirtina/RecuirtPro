@@ -63,18 +63,19 @@ export const useAuthStore = create<AuthState>((set) => ({
         role: data.role as UserRole,
       });
       const { token, user } = response;
-      
-      localStorage.setItem('token', token);
-      if (response.refreshToken) {
-        localStorage.setItem('refreshToken', response.refreshToken);
+
+      // Only store token and mark as authenticated when a real token is returned.
+      // When email verification is required the backend omits the token.
+      if (token) {
+        localStorage.setItem('token', token);
+        if (response.refreshToken) {
+          localStorage.setItem('refreshToken', response.refreshToken);
+        }
+        set({ token, user, isAuthenticated: true, loading: false });
+      } else {
+        // Registration succeeded but user must verify email before logging in
+        set({ token: null, user: null, isAuthenticated: false, loading: false });
       }
-      
-      set({ 
-        token, 
-        user, 
-        isAuthenticated: true,
-        loading: false 
-      });
     } catch (error) {
       set({ loading: false });
       throw error;

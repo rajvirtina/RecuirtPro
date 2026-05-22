@@ -210,7 +210,26 @@ export const register = async (
       await user.save();
     }
 
-    // Generate tokens
+    logger.info(`New user registered: ${user.email}`);
+
+    // If the user still needs to verify email (production, non-SKIP_EMAIL mode),
+    // do NOT issue auth tokens. The user must verify first, then login normally.
+    if (emailVerificationEnabled && !user.emailVerified) {
+      sendSuccess(res, {
+        user: {
+          id:            user._id,
+          email:         user.email,
+          firstName:     user.firstName,
+          lastName:      user.lastName,
+          role:          user.role,
+          emailVerified: false,
+        },
+        requiresEmailVerification: true,
+      }, 'Registration successful. Please check your email and verify your account before signing in.', 201);
+      return;
+    }
+
+    // User is immediately active (dev/SKIP_EMAIL mode, or verification disabled)
     const accessToken  = user.generateAuthToken();
     const refreshToken = user.generateRefreshToken();
 
@@ -219,21 +238,19 @@ export const register = async (
     setRefreshCookie(res, refreshToken);
     const csrfToken = setCsrfCookie(res);
 
-    logger.info(`New user registered: ${user.email}`);
-
     sendSuccess(res, {
       user: {
-        id: user._id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
+        id:            user._id,
+        email:         user.email,
+        firstName:     user.firstName,
+        lastName:      user.lastName,
+        role:          user.role,
         emailVerified: user.emailVerified,
       },
       accessToken,
       refreshToken,
       csrfToken,
-    }, 'Registration successful. Please check your email to verify your account.', 201);
+    }, 'Registration successful!', 201);
   } catch (error) {
     next(error);
   }

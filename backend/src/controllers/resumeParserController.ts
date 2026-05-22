@@ -9,6 +9,7 @@ import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId, isSuperAdmin } from '../middleware/auth';
 import config from '../config';
 import logger from '../utils/logger';
+import { ActivityEvent } from '../models/ActivityEvent';
 
 // ─── LLM client (reuse pattern from aiInterviewController) ───────────────────
 
@@ -23,11 +24,26 @@ const llm = axios.create({
 
 // ─── File reading helpers ─────────────────────────────────────────────────────
 
-/** Resolve a stored resumeUrl to an absolute filesystem path */
+/**
+ * Resolve a stored resumeUrl to an absolute filesystem path.
+ *
+ * The upload middleware stores files at:
+ *   <backend>/uploads/resumes/<filename>
+ *
+ * This file compiles to <backend>/dist/controllers/resumeParserController.js,
+ * so __dirname resolves to <backend>/dist/controllers/ and
+ * two levels up (../../) gives us <backend>/, which is exactly where
+ * the `uploads/` directory lives — regardless of process.cwd().
+ *
+ * Using __dirname is more reliable than process.cwd() in production
+ * (Hostinger, Docker) where the working directory may differ from the
+ * backend root.
+ */
 function resolveResumePath(resumeUrl: string): string {
-  // resumeUrl is stored as /uploads/resumes/filename.pdf
   if (path.isAbsolute(resumeUrl)) return resumeUrl;
-  return path.resolve(process.cwd(), resumeUrl.replace(/^\//, ''));
+  // __dirname = <backend>/dist/controllers  →  ../../ = <backend>/
+  const backendRoot = path.join(__dirname, '..', '..');
+  return path.join(backendRoot, resumeUrl.replace(/^\//, ''));
 }
 
 /** Extract plain text from a PDF or DOCX/DOC resume file */
@@ -132,6 +148,15 @@ export const parseResume = async (
     };
 
     await Application.findByIdAndUpdate(id, { $set: update });
+
+    // Log activity event
+    await ActivityEvent.create({
+      applicationId: id,
+      actorId: req.user?._id,
+      actorName: `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'System',
+      type: 'resume_parsed',
+      metadata: { parsedAt: update.parsedAt, skillCount: update.parsedSkills.length },
+    });
 
     logger.info(`Resume parsed for application ${id}: ${update.parsedSkills.length} skills extracted`);
 

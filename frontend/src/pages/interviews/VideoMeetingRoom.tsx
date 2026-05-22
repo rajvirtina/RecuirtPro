@@ -40,10 +40,48 @@ interface ChatMessage {
   timestamp: number;
 }
 
+/**
+ * Socket URL resolution:
+ *   - Prefer VITE_SOCKET_URL env var (set in .env.production for the Hostinger deployment)
+ *   - On localhost fall back to the local dev backend (port 5001)
+ *   - In production use window.location.origin so the socket connects to
+ *     the same domain served by Nginx (which proxies to the backend)
+ */
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://localhost:5001'
+    : typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://localhost:5001');
+
+/**
+ * ICE servers — STUN for local/fast networks, TURN for NAT traversal in production.
+ * The openrelay.metered.ca TURN servers are free and sufficient for <100 concurrent users.
+ * Replace with your own TURN server credentials for higher scale.
+ */
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.stunprotocol.org:3478' },
+    // TURN servers — required for production WebRTC through NAT/firewall
+    {
+      urls:       'turn:openrelay.metered.ca:80',
+      username:   'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls:       'turn:openrelay.metered.ca:443',
+      username:   'openrelayproject',
+      credential: 'openrelayproject',
+    },
+    {
+      urls:       'turn:openrelay.metered.ca:443?transport=tcp',
+      username:   'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
 };
 
@@ -146,6 +184,10 @@ export default function VideoMeetingRoom() {
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        // Browsers may block autoPlay without an explicit .play() call
+        localVideoRef.current.play().catch(() => {
+          /* autoplay policy — user gesture will trigger it once they interact */
+        });
       }
 
       // Connect to Socket.IO
@@ -167,9 +209,11 @@ export default function VideoMeetingRoom() {
     }
 
     const token = localStorage.getItem('token');
-    const socket = io('http://localhost:5001', {
+    const socket = io(SOCKET_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     socketRef.current = socket;
@@ -642,8 +686,18 @@ export default function VideoMeetingRoom() {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Video Grid */}
-        <div className="flex-1 p-4 grid grid-cols-2 gap-4 auto-rows-fr">
+        {/* Video Grid — auto-sizing based on participant count */}
+        <div
+          className={`flex-1 p-4 grid gap-4 auto-rows-fr ${
+            participants.size === 0
+              ? 'grid-cols-1'
+              : participants.size === 1
+              ? 'grid-cols-2'
+              : participants.size <= 3
+              ? 'grid-cols-2'
+              : 'grid-cols-3'
+          }`}
+        >
           {/* Local Video */}
           <div className="relative bg-gray-800 rounded-lg overflow-hidden">
             <video
@@ -670,15 +724,24 @@ export default function VideoMeetingRoom() {
             )}
           </div>
 
-          {/* Remote Participants */}
+          {/* Remote Participants — all of them, unlimited */}
           {Array.from(participants.values()).map((participant) => (
             <RemoteVideo key={participant.socketId} participant={participant} />
           ))}
 
-          {/* Empty slots */}
+          {/* Waiting placeholder — only when no one else has joined yet */}
           {participants.size === 0 && (
-            <div className="bg-gray-800 rounded-lg flex items-center justify-center">
-              <p className="text-gray-500">Waiting for others to join...</p>
+            <div className="bg-gray-800 rounded-lg flex items-center justify-center min-h-[200px]">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 border-2 border-gray-600 rounded-full flex items-center justify-center mx-auto">
+                  <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                      d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <p className="text-gray-500 text-sm">Waiting for others to join…</p>
+                <p className="text-gray-600 text-xs">Share the interview link to invite participants</p>
+              </div>
             </div>
           )}
         </div>

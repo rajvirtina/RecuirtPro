@@ -18,19 +18,20 @@ export const authService = {
     };
   },
 
-  async register(data: RegisterData): Promise<AuthResponse> {
+  async register(data: RegisterData): Promise<AuthResponse & { requiresEmailVerification?: boolean }> {
     const response = await apiClient.post('/auth/register', data);
-    const { accessToken, refreshToken, user } = response.data as any;
-    
+    const { accessToken, refreshToken, user, requiresEmailVerification } = response.data as any;
+
     if (accessToken) {
       localStorage.setItem('token', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
     }
-    
+
     return {
       token: accessToken,
       refreshToken,
       user,
+      requiresEmailVerification: !!requiresEmailVerification,
     };
   },
 

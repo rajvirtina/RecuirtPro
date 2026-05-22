@@ -40,9 +40,12 @@ export default function ApplyJob() {
   const [applicationInfo, setApplicationInfo] = useState<any>(null);
 
   const [formData, setFormData] = useState({
-    coverLetter: '',
-    expectedSalary: '',
-    noticePeriod: '',
+    coverLetter:      '',
+    expectedSalary:   '',
+    currentSalary:    '',
+    preferredLocation:'',
+    currentLocation:  '',
+    noticePeriod:     '',
     resumeFile: null as File | null,
   });
 
@@ -122,13 +125,12 @@ export default function ApplyJob() {
 
       const submitData = new FormData();
       submitData.append('jobId', id!);
-      submitData.append('coverLetter', formData.coverLetter);
-      if (formData.expectedSalary) {
-        submitData.append('expectedSalary', formData.expectedSalary);
-      }
-      if (formData.noticePeriod) {
-        submitData.append('noticePeriod', formData.noticePeriod);
-      }
+      if (formData.coverLetter.trim()) submitData.append('coverLetter', formData.coverLetter);
+      if (formData.expectedSalary)    submitData.append('expectedSalary',    formData.expectedSalary);
+      if (formData.currentSalary)     submitData.append('currentSalary',     formData.currentSalary);
+      if (formData.preferredLocation.trim()) submitData.append('preferredLocation', formData.preferredLocation.trim());
+      if (formData.currentLocation.trim())   submitData.append('currentLocation',   formData.currentLocation.trim());
+      if (formData.noticePeriod)      submitData.append('noticePeriod',      formData.noticePeriod);
       submitData.append('resume', formData.resumeFile);
 
       await apiClient.post('/applications', submitData, {
@@ -336,10 +338,11 @@ export default function ApplyJob() {
               </div>
             </div>
 
-            {/* Cover Letter */}
+            {/* Cover Letter — optional */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cover Letter <span className="text-red-500">*</span>
+                Cover Letter{' '}
+                <span className="text-gray-400 font-normal text-xs">(Optional)</span>
               </label>
               <textarea
                 value={formData.coverLetter}
@@ -347,29 +350,76 @@ export default function ApplyJob() {
                 rows={6}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 placeholder="Tell us why you're interested in this role and what makes you a great fit..."
-                required
               />
               <p className="text-xs text-gray-500 mt-1">
-                Minimum 100 characters. Be specific about your skills and experience.
+                Optional — be specific about your skills and experience to stand out.
               </p>
             </div>
 
-            {/* Expected Salary */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Expected Salary (Annual)
-              </label>
-              <div className="relative">
-                <span className="absolute left-4 top-3 text-gray-500">₹</span>
+            {/* Current Location + Preferred Location */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Location
+                </label>
                 <input
-                  type="number"
-                  value={formData.expectedSalary}
-                  onChange={(e) => setFormData({ ...formData, expectedSalary: e.target.value })}
-                  className="w-full pl-8 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="e.g., 600000"
+                  type="text"
+                  value={formData.currentLocation}
+                  onChange={(e) => setFormData({ ...formData, currentLocation: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="e.g. Bangalore, India"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Optional - Enter amount in INR</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Preferred Location
+                </label>
+                <input
+                  type="text"
+                  value={formData.preferredLocation}
+                  onChange={(e) => setFormData({ ...formData, preferredLocation: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="e.g. Mumbai, Remote"
+                />
+              </div>
+            </div>
+
+            {/* Current Salary + Expected Salary */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current / Actual Salary (Annual)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-3 text-gray-500">₹</span>
+                  <input
+                    type="number"
+                    value={formData.currentSalary}
+                    onChange={(e) => setFormData({ ...formData, currentSalary: e.target.value })}
+                    className="w-full pl-8 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="e.g., 800000"
+                    min={0}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Optional — enter amount in INR</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Expected Salary (Annual)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-3 text-gray-500">₹</span>
+                  <input
+                    type="number"
+                    value={formData.expectedSalary}
+                    onChange={(e) => setFormData({ ...formData, expectedSalary: e.target.value })}
+                    className="w-full pl-8 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    placeholder="e.g., 1000000"
+                    min={0}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Optional — enter amount in INR</p>
+              </div>
             </div>
 
             {/* Notice Period */}
@@ -391,11 +441,11 @@ export default function ApplyJob() {
               </select>
             </div>
 
-            {/* Submit Button */}
+            {/* Submit Button — only resume is required */}
             <div className="flex gap-4 pt-4">
               <button
                 type="submit"
-                disabled={submitting || !formData.resumeFile || !formData.coverLetter}
+                disabled={submitting || !formData.resumeFile}
                 className="flex-1 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
               >
                 {submitting ? 'Submitting...' : 'Submit Application'}
