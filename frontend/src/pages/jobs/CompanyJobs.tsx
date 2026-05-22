@@ -12,13 +12,47 @@ interface Company {
   website?: string;
 }
 
+interface CompanyBranding {
+  primaryColor: string;
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  customDomain: string | null;
+}
+
 export default function CompanyJobs() {
   const { slug } = useParams<{ slug: string }>();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
+  const [branding, setBranding] = useState<CompanyBranding | null>(null);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const [error, setError] = useState('');
+
+  // Fetch public branding for white-label styling
+  useEffect(() => {
+    if (slug) {
+      apiClient.get(`/companies/public/${slug}/branding`)
+        .then((res: any) => {
+          setBranding(res.data?.branding || null);
+          // Apply favicon
+          if (res.data?.branding?.faviconUrl) {
+            const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+            if (link) link.href = res.data.branding.faviconUrl;
+          }
+        })
+        .catch(() => { /* non-critical — use defaults */ });
+    }
+  }, [slug]);
+
+  // Apply branding CSS custom properties
+  useEffect(() => {
+    if (branding?.primaryColor) {
+      document.documentElement.style.setProperty('--company-primary', branding.primaryColor);
+    }
+    return () => {
+      document.documentElement.style.removeProperty('--company-primary');
+    };
+  }, [branding]);
 
   useEffect(() => {
     if (slug) {
@@ -74,14 +108,14 @@ export default function CompanyJobs() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Company Header */}
+      {/* Company Header — white-label branded */}
       {company && (
-        <div className="bg-white border-b">
+        <div className="border-b" style={{ backgroundColor: branding?.primaryColor ? `${branding.primaryColor}08` : 'white' }}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div className="flex items-center gap-6">
-              {company.logo && (
+              {(branding?.logoUrl || company.logo) && (
                 <img
-                  src={company.logo}
+                  src={branding?.logoUrl || company.logo}
                   alt={company.name}
                   className="w-24 h-24 rounded-lg object-cover shadow-md"
                 />
@@ -96,7 +130,8 @@ export default function CompanyJobs() {
                     href={company.website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-2 inline-flex items-center text-indigo-600 hover:text-indigo-800"
+                    className="mt-2 inline-flex items-center hover:opacity-80"
+                    style={{ color: branding?.primaryColor || '#4f46e5' }}
                   >
                     Visit Website
                     <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,7 +186,7 @@ export default function CompanyJobs() {
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-gray-900 hover:text-indigo-600">
+                    <h3 className="text-xl font-semibold text-gray-900 group-hover:opacity-80" style={{ '--tw-text-opacity': 1 } as any}>
                       {job.title}
                     </h3>
                     <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-600">

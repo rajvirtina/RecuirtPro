@@ -514,6 +514,7 @@ export default function Applications() {
                 });
                 const isParsed  = !!app.parsedAt;
                 const score     = app.overallScore ?? app.skillMatchScore;
+                const source    = app.source as string | undefined;
 
                 return (
                   <div key={app._id} className="group hover:bg-neutral-50 transition-colors">
@@ -564,6 +565,17 @@ export default function Applications() {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                 </svg>
                                 Parsed
+                              </span>
+                            )}
+                            {/* Source badge */}
+                            {isEmployer && source && source !== 'direct' && (
+                              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                source === 'naukri' ? 'bg-blue-50 text-blue-700' :
+                                source === 'linkedin' ? 'bg-sky-50 text-sky-700' :
+                                source === 'referral' ? 'bg-purple-50 text-purple-700' :
+                                'bg-neutral-50 text-neutral-600'
+                              }`}>
+                                {source === 'naukri' ? 'Naukri' : source === 'linkedin' ? 'LinkedIn' : source === 'referral' ? 'Referral' : source}
                               </span>
                             )}
                           </div>

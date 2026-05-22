@@ -31,6 +31,11 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchAdminStats();
+
+    // Re-fetch when the tab becomes visible again (user navigates back to dashboard)
+    const handleVisibility = () => { if (document.visibilityState === 'visible') fetchAdminStats(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   const fetchAdminStats = async () => {

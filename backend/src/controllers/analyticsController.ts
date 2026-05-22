@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Response } from 'express';
-import { Application, Interview, User } from '../models';
-import { AuthRequest } from '../types';
+import { Application, Interview, User, Offer } from '../models';
+import { AuthRequest, OfferStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId } from '../middleware/auth';
 import logger from '../utils/logger';
@@ -341,5 +341,138 @@ export const getRecruiterProductivity = async (req: AuthRequest, res: Response):
   } catch (error: any) {
     logger.error('getRecruiterProductivity error:', error);
     return sendError(res, error.message || 'Failed to retrieve recruiter data', 500);
+  }
+};
+
+// ─── 6. Offer Acceptance Rate ─────────────────────────────────────────────────
+
+/**
+ * @desc  Offer funnel: sent, accepted, rejected, negotiating, withdrawn
+ * @route GET /api/v1/analytics/offer-rate?startDate=&endDate=
+ */
+export const getOfferRate = async (req: AuthRequest, res: Response): Promise<void | Response> => {
+  try {
+    const tenantId = getTenantCompanyId(req.user);
+    const { start, end } = parseDates(req);
+
+    const match: any = { createdAt: { $gte: start, $lte: end } };
+    if (tenantId) match.companyId = oid(tenantId);
+
+    const pipeline = [
+      { $match: match },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+        },
+      },
+    ];
+
+    const results = await Offer.aggregate(pipeline);
+
+    const statusMap: Record<string, number> = {};
+    results.forEach((r: any) => { statusMap[r._id] = r.count; });
+
+    const total    = Object.values(statusMap).reduce((s, v) => s + v, 0);
+    const sent     = (statusMap[OfferStatus.SENT] ?? 0) + (statusMap[OfferStatus.ACCEPTED] ?? 0) + (statusMap[OfferStatus.REJECTED] ?? 0) + (statusMap[OfferStatus.NEGOTIATING] ?? 0);
+    const accepted = statusMap[OfferStatus.ACCEPTED] ?? 0;
+    const rejected = statusMap[OfferStatus.REJECTED] ?? 0;
+    const negotiating = statusMap[OfferStatus.NEGOTIATING] ?? 0;
+    const withdrawn  = statusMap[OfferStatus.WITHDRAWN] ?? 0;
+
+    return sendSuccess(res, {
+      total,
+      sent,
+      accepted,
+      rejected,
+      negotiating,
+      withdrawn,
+      acceptanceRate: sent > 0 ? Math.round((accepted / sent) * 100) : 0,
+      breakdown: [
+        { label: 'Accepted',    value: accepted,    color: '#22c55e' },
+        { label: 'Rejected',    value: rejected,    color: '#ef4444' },
+        { label: 'Negotiating', value: negotiating, color: '#f59e0b' },
+        { label: 'Withdrawn',   value: withdrawn,   color: '#6b7280' },
+        { label: 'Pending',     value: (statusMap[OfferStatus.SENT] ?? 0), color: '#3b82f6' },
+      ].filter(b => b.value > 0),
+    }, 'Offer acceptance rate retrieved');
+  } catch (error: any) {
+    logger.error('getOfferRate error:', error);
+    return sendError(res, error.message || 'Failed to retrieve offer data', 500);
+  }
+};
+
+// ─── 7. AI Score Distribution ─────────────────────────────────────────────────
+
+/**
+ * @desc  Histogram of AI interview overallScore across applications
+ * @route GET /api/v1/analytics/ai-score-distribution?startDate=&endDate=
+ */
+export const getAIScoreDistribution = async (req: AuthRequest, res: Response): Promise<void | Response> => {
+  try {
+    const tenantId = getTenantCompanyId(req.user);
+    const { start, end } = parseDates(req);
+
+    const match: any = {
+      overallScore: { $exists: true, $ne: null },
+      createdAt: { $gte: start, $lte: end },
+    };
+    if (tenantId) match.companyId = oid(tenantId);
+
+    // Bucket scores into 10-point ranges: 0-10, 10-20, ..., 90-100
+    const pipeline = [
+      { $match: match },
+      {
+        $bucket: {
+          groupBy: '$overallScore',
+          boundaries: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 101],
+          default: 'other',
+          output: { count: { $sum: 1 } },
+        },
+      },
+    ];
+
+    const results = await Application.aggregate(pipeline);
+
+    // Build histogram data
+    const bucketLabels = ['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90-100'];
+    const boundaries   = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+    const histogram = boundaries.map((b, i) => {
+      const found = results.find((r: any) => r._id === b);
+      return {
+        range: bucketLabels[i],
+        count: found?.count ?? 0,
+      };
+    });
+
+    // Stats
+    const statsAgg = await Application.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: null,
+          avg:    { $avg: '$overallScore' },
+          median: { $avg: '$overallScore' }, // approximate
+          min:    { $min: '$overallScore' },
+          max:    { $max: '$overallScore' },
+          total:  { $sum: 1 },
+        },
+      },
+    ]);
+
+    const stats = statsAgg[0] ?? { avg: 0, min: 0, max: 0, total: 0 };
+
+    return sendSuccess(res, {
+      histogram,
+      stats: {
+        average: Math.round((stats.avg ?? 0) * 10) / 10,
+        min: stats.min ?? 0,
+        max: stats.max ?? 0,
+        total: stats.total ?? 0,
+      },
+    }, 'AI score distribution retrieved');
+  } catch (error: any) {
+    logger.error('getAIScoreDistribution error:', error);
+    return sendError(res, error.message || 'Failed to retrieve AI score data', 500);
   }
 };

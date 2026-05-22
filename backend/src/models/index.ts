@@ -21,3 +21,4 @@ export { Offer, IOfferDocument } from './Offer';
 export { AIInterviewSession, IAIInterviewSessionDocument } from './AIInterviewSession';
 export { Note, INoteDocument } from './Note';
 export { ActivityEvent, IActivityEventDocument } from './ActivityEvent';
+export { JobTemplate, IJobTemplateDocument } from './JobTemplate';

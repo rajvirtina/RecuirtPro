@@ -370,10 +370,21 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user) return;
     const endpoint = user.role === 'candidate' ? '/dashboard/candidate' : '/dashboard/employer';
-    apiClient.get(endpoint)
-      .then((res) => setStats(res.data?.data ?? res.data))
-      .catch(() => toast.error('Failed to load dashboard data'))
-      .finally(() => setLoading(false));
+
+    const load = () => {
+      setLoading(true);
+      apiClient.get(endpoint)
+        .then((res) => setStats(res.data?.data ?? res.data))
+        .catch(() => toast.error('Failed to load dashboard data'))
+        .finally(() => setLoading(false));
+    };
+
+    load();
+
+    // Re-fetch whenever the user navigates back to this tab
+    const handleVisibility = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [user]);
 
   if (loading) return <SkeletonPage />;

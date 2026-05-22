@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import * as authController from '../controllers/authController';
+
 import { protect, optionalAuth } from '../middleware/auth';
 import { authLimiter } from '../middleware/rateLimiter';
 
@@ -322,5 +323,46 @@ router.post(
  *         description: Verification email sent
  */
 router.post('/resend-verification', protect, authController.resendVerification);
+
+/**
+ * @swagger
+ * /api/v1/auth/profile:
+ *   put:
+ *     summary: Update user profile (firstName, lastName, phoneNumber)
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - firstName
+ *               - lastName
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       400:
+ *         description: Validation error
+ */
+router.put(
+  '/profile',
+  protect,
+  [
+    body('firstName').trim().notEmpty().withMessage('First name is required'),
+    body('lastName').trim().notEmpty().withMessage('Last name is required'),
+    body('phoneNumber').optional().isMobilePhone('any'),
+  ],
+  authController.updateProfile
+);
 
 export default router;

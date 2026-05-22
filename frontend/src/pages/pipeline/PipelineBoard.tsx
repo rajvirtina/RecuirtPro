@@ -22,13 +22,17 @@ import { toast } from 'sonner';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// These stage IDs must match the actual `status` values stored on Application documents
 const DEFAULT_STAGES = [
-  { id: 'applied',    label: 'Applied' },
-  { id: 'screening',  label: 'Screening' },
-  { id: 'interview',  label: 'Interview' },
-  { id: 'offer',      label: 'Offer' },
-  { id: 'hired',      label: 'Hired' },
-  { id: 'rejected',   label: 'Rejected' },
+  { id: 'applied',             label: 'Applied'              },
+  { id: 'shortlisted',         label: 'Shortlisted'          },
+  { id: 'interview_scheduled', label: 'Interview Scheduled'  },
+  { id: 'in_progress',         label: 'In Progress'          },
+  { id: 'selected',            label: 'Selected'             },
+  { id: 'offer_released',      label: 'Offer Released'       },
+  { id: 'hired',               label: 'Hired'                },
+  { id: 'on_hold',             label: 'On Hold'              },
+  { id: 'rejected',            label: 'Rejected'             },
 ];
 
 type ViewMode = 'kanban' | 'list';
@@ -59,14 +63,21 @@ export default function PipelineBoard() {
   const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
   const sensors = useSensors(pointerSensor, touchSensor);
 
-  // Fetch jobs
+  // Fetch jobs (for the job filter dropdown)
   useEffect(() => {
     const fetchJobs = async () => {
       try {
         const res = await apiClient.get('/jobs');
-        setJobs((res.data as any) || []);
+        const d = res.data as any;
+        // API may return { data: { jobs: [...] } } or { jobs: [...] } or plain array
+        const list: Job[] = Array.isArray(d) ? d
+          : Array.isArray(d?.data) ? d.data
+          : Array.isArray(d?.jobs) ? d.jobs
+          : Array.isArray(d?.data?.jobs) ? d.data.jobs
+          : [];
+        setJobs(list);
       } catch {
-        // non-critical
+        // non-critical — pipeline still works, just no job filter
       }
     };
     fetchJobs();
@@ -76,30 +87,32 @@ export default function PipelineBoard() {
   const fetchPipeline = useCallback(async () => {
     try {
       setLoading(true);
-      const params = selectedJob ? `?jobId=${selectedJob}&groupBy=status` : '?groupBy=status';
-      const res = await apiClient.get(`/pipeline${params}`);
-      const data = (res.data as any) || {};
+      // Use applications endpoint and group client-side (no dedicated /pipeline endpoint)
+      const params = selectedJob ? `?jobId=${selectedJob}&limit=200` : '?limit=200';
+      const res = await apiClient.get(`/applications${params}`);
+      const d = res.data as any;
 
-      // Ensure all stages have an array
-      const normalized: Record<string, PipelineCandidate[]> = {};
+      // Unwrap paginated or direct response shapes
+      const apps: any[] = Array.isArray(d) ? d
+        : Array.isArray(d?.data) ? d.data
+        : Array.isArray(d?.applications) ? d.applications
+        : Array.isArray(d?.data?.applications) ? d.data.applications
+        : [];
+
+      // Group by status into pipeline columns
+      const grouped: Record<string, PipelineCandidate[]> = {};
       for (const stage of DEFAULT_STAGES) {
-        normalized[stage.id] = data[stage.id] || [];
+        grouped[stage.id] = [];
       }
-      setPipeline(normalized);
-    } catch {
-      // Fallback: try fetching applications and group them
-      try {
-        const params = selectedJob ? `?jobId=${selectedJob}` : '';
-        const res = await apiClient.get(`/applications${params}`);
-        const apps: PipelineCandidate[] = (res.data as any) || [];
-        const grouped: Record<string, PipelineCandidate[]> = {};
-        for (const stage of DEFAULT_STAGES) {
-          grouped[stage.id] = apps.filter((a) => a.status === stage.id);
+      for (const app of apps) {
+        const status = app.status || 'applied';
+        if (grouped[status]) {
+          grouped[status].push(app as PipelineCandidate);
         }
-        setPipeline(grouped);
-      } catch {
-        toast.error('Failed to load pipeline data');
       }
+      setPipeline(grouped);
+    } catch (err) {
+      toast.error('Failed to load pipeline data');
     } finally {
       setLoading(false);
     }

@@ -29,6 +29,7 @@ export interface ICompanyDocument extends Document {
     logoUrl?: string;
     primaryColor?: string;
     faviconUrl?: string;
+    customDomain?: string;
   };
   settings?: {
     enableProctoring?: boolean;
@@ -131,6 +132,7 @@ const companySchema = new Schema<ICompanyDocument>(
       logoUrl: String,
       primaryColor: { type: String, default: '#4f46e5' },
       faviconUrl: String,
+      customDomain: { type: String, trim: true },
     },
     defaultPipelineStages: {
       type: [{

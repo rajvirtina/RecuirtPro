@@ -33,6 +33,7 @@ import VideoMeetingRoom from './pages/interviews/VideoMeetingRoom';
 import Questions from './pages/questions/Questions';
 import CandidateSourcing from './pages/sourcing/CandidateSourcing';
 import OfferManagement from './pages/offers/OfferManagement';
+import OfferApprovals from './pages/offers/OfferApprovals';
 import HRManagement from './pages/admin/HRManagement';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import SuperAdminPanel from './pages/superadmin/SuperAdminPanel';
@@ -40,6 +41,7 @@ import Profile from './pages/Profile';
 import Analytics from './pages/Analytics';
 import ProctoringCheck from './pages/proctoring/ProctoringCheck';
 import AIInterviewRoom from './pages/ai-interview/AIInterviewRoom';
+import AIScoreComparison from './pages/ai-interview/AIScoreComparison';
 import ProctoringDashboard from './pages/proctoring/ProctoringDashboard';
 import CandidateSelfSchedule from './pages/schedule/CandidateSelfSchedule';
 import InterviewerScorecard from './pages/interviews/InterviewerScorecard';
@@ -137,12 +139,14 @@ function App() {
         <Route path="/applications" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><Applications /></RoleGuard>} />
         <Route path="/applications/:id" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><ApplicationDetail /></RoleGuard>} />
         <Route path="/applications/:id/ai-report" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><AIAssessmentReport /></RoleGuard>} />
+        <Route path="/ai-scores" element={<RoleGuard roles={['admin', 'hr', 'employer']}><AIScoreComparison /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
         <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
         <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
         <Route path="/offers" element={<RoleGuard roles={['admin', 'hr', 'employer']}><OfferManagement /></RoleGuard>} />
+        <Route path="/offers/approvals" element={<RoleGuard roles={['admin', 'employer']}><OfferApprovals /></RoleGuard>} />
         <Route path="/pipeline" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><PipelineBoard /></RoleGuard>} />
         <Route path="/analytics" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Analytics /></RoleGuard>} />
         <Route path="/proctoring/monitor" element={<RoleGuard roles={['admin', 'hr', 'employer']}><ProctoringDashboard /></RoleGuard>} />

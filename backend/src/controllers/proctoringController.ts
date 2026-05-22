@@ -839,21 +839,30 @@ export const getProctoringReportByApplication = async (
       .sort({ timestamp: 1 })
       .lean();
 
-    const total = events.length;
+    // System / informational events that should NOT count as violations
+    const SYSTEM_EVENT_TYPES = new Set([
+      'consent_given', 'consent_denied', 'interview_started', 'interview_ended',
+      'system_check_passed', 'screenshot_captured',
+    ]);
+
+    // Violations are non-system events only
+    const violationEvents = events.filter(e => !SYSTEM_EVENT_TYPES.has(e.eventType));
+
+    const total = violationEvents.length;
     const riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' =
       total >= 6 ? 'HIGH' : total >= 3 ? 'MEDIUM' : 'LOW';
 
     const bySeverity = {
-      critical: events.filter(e => e.severity === 'critical').length,
-      high:     events.filter(e => e.severity === 'high').length,
-      medium:   events.filter(e => e.severity === 'medium').length,
-      low:      events.filter(e => e.severity === 'low').length,
+      critical: violationEvents.filter(e => e.severity === 'critical').length,
+      high:     violationEvents.filter(e => e.severity === 'high').length,
+      medium:   violationEvents.filter(e => e.severity === 'medium').length,
+      low:      violationEvents.filter(e => e.severity === 'low').length,
     };
 
     const byType: Record<string, number> = {};
-    events.forEach(e => { byType[e.eventType] = (byType[e.eventType] ?? 0) + 1; });
+    violationEvents.forEach(e => { byType[e.eventType] = (byType[e.eventType] ?? 0) + 1; });
 
-    const reviewed = events.filter(e => e.reviewed).length;
+    const reviewed = violationEvents.filter(e => e.reviewed).length;
 
     const assessment =
       total >= 6
@@ -865,7 +874,7 @@ export const getProctoringReportByApplication = async (
         : 'No proctoring violations recorded. Session completed cleanly.';
 
     return sendSuccess(res, {
-      hasData:      total > 0,
+      hasData:      total > 0 || events.length > 0,
       riskLevel,
       interviewId:  interview._id,
       proctoringEnabled: interview.proctoringEnabled,
@@ -877,7 +886,10 @@ export const getProctoringReportByApplication = async (
         byType,
       },
       assessment,
+      // Return all events (including system events) so the UI can render the full timeline
+      // but only violation events count toward the summary totals
       events,
+      violationCount: total,
     }, 'Proctoring report retrieved');
   } catch (error: any) {
     logger.error('getProctoringReportByApplication error:', error);

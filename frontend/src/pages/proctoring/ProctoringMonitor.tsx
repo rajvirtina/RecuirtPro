@@ -5,7 +5,10 @@
  *   1. Tab visibility  — document visibilitychange
  *   2. Window blur     — window blur (fires after 3-second grace period)
  *   3. Face detection  — face-api.js TinyFaceDetector every 10 s
- *   4. Copy/paste      — document copy event
+ *   4. Copy/paste      — document copy + paste events
+ *   5. Background noise — AudioContext analyser threshold monitoring
+ *   6. Right-click      — contextmenu event blocked
+ *   7. DevTools         — dimension/timing heuristics
  *
  * When VITE_ENABLE_PROCTORING !== "true" the component renders children
  * immediately without any monitoring.
@@ -33,10 +36,25 @@ const DEDUPE_MS = 30_000;
 const BLUR_GRACE_MS = 3_000;
 // Face-detection interval in ms
 const FACE_INTERVAL_MS = 10_000;
+// Audio noise RMS threshold (0–1 range; values above this trigger a violation)
+const NOISE_THRESHOLD = 0.15;
+// Audio noise check interval
+const NOISE_CHECK_MS = 5_000;
+// DevTools dimension detection interval
+const DEVTOOLS_CHECK_MS = 4_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ViolationType = 'tab_switch' | 'window_blur' | 'multiple_faces' | 'no_face' | 'copy_attempt';
+type ViolationType =
+  | 'tab_switch'
+  | 'window_blur'
+  | 'multiple_faces'
+  | 'no_face'
+  | 'copy_attempt'
+  | 'paste_attempt'
+  | 'background_noise'
+  | 'right_click'
+  | 'devtools_open';
 type Severity      = 'low' | 'medium' | 'high' | 'critical';
 
 interface ViolationPayload {
@@ -69,6 +87,10 @@ function ProctoringMonitorInner({ sessionId, children }: { sessionId: string; ch
   const lastViolRef = useRef<Map<string, number>>(new Map());
   const blurTimerRef= useRef<ReturnType<typeof setTimeout> | null>(null);
   const faceTimerRef= useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const noiseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const devtoolsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
@@ -244,8 +266,101 @@ function ProctoringMonitorInner({ sessionId, children }: { sessionId: string; ch
         severity:  'low',
         timestamp: new Date().toISOString(),
       });
+    const onPaste = () =>
+      postViolation({
+        type:      'paste_attempt',
+        severity:  'medium',
+        timestamp: new Date().toISOString(),
+      });
     document.addEventListener('copy', onCopy);
-    return () => document.removeEventListener('copy', onCopy);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [postViolation]);
+
+  // ── Right-click / context menu blocking ─────────────────────────────────
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      postViolation({
+        type:      'right_click',
+        severity:  'low',
+        timestamp: new Date().toISOString(),
+      });
+    };
+    document.addEventListener('contextmenu', onContextMenu);
+    return () => document.removeEventListener('contextmenu', onContextMenu);
+  }, [postViolation]);
+
+  // ── Background noise detection (AudioContext) ───────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const initAudio = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+
+        const ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+
+        audioCtxRef.current = ctx;
+        analyserRef.current = analyser;
+
+        // Periodic noise check
+        noiseTimerRef.current = setInterval(() => {
+          if (!analyserRef.current) return;
+          const data = new Float32Array(analyserRef.current.fftSize);
+          analyserRef.current.getFloatTimeDomainData(data);
+
+          // Calculate RMS (root mean square) for volume level
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+          const rms = Math.sqrt(sum / data.length);
+
+          if (rms > NOISE_THRESHOLD) {
+            postViolation({
+              type:      'background_noise',
+              severity:  'medium',
+              timestamp: new Date().toISOString(),
+            });
+          }
+        }, NOISE_CHECK_MS);
+      } catch {
+        console.warn('[Proctoring] Microphone access denied — noise detection disabled');
+      }
+    };
+
+    initAudio();
+    return () => {
+      cancelled = true;
+      if (noiseTimerRef.current) clearInterval(noiseTimerRef.current);
+      audioCtxRef.current?.close().catch(() => {});
+    };
+  }, [postViolation]);
+
+  // ── DevTools open detection (dimension heuristic) ───────────────────────
+  useEffect(() => {
+    const checkDevTools = () => {
+      const widthThreshold = window.outerWidth - window.innerWidth > 160;
+      const heightThreshold = window.outerHeight - window.innerHeight > 160;
+      if (widthThreshold || heightThreshold) {
+        postViolation({
+          type:      'devtools_open',
+          severity:  'high',
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+    devtoolsTimerRef.current = setInterval(checkDevTools, DEVTOOLS_CHECK_MS);
+    return () => {
+      if (devtoolsTimerRef.current) clearInterval(devtoolsTimerRef.current);
+    };
   }, [postViolation]);
 
   return (

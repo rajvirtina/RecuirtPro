@@ -63,6 +63,15 @@ export enum InterviewStatus {
   NO_SHOW = 'no_show',
 }
 
+export interface JobPosting {
+  portal: string;
+  postedAt?: string;
+  externalId?: string;
+  status: 'pending' | 'posted' | 'failed';
+  error?: string;
+  retryCount: number;
+}
+
 export interface Job {
   _id: string;
   companyId: string;
@@ -79,6 +88,7 @@ export interface Job {
   status: JobStatus;
   applicationCount: number;
   viewCount: number;
+  postings?: JobPosting[];
   createdAt: string;
   updatedAt: string;
 }
@@ -105,6 +115,10 @@ export interface Application {
   // AI ranking results
   missingSkills?: string[];
   matchingSkills?: string[];
+
+  // Sourcing / referral tracking
+  source?: 'direct' | 'naukri' | 'linkedin' | 'referral';
+  referralBy?: string;
 }
 
 export interface Interview {

@@ -6,6 +6,8 @@ import {
   getSourceBreakdown,
   getTimeToHire,
   getRecruiterProductivity,
+  getOfferRate,
+  getAIScoreDistribution,
 } from '../controllers/analyticsController';
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
@@ -74,6 +76,26 @@ router.get(
   dateQueryValidators,
   validate,
   getRecruiterProductivity
+);
+
+/** Offer acceptance rate breakdown */
+router.get(
+  '/offer-rate',
+  protect,
+  authorize(...hrAdminEmployer),
+  dateQueryValidators,
+  validate,
+  getOfferRate
+);
+
+/** AI interview score distribution histogram */
+router.get(
+  '/ai-score-distribution',
+  protect,
+  authorize(...hrAdminEmployer),
+  dateQueryValidators,
+  validate,
+  getAIScoreDistribution
 );
 
 export default router;

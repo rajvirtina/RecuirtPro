@@ -471,7 +471,9 @@ export const downloadResume = async (
     // Prevent path traversal (SEC-04/B-05)
     const path = require('path');
     const uploadsDir = path.resolve(__dirname, '../../uploads');
-    const filePath = path.resolve(__dirname, '../../', application.resumeUrl);
+    // Strip leading slashes so path.resolve doesn't treat the stored URL as absolute
+    const sanitizedResumeUrl = application.resumeUrl.replace(/^\/+/, '');
+    const filePath = path.resolve(__dirname, '../../', sanitizedResumeUrl);
 
     // Ensure resolved path stays within the uploads directory
     if (!filePath.startsWith(uploadsDir)) {

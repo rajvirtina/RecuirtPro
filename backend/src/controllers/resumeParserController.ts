@@ -40,10 +40,11 @@ const llm = axios.create({
  * backend root.
  */
 function resolveResumePath(resumeUrl: string): string {
-  if (path.isAbsolute(resumeUrl)) return resumeUrl;
   // __dirname = <backend>/dist/controllers  →  ../../ = <backend>/
   const backendRoot = path.join(__dirname, '..', '..');
-  return path.join(backendRoot, resumeUrl.replace(/^\//, ''));
+  // Always treat resumeUrl as relative to backendRoot.
+  // Strip any leading slash to prevent path.join from treating it as absolute.
+  return path.join(backendRoot, resumeUrl.replace(/^\/+/, ''));
 }
 
 /** Extract plain text from a PDF or DOCX/DOC resume file */

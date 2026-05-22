@@ -591,3 +591,59 @@ export const startInterview = async (
     return sendError(res, error.message || 'Error starting interview', 500);
   }
 };
+
+/**
+ * @desc    Get interview info for external scorecard form
+ * @route   GET /api/v1/interviews/:id/feedback-info
+ * @access  Private (Panel member / HR / Admin / Employer)
+ */
+export const getInterviewFeedbackInfo = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+
+    const interview = await Interview.findById(id)
+      .populate('jobId', 'title location')
+      .populate('candidateId', 'firstName lastName email')
+      .lean();
+
+    if (!interview) {
+      return sendError(res, 'Interview not found', 404);
+    }
+
+    // Authorization: company members, panel members, or super admin
+    const tenantId = getTenantCompanyId(req.user);
+    const isPanelMember = (interview.panel as any[]).some(
+      (m: any) => (m.userId?.toString?.() ?? m.userId) === req.user?._id?.toString()
+    );
+    const isCompanyMember = tenantId
+      ? interview.companyId?.toString() === tenantId
+      : false;
+
+    if (!isSuperAdmin(req.user) && !isPanelMember && !isCompanyMember) {
+      return sendError(res, 'Not authorized to view this interview scorecard', 403);
+    }
+
+    const job = interview.jobId as any;
+    const candidate = interview.candidateId as any;
+
+    return sendSuccess(res, {
+      jobTitle:        job?.title || 'N/A',
+      candidateName:   candidate
+        ? `${candidate.firstName} ${candidate.lastName}`
+        : 'Candidate',
+      interviewType:   (interview as any).round || 'Interview',
+      interviewerName: `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Interviewer',
+      status:          interview.status,
+      scheduledTime:   interview.scheduledTime,
+      existingFeedback: (interview.feedback as any[]).find(
+        (fb: any) => fb.interviewerId?.toString() === req.user?._id?.toString()
+      ) ?? null,
+    }, 'Interview info retrieved');
+  } catch (error: any) {
+    logger.error('Error in getInterviewFeedbackInfo:', error);
+    return sendError(res, error.message || 'Error retrieving interview info', 500);
+  }
+};

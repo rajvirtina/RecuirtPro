@@ -157,6 +157,13 @@ const superAdminNav: NavItem[] = [
   { name: 'Profile',     href: '/profile',    Icon: ProfileIcon, group: 'account' },
 ];
 
+const interviewerNav: NavItem[] = [
+  { name: 'Dashboard',  href: '/dashboard',   Icon: DashboardIcon, group: 'main' },
+  { name: 'Interviews', href: '/interviews',  Icon: InterviewIcon, group: 'main' },
+  { name: 'Pipeline',   href: '/pipeline',    Icon: PipelineIcon,  group: 'main' },
+  { name: 'Profile',    href: '/profile',     Icon: ProfileIcon,   group: 'account' },
+];
+
 const companyAdminNav: NavItem[] = [
   { name: 'Admin Portal',  href: '/admin',              Icon: AdminIcon,     group: 'admin' },
   { name: 'HR Management', href: '/admin/hr-management',Icon: HRIcon,        group: 'admin' },
@@ -245,6 +252,7 @@ export default function Layout() {
     user?.role === 'candidate'              ? candidateNav  :
     user?.role === 'admin' && !user?.companyId ? superAdminNav :
     user?.role === 'admin'                  ? companyAdminNav :
+    user?.role === 'interviewer'            ? interviewerNav :
                                               defaultNav;
 
   const groups = Array.from(new Set(navigation.map((n) => n.group)));

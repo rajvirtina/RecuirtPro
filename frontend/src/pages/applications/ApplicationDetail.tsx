@@ -93,6 +93,51 @@ function ScheduleModal({
   onScheduled: () => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const [platform, setPlatform] = useState<'google_meet' | 'teams' | 'zoho' | 'custom'>('google_meet');
+  const [enableAI, setEnableAI] = useState(false);
+  const [panelMembers, setPanelMembers] = useState<{ userId: string; name: string; email: string; role: string }[]>([
+    { userId: user?._id, name: `${user?.firstName} ${user?.lastName}`, email: user?.email, role: user?.role },
+  ]);
+  const [newPanelEmail, setNewPanelEmail] = useState('');
+  const [availability, setAvailability] = useState<{ email: string; slots: string[] }[]>([]);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+
+  const generateMeetingLink = () => {
+    switch (platform) {
+      case 'google_meet': return `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}`;
+      case 'teams': return `https://teams.microsoft.com/l/meetup-join/${Math.random().toString(36).substring(2, 14)}`;
+      case 'zoho': return `https://meeting.zoho.com/meeting/${Math.random().toString(36).substring(2, 12)}`;
+      default: return '';
+    }
+  };
+
+  const addPanelMember = () => {
+    if (!newPanelEmail.trim()) return;
+    if (panelMembers.some(m => m.email === newPanelEmail)) return;
+    setPanelMembers([...panelMembers, { userId: '', name: newPanelEmail.split('@')[0], email: newPanelEmail, role: 'interviewer' }]);
+    setNewPanelEmail('');
+  };
+
+  const removePanelMember = (email: string) => {
+    setPanelMembers(panelMembers.filter(m => m.email !== email));
+  };
+
+  const checkAvailability = async (date: string) => {
+    if (!date || panelMembers.length === 0) return;
+    setCheckingAvailability(true);
+    try {
+      const res = await apiClient.post('/calendar/check-availability', {
+        emails: panelMembers.map(m => m.email),
+        date,
+      });
+      setAvailability((res.data as any)?.slots || []);
+    } catch {
+      // Availability check not configured — silently ignore
+      setAvailability([]);
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -100,7 +145,8 @@ function ScheduleModal({
     try {
       setLoading(true);
       const scheduledTime = new Date(`${fd.get('date')}T${fd.get('time')}`).toISOString();
-      await apiClient.post('/interviews', {
+      const customLink = fd.get('meetingLink') as string;
+      const interviewRes = await apiClient.post('/interviews', {
         applicationId: application._id,
         jobId:         application.job._id,
         candidateId:   application.candidate?._id,
@@ -108,10 +154,23 @@ function ScheduleModal({
         duration:    parseInt(fd.get('duration') as string) || 60,
         mode:        fd.get('mode'),
         location:    fd.get('location') || '',
-        meetingLink: fd.get('meetingLink') || 'https://meet.google.com/' + Math.random().toString(36).substring(7),
+        meetingLink: customLink || generateMeetingLink(),
+        calendarProvider: platform !== 'custom' ? platform : undefined,
         round:       fd.get('round'),
-        panel:       [{ userId: user?._id, name: `${user?.firstName} ${user?.lastName}`, email: user?.email, role: user?.role }],
+        panel:       panelMembers,
       });
+      // Create AI interview session if enabled
+      if (enableAI) {
+        try {
+          const interviewId = (interviewRes.data as any)?._id || (interviewRes.data as any)?.data?._id;
+          if (interviewId) {
+            await apiClient.post('/ai-interviews', { interviewId });
+            toast.success('AI Interview session created! Candidate will receive the link.');
+          }
+        } catch {
+          toast.error('Interview scheduled but AI session creation failed — you can create it later.');
+        }
+      }
       toast.success('Interview scheduled!');
       onScheduled();
       onClose();
@@ -153,27 +212,115 @@ function ScheduleModal({
               <div>
                 <label className="field-label">Date</label>
                 <input type="date" name="date" required className="field-input"
-                  min={new Date().toISOString().split('T')[0]} />
+                  min={new Date().toISOString().split('T')[0]}
+                  onChange={e => checkAvailability(e.target.value)} />
               </div>
               <div>
                 <label className="field-label">Time</label>
                 <input type="time" name="time" required className="field-input" defaultValue="10:00" />
               </div>
             </div>
+
+            {/* Panel Availability Indicator */}
+            {checkingAvailability && (
+              <p className="text-xs text-neutral-500 animate-pulse">Checking panel availability…</p>
+            )}
+            {availability.length > 0 && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-xs font-medium text-green-800 mb-1">Available slots for panel:</p>
+                <div className="flex flex-wrap gap-1">
+                  {availability.map((slot: any, i: number) => (
+                    <span key={i} className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                      {slot.startTime}–{slot.endTime}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="field-label">Duration (minutes)</label>
               <select name="duration" className="field-input" defaultValue="60">
                 {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
               </select>
             </div>
+
+            {/* Meeting Platform Selector */}
             <div>
-              <label className="field-label">Location / Meeting Link</label>
-              <input type="text" name="location" placeholder="Office or leave blank" className="field-input" />
+              <label className="field-label">Meeting Platform</label>
+              <div className="grid grid-cols-4 gap-2 mt-1">
+                {([
+                  ['google_meet', 'Google Meet', 'bg-green-50 border-green-300 text-green-800'],
+                  ['teams', 'MS Teams', 'bg-blue-50 border-blue-300 text-blue-800'],
+                  ['zoho', 'Zoho Meeting', 'bg-orange-50 border-orange-300 text-orange-800'],
+                  ['custom', 'Custom Link', 'bg-neutral-50 border-neutral-300 text-neutral-800'],
+                ] as const).map(([val, label, cls]) => (
+                  <button key={val} type="button" onClick={() => setPlatform(val as any)}
+                    className={`px-2 py-2 text-xs font-medium rounded-lg border transition-all ${
+                      platform === val ? cls + ' ring-2 ring-offset-1 ring-primary-400' : 'bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <div>
-              <label className="field-label">Custom Meeting Link <span className="font-normal text-neutral-400">(optional)</span></label>
-              <input type="url" name="meetingLink" placeholder="https://meet.google.com/… (auto-generated)" className="field-input" />
+              <label className="field-label">Location / Office</label>
+              <input type="text" name="location" placeholder="Office address or leave blank" className="field-input" />
             </div>
+            {platform === 'custom' && (
+              <div>
+                <label className="field-label">Custom Meeting Link</label>
+                <input type="url" name="meetingLink" placeholder="https://…" className="field-input" />
+              </div>
+            )}
+            {platform !== 'custom' && <input type="hidden" name="meetingLink" value="" />}
+
+            {/* Interview Panel */}
+            <div>
+              <label className="field-label">Interview Panel</label>
+              <div className="space-y-2 mt-1">
+                {panelMembers.map((m, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-xs font-medium text-primary-700">
+                      {m.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-neutral-700 flex-1 truncate">{m.name} <span className="text-neutral-400">({m.email})</span></span>
+                    {i > 0 && (
+                      <button type="button" onClick={() => removePanelMember(m.email)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <input type="email" value={newPanelEmail} onChange={e => setNewPanelEmail(e.target.value)}
+                    placeholder="Add interviewer email" className="field-input flex-1 text-sm"
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPanelMember(); } }} />
+                  <button type="button" onClick={addPanelMember}
+                    className="px-3 py-1.5 bg-neutral-100 text-neutral-700 text-sm rounded-lg hover:bg-neutral-200">
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Interview Toggle */}
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <p className="text-sm font-medium text-indigo-900">Enable AI Interview</p>
+                  <p className="text-xs text-indigo-600">AI will conduct the interview automatically with real-time scoring</p>
+                </div>
+                <div className="relative">
+                  <input type="checkbox" checked={enableAI} onChange={e => setEnableAI(e.target.checked)}
+                    className="sr-only" />
+                  <div className={`w-10 h-5 rounded-full transition-colors ${enableAI ? 'bg-indigo-600' : 'bg-neutral-300'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform mt-0.5 ${enableAI ? 'translate-x-5.5 ml-[22px]' : 'ml-0.5'}`} />
+                  </div>
+                </div>
+              </label>
+            </div>
+
             <div className="flex gap-3 pt-2">
               <Button type="button" variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
               <Button type="submit" variant="primary" loading={loading} className="flex-1">Schedule Interview</Button>
@@ -373,6 +520,83 @@ function AIFitSection({ app }: { app: AppDetail }) {
   );
 }
 
+// ─── Resume Tab Content ───────────────────────────────────────────────────────
+// Uses the authenticated backend download endpoint instead of direct URL links
+// so files are served with correct headers and proper auth checks.
+
+function ResumeTabContent({
+  applicationId, resumeUrl, isEmployer,
+}: { applicationId: string; resumeUrl: string; isEmployer: boolean }) {
+  const apiBase  = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5001/api/v1';
+  const downloadUrl = `${apiBase}/applications/${applicationId}/resume`;
+
+  // Determine filename from stored URL for display purposes
+  const fileName = resumeUrl.split('/').pop() || 'resume';
+  const isPdf    = fileName.toLowerCase().endsWith('.pdf');
+
+  const handleDownload = async () => {
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res   = await fetch(downloadUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Download failed');
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download resume. Please try again.');
+    }
+  };
+
+  const handleOpenNewTab = () => {
+    // Construct full URL pointing to the API server so browser resolves correctly
+    const apiOrigin = apiBase.replace('/api/v1', '');
+    const fullUrl   = resumeUrl.startsWith('http')
+      ? resumeUrl
+      : `${apiOrigin}${resumeUrl.startsWith('/') ? '' : '/'}${resumeUrl}`;
+    window.open(fullUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="btn btn-md btn-primary"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Download Resume
+        </button>
+        <button type="button" onClick={handleOpenNewTab} className="btn btn-md btn-secondary">
+          Open in new tab ↗
+        </button>
+      </div>
+
+      {isEmployer && isPdf && (
+        <div className="border border-neutral-200 rounded-lg overflow-hidden">
+          <div className="bg-neutral-50 px-4 py-2.5 border-b border-neutral-200 flex items-center gap-2">
+            <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span className="text-xs text-neutral-500 font-medium">Resume Preview</span>
+          </div>
+          <iframe src={downloadUrl} className="w-full h-[500px]" title="Resume Preview" />
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ApplicationDetail() {
@@ -428,14 +652,41 @@ export default function ApplicationDetail() {
     }
   };
 
+  const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+    applied:            ['shortlisted', 'rejected', 'on_hold', 'withdrawn'],
+    shortlisted:        ['interview_scheduled', 'rejected', 'on_hold', 'withdrawn'],
+    interview_scheduled:['in_progress', 'rejected', 'on_hold', 'withdrawn'],
+    in_progress:        ['selected', 'rejected', 'on_hold', 'withdrawn'],
+    selected:           ['offer_released', 'rejected', 'on_hold'],
+    offer_released:     ['hired', 'rejected', 'on_hold'],
+    on_hold:            ['shortlisted', 'interview_scheduled', 'rejected', 'withdrawn'],
+    hired:              [],
+    rejected:           [],
+    withdrawn:          [],
+  };
+
   const updateStatus = async (newStatus: string) => {
+    const currentStatus = app?.status || '';
+    const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? [];
+    if (!allowed.includes(newStatus)) {
+      const hint = allowed.length
+        ? `Allowed transitions: ${allowed.map(s => s.replace(/_/g, ' ')).join(', ')}.`
+        : 'No further transitions are allowed from this state.';
+      toast.error(`Cannot move to "${newStatus.replace(/_/g, ' ')}". ${hint}`);
+      return;
+    }
     try {
       setUpdating(true);
       await apiClient.put(`/applications/${id}/status`, { status: newStatus });
-      toast.success('Status updated');
+      toast.success('Status updated successfully');
       await fetchDetail();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to update status');
+      const errMsg   = e?.response?.data?.message || 'Failed to update status';
+      const allowed2 = (e?.response?.data as any)?.allowedTransitions as string[] | undefined;
+      const hint2    = allowed2?.length
+        ? ` Allowed: ${allowed2.map((s: string) => s.replace(/_/g, ' ')).join(', ')}.`
+        : '';
+      toast.error(`${errMsg}${hint2}`);
     } finally {
       setUpdating(false);
     }
@@ -558,18 +809,30 @@ export default function ApplicationDetail() {
               <div>
                 <p className="text-xs text-neutral-500 mb-2">Update Stage</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {STATUSES.map(s => (
-                    <button key={s} onClick={() => s === 'rejected' ? setShowRejectConfirm(true) : updateStatus(s)} disabled={updating || app.status === s}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-all ${
-                        app.status === s
-                          ? 'bg-primary-50 border-primary-200 text-primary-700 cursor-default'
-                          : 'bg-white border-neutral-200 text-neutral-600 hover:border-primary-300 hover:text-primary-600 disabled:opacity-40'
-                      }`}
-                    >
-                      {s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </button>
-                  ))}
+                  {STATUSES.map(s => {
+                    const isAllowed  = (ALLOWED_TRANSITIONS[app.status] ?? []).includes(s);
+                    const isCurrent  = app.status === s;
+                    const isDisabled = updating || isCurrent || !isAllowed;
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => s === 'rejected' ? setShowRejectConfirm(true) : updateStatus(s)}
+                        disabled={isDisabled}
+                        title={!isAllowed && !isCurrent ? `Cannot transition from "${app.status.replace(/_/g,' ')}" to this stage` : undefined}
+                        className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-all ${
+                          isCurrent
+                            ? 'bg-primary-50 border-primary-200 text-primary-700 cursor-default'
+                            : isAllowed
+                            ? 'bg-white border-neutral-200 text-neutral-600 hover:border-primary-300 hover:text-primary-600'
+                            : 'bg-neutral-50 border-neutral-100 text-neutral-300 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        {s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                      </button>
+                    );
+                  })}
                 </div>
+                <p className="text-[10px] text-neutral-400 mt-1.5">Only valid next-stage transitions are enabled.</p>
               </div>
             </div>
           )}
@@ -650,34 +913,7 @@ export default function ApplicationDetail() {
               {activeTab === 'resume' && (
                 <div className="space-y-4 animate-fade-in">
                   {app.resume ? (
-                    <>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <a href={app.resume} target="_blank" rel="noopener noreferrer" download
-                          className="btn btn-md btn-primary">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          Download Resume
-                        </a>
-                        <a href={app.resume} target="_blank" rel="noopener noreferrer"
-                          className="btn btn-md btn-secondary">
-                          Open in new tab ↗
-                        </a>
-                      </div>
-                      {isEmployer && app.resume.toLowerCase().endsWith('.pdf') && (
-                        <div className="border border-neutral-200 rounded-lg overflow-hidden">
-                          <div className="bg-neutral-50 px-4 py-2.5 border-b border-neutral-200 flex items-center gap-2">
-                            <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <span className="text-xs text-neutral-500 font-medium">Resume Preview</span>
-                          </div>
-                          <iframe src={app.resume} className="w-full h-[500px]" title="Resume Preview" />
-                        </div>
-                      )}
-                    </>
+                    <ResumeTabContent applicationId={app._id} resumeUrl={app.resume} isEmployer={isEmployer} />
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <svg className="w-10 h-10 text-neutral-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

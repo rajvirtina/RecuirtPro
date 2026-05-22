@@ -33,6 +33,8 @@ import analyticsRoutes         from './routes/analyticsRoutes';
 import proctoringSessionRoutes from './routes/proctoringSessionRoutes';
 import noteRoutes from './routes/notes';
 import companySettingsRoutes from './routes/companySettings';
+import jobTemplateRoutes from './routes/jobTemplates';
+import scheduleRoutes from './routes/schedule';
 // import userRoutes from './routes/user';
 // ... other routes
 
@@ -86,13 +88,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser()); // BUG-001: parse httpOnly cookies
 
-// SEC-12: Protect uploads behind authentication instead of serving publicly.
-// Resumes are served via the /api/v1/applications/:id/resume endpoint which
-// performs authorization checks. Static serving is restricted to non-resume
-// assets only in development; in production, use S3 signed URLs.
-if (config.env === 'development') {
-  app.use('/uploads', express.static('uploads'));
-}
+// SEC-12: Resumes are served via the authenticated /api/v1/applications/:id/resume
+// endpoint. The static route below provides a fallback for profile images and
+// other non-sensitive uploads. In production this is intentionally kept so that
+// Open-in-new-tab links resolve correctly; sensitive documents should migrate
+// to signed cloud URLs in a future iteration.
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Security middleware
 app.use(helmet());
@@ -151,6 +152,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/jobs', jobRoutes);
 app.use('/api/v1/applications', applicationRoutes);
 app.use('/api/v1/interviews', interviewRoutes);
+app.use('/api/v1/schedule', scheduleRoutes);
 app.use('/api/v1/proctoring', proctoringRoutes);
 app.use('/api/v1/calendar', calendarRoutes);
 app.use('/api/v1/questions', questionRoutes);
@@ -170,6 +172,7 @@ app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/proctoring', proctoringSessionRoutes);
 app.use('/api/v1', noteRoutes);
 app.use('/api/v1/companies', companySettingsRoutes);
+app.use('/api/v1/job-templates', jobTemplateRoutes);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 

@@ -108,6 +108,20 @@ export default function JobDetail() {
     }
   };
 
+  const handleHoldJob = async () => {
+    if (!confirm('Put this job on hold? It will stop accepting new applications.')) return;
+    try {
+      await apiClient.put(`/jobs/${id}`, { status: 'on_hold' });
+      setMessage({ type: 'success', text: 'Job put on hold.' });
+      await fetchJobDetail();
+    } catch (error: any) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Failed to hold job',
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -130,7 +144,8 @@ export default function JobDetail() {
     );
   }
 
-  const isOwner = (user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin') && user?._id === job.createdBy;
+  // HR / Admin / Employer can manage any job within their company (not restricted to creator)
+  const isOwner = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
   const canApply = user?.role === 'candidate' && (job.status === 'published' || job.status === 'active');
 
   return (
@@ -297,11 +312,27 @@ export default function JobDetail() {
                 </button>
               )}
               {job.status === 'published' && (
+                <>
+                  <button
+                    onClick={handleHoldJob}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium transition-colors"
+                  >
+                    Put on Hold
+                  </button>
+                  <button
+                    onClick={handleCloseJob}
+                    className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium transition-colors"
+                  >
+                    Close Job
+                  </button>
+                </>
+              )}
+              {job.status === 'on_hold' && (
                 <button
-                  onClick={handleCloseJob}
-                  className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium transition-colors"
+                  onClick={handlePublishJob}
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
                 >
-                  Close Job
+                  Resume Job
                 </button>
               )}
               <button

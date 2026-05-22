@@ -42,6 +42,10 @@ export default function AdminHRManagement() {
   });
   const [filter, setFilter] = useState({ status: '', role: '', search: '' });
 
+  // Edit user state
+  const [editingUser, setEditingUser] = useState<HRUser | null>(null);
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '' });
+
   useEffect(() => {
     fetchHRUsers();
     fetchStats();
@@ -160,7 +164,7 @@ export default function AdminHRManagement() {
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
-    
+
     try {
       await apiClient.delete(`/admin/hr-users/${userId}`);
       alert('User deleted successfully');
@@ -168,6 +172,30 @@ export default function AdminHRManagement() {
       fetchStats();
     } catch (error: any) {
       alert(error.response?.data?.message || 'Failed to delete user');
+    }
+  };
+
+  const openEditModal = (user: HRUser) => {
+    setEditingUser(user);
+    setEditForm({ firstName: user.firstName, lastName: user.lastName });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    if (!editForm.firstName.trim() || !editForm.lastName.trim()) {
+      alert('First name and last name are required.');
+      return;
+    }
+    try {
+      await apiClient.put(`/admin/users/${editingUser._id}`, {
+        firstName: editForm.firstName.trim(),
+        lastName:  editForm.lastName.trim(),
+      });
+      alert('User updated successfully');
+      setEditingUser(null);
+      fetchHRUsers();
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to update user');
     }
   };
 
@@ -326,6 +354,13 @@ export default function AdminHRManagement() {
                     {new Date(user.createdAt).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                    {/* Edit name */}
+                    <button
+                      onClick={() => openEditModal(user)}
+                      className="text-indigo-600 hover:text-indigo-900"
+                    >
+                      Edit
+                    </button>
                     {user.status === 'pending_verification' && (
                       <button
                         onClick={() => handleResendInvitation(user._id)}
@@ -461,6 +496,52 @@ export default function AdminHRManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit User Modal ─────────────────────────── */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-8 max-w-sm w-full shadow-xl">
+            <h2 className="text-xl font-bold mb-4">Edit User</h2>
+            <p className="text-sm text-gray-500 mb-4">{editingUser.email}</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">First Name</label>
+                <input
+                  type="text"
+                  value={editForm.firstName}
+                  onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Last Name</label>
+                <input
+                  type="text"
+                  value={editForm.lastName}
+                  onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+              >
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -7,14 +7,16 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import PipelineStagesConfig from './PipelineStagesConfig';
 import IntegrationsConfig from './IntegrationsConfig';
+import PermissionMatrix from './PermissionMatrix';
 
-type Section = 'profile' | 'pipeline' | 'notifications' | 'integrations';
+type Section = 'profile' | 'pipeline' | 'notifications' | 'integrations' | 'permissions';
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: 'profile', label: 'Company Profile', icon: '🏢' },
   { id: 'pipeline', label: 'Pipeline Stages', icon: '📊' },
   { id: 'notifications', label: 'Notifications', icon: '🔔' },
   { id: 'integrations', label: 'Integrations', icon: '🔌' },
+  { id: 'permissions', label: 'Permissions', icon: '🔐' },
 ];
 
 const INDUSTRIES = [
@@ -56,6 +58,7 @@ export default function Settings() {
           {section === 'pipeline' && <PipelineStagesConfig />}
           {section === 'notifications' && <NotificationsSection />}
           {section === 'integrations' && <IntegrationsConfig />}
+          {section === 'permissions' && <PermissionMatrix />}
         </div>
       </div>
     </div>
@@ -83,6 +86,7 @@ function ProfileSection() {
       industry: data.industry || '',
       size: data.size || '',
       primaryColor: data.branding?.primaryColor || '#4f46e5',
+      customDomain: data.branding?.customDomain || '',
     });
     if (data.branding?.logoUrl) setLogoPreview(data.branding.logoUrl);
   }
@@ -130,10 +134,14 @@ function ProfileSection() {
   };
 
   const handleSave = () => {
-    const { name, website, industry, size, primaryColor } = form;
+    const { name, website, size, primaryColor, customDomain } = form;
+    // If user typed a custom industry, strip the 'Other:' prefix before saving
+    const industry = form.industry?.startsWith('Other:')
+      ? form.industry.slice(6).trim() || 'Other'
+      : form.industry;
     updateMutation.mutate({ name, website, industry, size });
-    if (primaryColor !== data?.branding?.primaryColor) {
-      brandingMutation.mutate({ primaryColor });
+    if (primaryColor !== data?.branding?.primaryColor || customDomain !== (data?.branding?.customDomain || '')) {
+      brandingMutation.mutate({ primaryColor, customDomain: customDomain || undefined });
     }
   };
 
@@ -169,10 +177,24 @@ function ProfileSection() {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="field-label">Industry</label>
-          <select className="field-input mt-1" value={form.industry || ''} onChange={e => setForm({ ...form, industry: e.target.value })}>
+          <select
+            className="field-input mt-1"
+            value={form.industry?.startsWith('Other:') ? 'Other' : (form.industry || '')}
+            onChange={e => setForm({ ...form, industry: e.target.value })}
+          >
             <option value="">Select industry</option>
             {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
           </select>
+          {(form.industry === 'Other' || form.industry?.startsWith('Other:')) && (
+            <input
+              type="text"
+              className="field-input mt-2"
+              placeholder="Please specify your industry"
+              value={form.industry?.startsWith('Other:') ? form.industry.slice(6) : ''}
+              onChange={e => setForm({ ...form, industry: e.target.value ? `Other:${e.target.value}` : 'Other' })}
+              autoFocus
+            />
+          )}
         </div>
         <div>
           <label className="field-label">Company Size</label>
@@ -200,6 +222,19 @@ function ProfileSection() {
             placeholder="#4f46e5"
           />
         </div>
+      </div>
+
+      {/* Custom domain for white-label portal */}
+      <div>
+        <label className="field-label">Custom Portal Domain</label>
+        <p className="text-xs text-neutral-500 mt-0.5 mb-1">
+          Set a custom subdomain for your branded candidate portal (e.g. careers.yourcompany.com)
+        </p>
+        <Input
+          value={form.customDomain || ''}
+          onChange={e => setForm({ ...form, customDomain: e.target.value })}
+          placeholder="careers.yourcompany.com"
+        />
       </div>
 
       <div className="flex justify-end pt-2">

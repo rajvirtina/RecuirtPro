@@ -15,7 +15,7 @@ interface ActivityEvent {
 
 interface TimelineResponse {
   data: ActivityEvent[];
-  pagination: { total: number; page: number; pages: number };
+  pagination: { total: number; page: number; pages?: number; totalPages?: number };
 }
 
 const EVENT_CONFIG: Record<string, { icon: string; template: (e: ActivityEvent) => string }> = {
@@ -80,7 +80,7 @@ export function TimelineTab({ applicationId }: { applicationId: string }) {
     );
   }
 
-  const events = data?.data || [];
+  const events = data?.data ?? [];
 
   if (events.length === 0) {
     return (
@@ -139,8 +139,10 @@ function useTimelineQuery(applicationId: string) {
     queryFn: () => apiClient.get(`/applications/${applicationId}/timeline`).then(r => r.data),
   });
 
-  // Simple pagination: track page and accumulate
-  const hasNextPage = data ? data.pagination.page < data.pagination.pages : false;
+  // API may return either `pages` or `totalPages` — handle both safely
+  const currentPage  = data?.pagination?.page ?? 1;
+  const totalPages   = data?.pagination?.totalPages ?? data?.pagination?.pages ?? 1;
+  const hasNextPage  = currentPage < totalPages;
 
   return {
     data,
@@ -148,7 +150,6 @@ function useTimelineQuery(applicationId: string) {
     hasNextPage,
     isFetchingNextPage: false,
     fetchNextPage: () => {
-      // Re-fetch with next page - simplified approach
       refetch();
     },
   };

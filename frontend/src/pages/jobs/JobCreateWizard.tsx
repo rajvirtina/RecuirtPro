@@ -318,6 +318,7 @@ export default function JobCreateWizard() {
 
   // Hiring managers (admin-only fetch; gracefully ignored if forbidden)
   const [managers, setManagers] = useState<{ _id: string; firstName: string; lastName: string }[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
   useEffect(() => {
     if (!['admin'].includes(user?.role ?? '')) return;
     apiClient.get('/admin/hr-users')
@@ -327,6 +328,16 @@ export default function JobCreateWizard() {
       })
       .catch(() => {/* not available — silently ignore */});
   }, [user?.role]);
+
+  // Fetch job templates
+  useEffect(() => {
+    apiClient.get('/job-templates')
+      .then(res => {
+        const list = (res.data as any)?.data ?? (res.data as any) ?? [];
+        if (Array.isArray(list)) setTemplates(list);
+      })
+      .catch(() => {/* templates not available */});
+  }, []);
 
   // Dirty tracking via refs (stale-closure safe)
   const isDirtyRef = useRef(false);
@@ -577,6 +588,46 @@ export default function JobCreateWizard() {
       {step === 1 && (
         <div className="card card-md space-y-5 animate-fade-in">
           <SectionHead title="Basic Information" subtitle="What role are you hiring for?" />
+
+          {/* Template selector */}
+          {templates.length > 0 && !jobId && (
+            <div className="p-3 bg-primary-50 border border-primary-200 rounded-xl">
+              <label className="block text-xs font-medium text-primary-700 mb-1.5">Start from a template</label>
+              <select
+                className="w-full rounded-lg border border-primary-200 bg-white px-3 py-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                defaultValue=""
+                onChange={e => {
+                  const t = templates.find((tpl: any) => tpl._id === e.target.value);
+                  if (!t) return;
+                  setS1(prev => ({
+                    ...prev,
+                    title: t.title || prev.title,
+                    department: t.department || prev.department,
+                    location: t.location || prev.location,
+                    workMode: t.workMode || prev.workMode,
+                    jobType: t.jobType || prev.jobType,
+                    experienceMin: t.experienceMin ?? prev.experienceMin,
+                    experienceMax: t.experienceMax ?? prev.experienceMax,
+                    salaryMin: t.salaryMin ?? prev.salaryMin,
+                    salaryMax: t.salaryMax ?? prev.salaryMax,
+                    currency: t.currency || prev.currency,
+                  }));
+                  setS2(prev => ({
+                    ...prev,
+                    description: t.description || prev.description,
+                    skills: t.skills?.length ? t.skills : prev.skills,
+                    requirements: t.requirements?.length ? t.requirements : prev.requirements,
+                  }));
+                  toast.success(`Template "${t.name}" applied`);
+                }}
+              >
+                <option value="">Choose a template…</option>
+                {templates.map((t: any) => (
+                  <option key={t._id} value={t._id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <Input
             label="Job Title"
@@ -955,7 +1006,30 @@ export default function JobCreateWizard() {
 
           {/* Final action buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <Button variant="secondary" onClick={handleBack}>← Back</Button>
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={handleBack}>← Back</Button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = window.prompt('Template name:');
+                  if (!name?.trim()) return;
+                  try {
+                    await apiClient.post('/job-templates', {
+                      name: name.trim(),
+                      title: s1.title, department: s1.department, location: s1.location,
+                      workMode: s1.workMode, jobType: s1.jobType,
+                      experienceMin: s1.experienceMin, experienceMax: s1.experienceMax,
+                      salaryMin: s1.salaryMin, salaryMax: s1.salaryMax, currency: s1.currency,
+                      description: s2.description, skills: s2.skills, requirements: s2.requirements,
+                    });
+                    toast.success('Template saved');
+                  } catch { toast.error('Failed to save template'); }
+                }}
+                className="text-xs text-primary-600 hover:text-primary-700 font-medium underline underline-offset-2"
+              >
+                Save as Template
+              </button>
+            </div>
 
             <div className="flex gap-3">
               <Button

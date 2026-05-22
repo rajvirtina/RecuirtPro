@@ -10,6 +10,8 @@ import { FunnelChart }       from '../components/charts/FunnelChart';
 import { TimeSeriesChart }   from '../components/charts/TimeSeriesChart';
 import { SourceDonut }       from '../components/charts/SourceDonut';
 import { TimeToHireBar }     from '../components/charts/TimeToHireBar';
+import { OfferRateChart }    from '../components/charts/OfferRateChart';
+import { AIScoreHistogram }  from '../components/charts/AIScoreHistogram';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,6 +232,18 @@ export default function Analytics() {
     ...qOpts,
   });
 
+  const { data: offerRes, isPending: offerPending } = useQuery({
+    queryKey: ['analytics', 'offerRate', start, end],
+    queryFn:  async () => { const r = await apiClient.get(`/analytics/offer-rate?${qs}`); return r.data as any; },
+    ...qOpts,
+  });
+
+  const { data: aiScoreRes, isPending: aiScorePending } = useQuery({
+    queryKey: ['analytics', 'aiScoreDistribution', start, end],
+    queryFn:  async () => { const r = await apiClient.get(`/analytics/ai-score-distribution?${qs}`); return r.data as any; },
+    ...qOpts,
+  });
+
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const funnel   = funnelRes?.funnel   ?? [];
@@ -240,6 +254,10 @@ export default function Analytics() {
   const depts    = tthRes?.departments ?? [];
   const compAvg  = tthRes?.companyAvg  ?? 0;
   const recruiters = rpRes?.recruiters ?? [];
+  const offerBreakdown   = offerRes?.breakdown     ?? [];
+  const offerAcceptRate  = offerRes?.acceptanceRate ?? 0;
+  const scoreHistogram   = aiScoreRes?.histogram   ?? [];
+  const scoreStats       = aiScoreRes?.stats       ?? {};
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -411,6 +429,29 @@ export default function Analytics() {
           <p className="text-sm text-neutral-500 mt-0.5">Activity per HR team member — click column headers to sort</p>
         </div>
         <RecruiterTable recruiters={recruiters} loading={rpPending} />
+      </div>
+
+      {/* ── Chart 6 + 7: Offer Rate + AI Score Distribution (50/50) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SectionCard
+          title="Offer Acceptance Rate"
+          subtitle="Breakdown of offers sent vs outcomes"
+          loading={offerPending}
+          empty={!offerPending && offerBreakdown.length === 0}
+          onEmpty="No offers sent in this period. Data will appear once offers are sent to candidates."
+        >
+          <OfferRateChart data={offerBreakdown} acceptanceRate={offerAcceptRate} />
+        </SectionCard>
+
+        <SectionCard
+          title="AI Interview Score Distribution"
+          subtitle={scoreStats.total ? `${scoreStats.total} scored candidates — avg ${scoreStats.average}` : 'Score histogram across all candidates'}
+          loading={aiScorePending}
+          empty={!aiScorePending && scoreHistogram.every((b: any) => b.count === 0)}
+          onEmpty="No AI-scored candidates in this period. Scores appear once AI interviews are completed."
+        >
+          <AIScoreHistogram data={scoreHistogram} average={scoreStats.average} />
+        </SectionCard>
       </div>
 
     </div>

@@ -34,7 +34,7 @@ function formatSalary(min?: number, max?: number): string {
   return `Up to ${fmt(max!)}`;
 }
 
-function JobCard({ job, isEmployer }: { job: Job; isEmployer: boolean }) {
+function JobCard({ job, isEmployer, onDuplicate }: { job: Job; isEmployer: boolean; onDuplicate?: (id: string) => void }) {
   const salary = formatSalary(job.salaryMin, job.salaryMax);
   const skills = job.skills ?? [];
 
@@ -102,14 +102,47 @@ function JobCard({ job, isEmployer }: { job: Job; isEmployer: boolean }) {
                 )}
               </div>
             )}
+
+            {/* Portal posting status */}
+            {isEmployer && job.postings && job.postings.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {job.postings.map((p) => (
+                  <span
+                    key={p.portal}
+                    className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${
+                      p.status === 'posted'
+                        ? 'bg-success-50 text-success-700'
+                        : p.status === 'failed'
+                        ? 'bg-error-50 text-error-700'
+                        : 'bg-neutral-100 text-neutral-500'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      p.status === 'posted' ? 'bg-success-500' : p.status === 'failed' ? 'bg-error-500' : 'bg-neutral-400'
+                    }`} />
+                    {p.portal === 'website' ? 'Website' : p.portal === 'naukri' ? 'Naukri' : p.portal === 'linkedin' ? 'LinkedIn' : p.portal}
+                    {p.status === 'posted' ? ' ✓' : p.status === 'failed' ? ' ✗' : ''}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right column */}
           <div className="hidden sm:flex flex-col items-end gap-2 shrink-0 ml-2">
             {isEmployer && (
-              <span className="text-xs text-neutral-400 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-neutral-500 bg-neutral-100 px-2 py-0.5 rounded-full">
                 {job.applicationCount ?? 0} applicant{(job.applicationCount ?? 0) !== 1 ? 's' : ''}
               </span>
+            )}
+            {isEmployer && onDuplicate && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDuplicate(job._id); }}
+                className="text-xs text-neutral-400 hover:text-primary-600 transition-colors"
+                title="Duplicate job"
+              >
+                <Icon d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </button>
             )}
             <Icon d="M9 5l7 7-7 7" className="w-4 h-4 text-neutral-300 group-hover:text-primary-400 transition-colors" />
           </div>
@@ -170,6 +203,16 @@ export default function Jobs() {
         j.skills?.some((s) => s.toLowerCase().includes(debouncedSearch.toLowerCase()))
       )
     : jobs;
+
+  const handleDuplicate = async (jobId: string) => {
+    try {
+      await apiClient.post(`/jobs/${jobId}/duplicate`);
+      toast.success('Job duplicated as draft');
+      fetchJobs(pagination.page);
+    } catch {
+      toast.error('Failed to duplicate job');
+    }
+  };
 
   return (
     <div className="p-6 space-y-5 animate-fade-in">
@@ -241,7 +284,7 @@ export default function Jobs() {
       ) : (
         <div className="space-y-3">
           {displayed.map((job) => (
-            <JobCard key={job._id} job={job} isEmployer={isEmployer} />
+            <JobCard key={job._id} job={job} isEmployer={isEmployer} onDuplicate={isEmployer ? handleDuplicate : undefined} />
           ))}
         </div>
       )}

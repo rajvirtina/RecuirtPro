@@ -1,9 +1,40 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { Company } from '../models';
 import { AuthRequest } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import { getTenantCompanyId } from '../middleware/auth';
+
+/**
+ * GET /api/v1/companies/public/:slug/branding
+ * Public — no auth required. Returns branding for the white-label portal.
+ */
+export const getPublicBranding = async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+    if (!slug) return sendError(res, 'Slug is required', 400);
+
+    const company = await Company.findOne({ slug, status: 'active', deletedAt: null }).lean();
+    if (!company) return sendError(res, 'Company not found', 404);
+
+    return sendSuccess(res, {
+      name: company.name,
+      slug: company.slug,
+      logo: company.logo || company.branding?.logoUrl || null,
+      description: company.description || null,
+      website: company.website || null,
+      branding: {
+        primaryColor: company.branding?.primaryColor || '#4f46e5',
+        logoUrl: company.branding?.logoUrl || company.logo || null,
+        faviconUrl: company.branding?.faviconUrl || null,
+        customDomain: company.branding?.customDomain || null,
+      },
+    }, 'Public branding retrieved');
+  } catch (error: any) {
+    logger.error('Error in getPublicBranding:', error);
+    return sendError(res, 'Error fetching company branding', 500);
+  }
+};
 
 /**
  * GET /api/v1/companies/settings
@@ -78,7 +109,7 @@ export const updateBranding = async (req: AuthRequest, res: Response) => {
     const companyId = getTenantCompanyId(req.user);
     if (!companyId) return sendError(res, 'No company associated', 400);
 
-    const { primaryColor, faviconUrl, logoUrl } = req.body;
+    const { primaryColor, faviconUrl, logoUrl, customDomain } = req.body;
 
     const update: Record<string, any> = {};
     if (primaryColor) {
@@ -89,6 +120,7 @@ export const updateBranding = async (req: AuthRequest, res: Response) => {
     }
     if (faviconUrl !== undefined) update['branding.faviconUrl'] = faviconUrl;
     if (logoUrl !== undefined) update['branding.logoUrl'] = logoUrl;
+    if (customDomain !== undefined) update['branding.customDomain'] = customDomain || null;
 
     const company = await Company.findByIdAndUpdate(companyId, { $set: update }, { new: true }).lean();
     if (!company) return sendError(res, 'Company not found', 404);

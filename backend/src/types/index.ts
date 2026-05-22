@@ -118,6 +118,12 @@ export enum ProctoringEventType {
   SYSTEM_RESOURCE_ISSUE = 'system_resource_issue',
   SESSION_ACTIVE = 'session_active',
   SUSPICIOUS_BEHAVIOR = 'suspicious_behavior',
+  // Browser detection events
+  PASTE_ATTEMPT = 'paste_attempt',
+  BACKGROUND_NOISE = 'background_noise',
+  RIGHT_CLICK = 'right_click',
+  DEVTOOLS_OPEN = 'devtools_open',
+  COPY_ATTEMPT = 'copy_attempt',
 }
 
 // Notification Type

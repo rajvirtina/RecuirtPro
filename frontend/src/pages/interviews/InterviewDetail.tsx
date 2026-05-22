@@ -25,6 +25,179 @@ interface InterviewDetail {
   feedback?: any[];
   finalDecision?: 'selected' | 'rejected' | 'on_hold';
   overallRating?: number;
+  selfScheduleToken?: string;
+}
+
+/* ── Reschedule Modal ─────────────────────────────────── */
+function RescheduleModal({ interview, onClose, onRescheduled }: {
+  interview: InterviewDetail;
+  onClose: () => void;
+  onRescheduled: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [notifyCandidate, setNotifyCandidate] = useState(true);
+  const [notifyPanel, setNotifyPanel] = useState(true);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const scheduledTime = new Date(`${fd.get('date')}T${fd.get('time')}`).toISOString();
+    try {
+      setLoading(true);
+      await apiClient.put(`/interviews/${interview._id}`, {
+        scheduledTime,
+        duration: parseInt(fd.get('duration') as string) || interview.duration,
+        notifyCandidate,
+        notifyPanel,
+      });
+      onRescheduled();
+      onClose();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Failed to reschedule');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const currentDate = new Date(interview.scheduledTime);
+  const defaultDate = currentDate.toISOString().split('T')[0];
+  const defaultTime = currentDate.toTimeString().slice(0, 5);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-md">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-lg font-bold text-gray-900">Reschedule Interview</h2>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 p-1 rounded">✕</button>
+          </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Date</label>
+                <input type="date" name="date" required className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  min={new Date().toISOString().split('T')[0]} defaultValue={defaultDate} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Time</label>
+                <input type="time" name="time" required className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  defaultValue={defaultTime} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
+              <select name="duration" className="w-full px-3 py-2 border border-gray-300 rounded-lg" defaultValue={interview.duration}>
+                {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
+              </select>
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <p className="text-sm font-medium text-gray-700">Notify</p>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={notifyCandidate} onChange={e => setNotifyCandidate(e.target.checked)}
+                  className="w-4 h-4 rounded accent-indigo-600" />
+                Send email to candidate
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={notifyPanel} onChange={e => setNotifyPanel(e.target.checked)}
+                  className="w-4 h-4 rounded accent-indigo-600" />
+                Send email to panel members
+              </label>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium">
+                Cancel
+              </button>
+              <button type="submit" disabled={loading}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium">
+                {loading ? 'Rescheduling…' : 'Reschedule & Notify'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Reminder Config Panel ─────────────────────────────── */
+function ReminderConfigPanel({ interviewId, onClose }: { interviewId: string; onClose: () => void }) {
+  const [channels, setChannels] = useState({ email: true, sms: false, inApp: true });
+  const [timing, setTiming] = useState({ hours24: true, hours1: true, minutes15: false });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await apiClient.put(`/interviews/${interviewId}`, {
+        reminderConfig: {
+          channels: Object.entries(channels).filter(([, v]) => v).map(([k]) => k),
+          timings: Object.entries(timing).filter(([, v]) => v).map(([k]) =>
+            k === 'hours24' ? 1440 : k === 'hours1' ? 60 : 15
+          ),
+        },
+      });
+      onClose();
+    } catch {
+      alert('Failed to save reminder settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50">
+      <div className="bg-white rounded-xl shadow-lg w-full max-w-sm">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-gray-900">Reminder Settings</h2>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 p-1">✕</button>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Channels</p>
+              <div className="space-y-2">
+                {([['email', 'Email'], ['sms', 'SMS'], ['inApp', 'In-App Notification']] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" checked={channels[key]} onChange={e => setChannels({ ...channels, [key]: e.target.checked })}
+                      className="w-4 h-4 rounded accent-indigo-600" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Send reminders</p>
+              <div className="space-y-2">
+                {([['hours24', '24 hours before'], ['hours1', '1 hour before'], ['minutes15', '15 minutes before']] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" checked={timing[key]} onChange={e => setTiming({ ...timing, [key]: e.target.checked })}
+                      className="w-4 h-4 rounded accent-indigo-600" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4 mt-4 border-t">
+            <button onClick={onClose}
+              className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium text-sm">
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium text-sm">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function InterviewDetail() {
@@ -37,6 +210,9 @@ export default function InterviewDetail() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [systemCheckCompleted, setSystemCheckCompleted] = useState(false);
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [showReminderConfig, setShowReminderConfig] = useState(false);
+  const [selfScheduleLink, setSelfScheduleLink] = useState('');
   const [feedbackData, setFeedbackData] = useState({
     rating: 3,
     comments: '',
@@ -663,9 +839,25 @@ export default function InterviewDetail() {
                   className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium transition-colors">
                   Mark as Completed
                 </button>
-                <button onClick={() => updateStatus('rescheduled')} disabled={updating}
+                <button onClick={() => setShowRescheduleModal(true)} disabled={updating}
                   className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 font-medium transition-colors">
                   Reschedule
+                </button>
+                <button onClick={() => setShowReminderConfig(true)}
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium transition-colors">
+                  Reminders
+                </button>
+                <button onClick={async () => {
+                  try {
+                    const res = await apiClient.post(`/interviews/${id}/self-schedule-link`);
+                    const link = `${window.location.origin}/schedule/${(res.data as any).token}`;
+                    setSelfScheduleLink(link);
+                    await navigator.clipboard.writeText(link);
+                    setMessage({ type: 'success', text: 'Self-schedule link copied to clipboard!' });
+                  } catch { setMessage({ type: 'error', text: 'Failed to generate self-schedule link' }); }
+                }}
+                  className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-medium transition-colors">
+                  Send Self-Schedule Link
                 </button>
                 <button onClick={() => updateStatus('cancelled')} disabled={updating}
                   className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors">
@@ -719,6 +911,29 @@ export default function InterviewDetail() {
           </div>
         </div>
       </div>
+
+      {/* Self-schedule link display */}
+      {selfScheduleLink && (
+        <div className="mt-4 p-4 bg-teal-50 rounded-lg border border-teal-200">
+          <p className="text-sm font-medium text-teal-800 mb-1">Self-Schedule Link (copied to clipboard)</p>
+          <code className="text-xs text-teal-700 break-all">{selfScheduleLink}</code>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showRescheduleModal && (
+        <RescheduleModal
+          interview={interview}
+          onClose={() => setShowRescheduleModal(false)}
+          onRescheduled={() => { setMessage({ type: 'success', text: 'Interview rescheduled! Notifications sent.' }); fetchInterviewDetail(); }}
+        />
+      )}
+      {showReminderConfig && (
+        <ReminderConfigPanel
+          interviewId={interview._id}
+          onClose={() => setShowReminderConfig(false)}
+        />
+      )}
     </div>
   );
 }

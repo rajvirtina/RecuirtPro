@@ -38,6 +38,11 @@ const EVENT_LABELS: Record<string, string> = {
   interview_ended:         'Interview Ended',
   system_check_passed:     'System Check Passed',
   screenshot_captured:     'Screenshot Captured',
+  copy_attempt:            'Copy Attempt',
+  paste_attempt:           'Paste Attempt',
+  background_noise:        'Background Noise Detected',
+  right_click:             'Right-Click / Context Menu',
+  devtools_open:           'Developer Tools Opened',
 };
 
 const SEVERITY_STYLES = {

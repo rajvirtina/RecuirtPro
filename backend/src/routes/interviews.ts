@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import * as interviewController from '../controllers/interviewController';
+import { generateSelfScheduleLink } from '../controllers/scheduleController';
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
@@ -208,6 +209,26 @@ router.post(
 
 /**
  * @swagger
+ * /api/v1/interviews/{id}/feedback-info:
+ *   get:
+ *     summary: Get interview info needed to display the external scorecard form
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Interview info retrieved
+ */
+router.get(
+  '/:id/feedback-info',
+  protect,
+  [param('id').isMongoId().withMessage('Valid interview ID is required')],
+  validate,
+  interviewController.getInterviewFeedbackInfo
+);
+
+/**
+ * @swagger
  * /api/v1/interviews/{id}:
  *   delete:
  *     summary: Cancel interview
@@ -228,6 +249,30 @@ router.delete(
   ],
   validate,
   interviewController.cancelInterview
+);
+
+/**
+ * @swagger
+ * /api/v1/interviews/{id}/self-schedule-link:
+ *   post:
+ *     summary: Generate a self-scheduling link for the candidate
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Self-schedule link generated
+ */
+router.post(
+  '/:id/self-schedule-link',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Valid interview ID is required')],
+  validate,
+  (req: any, res: any) => {
+    req.params.interviewId = req.params.id;
+    return generateSelfScheduleLink(req, res);
+  }
 );
 
 export default router;

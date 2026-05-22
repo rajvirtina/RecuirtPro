@@ -9,6 +9,7 @@ import {
   updateJob,
   deleteJob,
 } from '../controllers/jobController';
+import { duplicateJob } from '../controllers/jobTemplateController';
 import { protect, authorize, optionalAuth } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
@@ -60,7 +61,8 @@ router.post(
   authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
   [
     body('title').trim().notEmpty().withMessage('Job title is required'),
-    body('description').trim().notEmpty().withMessage('Job description is required'),
+    // Description is required only for 'published' jobs; drafts may omit it
+    body('description').optional({ nullable: true, checkFalsy: false }).trim(),
     body('companyId').optional().isMongoId().withMessage('Invalid company ID'),
     body('location').optional().trim(),
     body('jobType').optional().isIn(['full_time', 'part_time', 'contract', 'internship', 'temporary']),
@@ -107,6 +109,20 @@ router.delete(
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,
   deleteJob
+);
+
+/**
+ * @route   POST /api/v1/jobs/:id/duplicate
+ * @desc    Duplicate a job as a new draft
+ * @access  Private (Employer, HR, Admin)
+ */
+router.post(
+  '/:id/duplicate',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  duplicateJob
 );
 
 export default router;

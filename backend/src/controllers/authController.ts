@@ -797,6 +797,48 @@ export const changePassword = async (
 };
 
 /**
+ * @desc    Update user profile (firstName, lastName, phoneNumber)
+ * @route   PUT /api/v1/auth/profile
+ * @access  Private
+ */
+export const updateProfile = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { firstName, lastName, phoneNumber } = req.body;
+
+    if (!firstName?.trim() || !lastName?.trim()) {
+      sendError(res, 'First name and last name are required', 400);
+      return;
+    }
+
+    const updateData: Record<string, any> = {
+      firstName: firstName.trim(),
+      lastName:  lastName.trim(),
+    };
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+
+    const updated = await User.findByIdAndUpdate(
+      req.user?._id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updated) {
+      sendError(res, 'User not found', 404);
+      return;
+    }
+
+    logger.info(`Profile updated for user: ${updated.email}`);
+    sendSuccess(res, { user: updated }, 'Profile updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Resend verification email
  * @route   POST /api/v1/auth/resend-verification
  * @access  Private

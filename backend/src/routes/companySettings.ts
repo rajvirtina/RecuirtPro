@@ -28,6 +28,10 @@ const logoUpload = multer({
 });
 
 const router = Router();
+
+// Public endpoint — no auth required
+router.get('/public/:slug/branding', ctrl.getPublicBranding);
+
 router.use(protect);
 
 router.get('/settings', ctrl.getCompanySettings);

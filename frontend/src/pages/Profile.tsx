@@ -39,8 +39,15 @@ export default function Profile() {
     setMessage({ type: '', text: '' });
 
     try {
-      const response = await apiClient.put('/auth/profile', formData);
-      setUser(response.data as any);
+      const response = await apiClient.put('/auth/profile', {
+        firstName:   formData.firstName,
+        lastName:    formData.lastName,
+        phoneNumber: formData.phone,
+      });
+      // Response shape: { success, data: { user: {...} }, message }
+      const d = response.data as any;
+      const updatedUser = d?.data?.user ?? d?.user ?? d;
+      setUser(updatedUser);
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setEditing(false);
     } catch (error: any) {
