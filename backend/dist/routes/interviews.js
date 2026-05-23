@@ -178,16 +178,22 @@ router.post('/:id/start', auth_1.protect, [(0, express_validator_1.param)('id').
  */
 router.post('/:id/feedback', auth_1.protect, [
     (0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required'),
-    (0, express_validator_1.body)('rating').notEmpty().isInt({ min: 1, max: 5 }).withMessage('Rating (1-5) is required'),
-    (0, express_validator_1.body)('comments').notEmpty().isString().isLength({ max: 2000 }).withMessage('Feedback comments are required'),
+    (0, express_validator_1.body)('rating')
+        .notEmpty().withMessage('Rating (1-5) is required')
+        .isInt({ min: 1, max: 5 }).withMessage('Rating must be an integer between 1 and 5'),
+    (0, express_validator_1.body)('comments')
+        .notEmpty().withMessage('Feedback comments are required')
+        .isString().isLength({ min: 1, max: 4000 }).withMessage('Comments must be between 1 and 4000 characters'),
     (0, express_validator_1.body)('recommendation')
-        .notEmpty()
+        .notEmpty().withMessage('Recommendation is required')
         .isIn(['strong_hire', 'hire', 'neutral', 'no_hire', 'strong_no_hire'])
-        .withMessage('Valid recommendation is required'),
+        .withMessage('Recommendation must be one of: strong_hire, hire, neutral, no_hire, strong_no_hire'),
     (0, express_validator_1.body)('finalDecision')
-        .notEmpty()
+        .notEmpty().withMessage('Final decision for next round is required')
         .isIn(['selected', 'rejected', 'on_hold'])
-        .withMessage('Final decision for next round is required'),
+        .withMessage('Final decision must be one of: selected, rejected, on_hold'),
+    // scores object is optional — stored for reporting but not validated strictly
+    (0, express_validator_1.body)('scores').optional().isObject(),
 ], validator_1.validate, interviewController.submitInterviewFeedback);
 /**
  * @swagger

@@ -455,8 +455,9 @@ export const submitInterviewFeedback = async (
 ): Promise<void | Response> => {
   try {
     const { id } = req.params;
-    const { rating, comments, recommendation, finalDecision } = req.body;
+    const { rating, comments, recommendation, finalDecision, scores } = req.body;
 
+    // Validation is handled by the route validator; guard here as a safety net
     if (!rating || !comments || !recommendation || !finalDecision) {
       return sendError(res, 'Rating, comments, recommendation, and final decision are required', 400);
     }
@@ -490,12 +491,13 @@ export const submitInterviewFeedback = async (
       return sendError(res, 'Not authorized to submit feedback for this interview', 403);
     }
 
-    // Add feedback
+    // Add feedback (include structured scores if provided by the scorecard form)
     (interview.feedback as any).push({
       interviewerId: req.user?._id,
       rating,
       comments,
       recommendation,
+      scores: scores || null,  // structured scorecard data (optional)
       submittedAt: new Date(),
     });
 

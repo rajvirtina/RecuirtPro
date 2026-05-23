@@ -364,7 +364,8 @@ exports.cancelInterview = cancelInterview;
 const submitInterviewFeedback = async (req, res) => {
     try {
         const { id } = req.params;
-        const { rating, comments, recommendation, finalDecision } = req.body;
+        const { rating, comments, recommendation, finalDecision, scores } = req.body;
+        // Validation is handled by the route validator; guard here as a safety net
         if (!rating || !comments || !recommendation || !finalDecision) {
             return (0, response_1.sendError)(res, 'Rating, comments, recommendation, and final decision are required', 400);
         }
@@ -389,12 +390,13 @@ const submitInterviewFeedback = async (req, res) => {
         if (!isAuthorized) {
             return (0, response_1.sendError)(res, 'Not authorized to submit feedback for this interview', 403);
         }
-        // Add feedback
+        // Add feedback (include structured scores if provided by the scorecard form)
         interview.feedback.push({
             interviewerId: req.user?._id,
             rating,
             comments,
             recommendation,
+            scores: scores || null, // structured scorecard data (optional)
             submittedAt: new Date(),
         });
         // Set final decision for next round

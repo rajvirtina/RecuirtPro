@@ -10,7 +10,8 @@ interface ScorecardData {
   interviewerName?: string;
 }
 
-type Recommendation = 'strong_hire' | 'hire' | 'no_hire' | 'strong_no_hire';
+type Recommendation  = 'strong_hire' | 'hire' | 'neutral' | 'no_hire' | 'strong_no_hire';
+type FinalDecision   = 'selected' | 'rejected' | 'on_hold';
 
 interface Scores {
   technicalSkills: number;
@@ -77,8 +78,9 @@ export default function InterviewerScorecard() {
     leadership: 0,
   });
   const [recommendation, setRecommendation] = useState<Recommendation | ''>('');
+  const [finalDecision, setFinalDecision]   = useState<FinalDecision | ''>('');
   const [strengths, setStrengths] = useState('');
-  const [concerns, setConcerns] = useState('');
+  const [concerns,  setConcerns]  = useState('');
 
   const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v1';
 
@@ -115,8 +117,14 @@ export default function InterviewerScorecard() {
     setScores((prev) => ({ ...prev, [key]: value }));
   };
 
-  const canSubmit = scores.technicalSkills > 0 && scores.communication > 0 &&
-    scores.problemSolving > 0 && scores.culturalFit > 0 && recommendation;
+  const canSubmit =
+    scores.technicalSkills > 0 &&
+    scores.communication   > 0 &&
+    scores.problemSolving  > 0 &&
+    scores.culturalFit     > 0 &&
+    recommendation !== '' &&
+    finalDecision  !== '' &&
+    (strengths.trim().length > 0 || concerns.trim().length > 0);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -133,10 +141,34 @@ export default function InterviewerScorecard() {
         ? `${apiBase}/interviews/${id}/feedback?token=${encodeURIComponent(feedbackToken)}`
         : `${apiBase}/interviews/${id}/feedback`;
 
+      // Map scorecard form fields to the backend's expected schema:
+      //   rating        → average of all non-zero scores (1-5 integer)
+      //   comments      → combined strengths + concerns text
+      //   recommendation → as-is
+      //   finalDecision → from the new "next-round decision" dropdown
+      const scoreValues = Object.values(scores).filter(v => v > 0);
+      const avgRating   = scoreValues.length
+        ? Math.round(scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length)
+        : 3;
+
+      const commentParts: string[] = [];
+      if (strengths.trim()) commentParts.push(`Strengths:\n${strengths.trim()}`);
+      if (concerns.trim())  commentParts.push(`Concerns:\n${concerns.trim()}`);
+      const comments = commentParts.join('\n\n') || 'No written feedback provided.';
+
+      const payload = {
+        rating:        avgRating,
+        comments,
+        recommendation,
+        finalDecision,
+        // Also pass the structured scores for storage / future reporting
+        scores,
+      };
+
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ scores, recommendation, strengths, concerns }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -249,6 +281,30 @@ export default function InterviewerScorecard() {
           </div>
         </div>
 
+        {/* Next-Round Decision (maps to backend finalDecision) */}
+        <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6">
+          <h2 className="text-sm font-semibold text-neutral-800 mb-1">Next Round Decision <span className="text-error-500">*</span></h2>
+          <p className="text-xs text-neutral-400 mb-3">What should happen with this candidate after today's interview?</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { value: 'selected'  as const, label: '✓ Move Forward',  color: 'border-success-500 bg-success-50 text-success-700' },
+              { value: 'on_hold'   as const, label: '⏸ Put on Hold',    color: 'border-warning-500 bg-warning-50 text-warning-700' },
+              { value: 'rejected'  as const, label: '✗ Reject',         color: 'border-error-500 bg-error-50 text-error-700'       },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setFinalDecision(opt.value)}
+                className={`px-3 py-2.5 text-xs font-medium rounded-lg border-2 transition-all ${
+                  finalDecision === opt.value ? opt.color : 'border-neutral-200 text-neutral-600 hover:border-neutral-300'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Written Feedback */}
         <div className="bg-white rounded-xl shadow-sm border border-neutral-200 p-6 space-y-4">
           <div>
@@ -284,7 +340,7 @@ export default function InterviewerScorecard() {
           </button>
           {!canSubmit && (
             <p className="text-xs text-neutral-400 text-center mt-2">
-              Rate at least Technical Skills, Communication, Problem Solving, Cultural Fit, and select a recommendation.
+              Please: rate all four core competencies, pick a recommendation, choose a next-round decision, and add at least one written note.
             </p>
           )}
         </div>
