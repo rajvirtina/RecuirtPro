@@ -187,7 +187,7 @@ export default function AdminHRManagement() {
       return;
     }
     try {
-      await apiClient.put(`/admin/users/${editingUser._id}`, {
+      await apiClient.put(`/admin/hr-users/${editingUser._id}`, {
         firstName: editForm.firstName.trim(),
         lastName:  editForm.lastName.trim(),
       });

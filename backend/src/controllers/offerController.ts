@@ -343,3 +343,124 @@ export const generateOfferLetter = async (req: AuthRequest, res: Response): Prom
     return sendError(res, error.message || 'Failed to generate letter', 500);
   }
 };
+
+/**
+ * @desc    Generate and stream offer letter as PDF (pdfkit)
+ * @route   GET /api/v1/offers/:id/pdf
+ * @access  Private (HR / Admin / Employer)
+ */
+export const downloadOfferPDF = async (req: AuthRequest, res: Response): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+    const companyId = getTenantCompanyId(req.user) || req.user?.companyId;
+    if (!companyId) return sendError(res, 'Company context required', 400);
+
+    const offer = await Offer.findOne({ _id: id, companyId, deletedAt: null })
+      .populate('candidateId', 'firstName lastName email')
+      .populate('jobId', 'title')
+      .populate('companyId', 'name');
+
+    if (!offer) return sendError(res, 'Offer not found', 404);
+
+    const candidate = offer.candidateId as any;
+    const job       = offer.jobId       as any;
+    const company   = offer.companyId   as any;
+
+    // Lazy-load pdfkit (optional dep)
+    let PDFDocument: any;
+    try {
+      PDFDocument = require('pdfkit');
+    } catch {
+      return sendError(res, 'PDF generation is not available (pdfkit not installed). Please install it: npm install pdfkit', 500);
+    }
+
+    const doc = new PDFDocument({ margin: 60, size: 'A4' });
+
+    const safeFilename = `offer_${candidate?.firstName || 'candidate'}_${candidate?.lastName || ''}.pdf`
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9._-]/g, '');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+
+    doc.pipe(res);
+
+    // ── Header ────────────────────────────────────────────────────────────────
+    doc
+      .fontSize(22).font('Helvetica-Bold').text(company?.name || 'Company', { align: 'center' })
+      .moveDown(0.3)
+      .fontSize(14).font('Helvetica').text('Offer of Employment', { align: 'center' })
+      .moveDown(1);
+
+    // Date
+    doc.fontSize(11).text(`Date: ${new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}`).moveDown(0.5);
+
+    // Salutation
+    doc.text(`Dear ${candidate?.firstName} ${candidate?.lastName},`).moveDown(0.5);
+    doc.text(
+      `We are pleased to offer you the position of ${offer.designation}` +
+      `${offer.department ? ` in the ${offer.department} department` : ''} at ${company?.name || 'our company'}.`
+    ).moveDown(1);
+
+    // ── Position Details ──────────────────────────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('Position Details').moveDown(0.4);
+    doc.fontSize(11).font('Helvetica');
+
+    const rows: [string, string][] = [
+      ['Designation',  offer.designation],
+      ['Department',   offer.department || 'N/A'],
+      ['Location',     (offer as any).location || 'N/A'],
+      ['Work Mode',    (offer as any).workMode || 'N/A'],
+      ['Joining Date', offer.joiningDate ? new Date(offer.joiningDate).toLocaleDateString('en-IN') : 'TBD'],
+    ];
+    for (const [label, value] of rows) {
+      doc.text(`${label}:  ${value}`).moveDown(0.2);
+    }
+    doc.moveDown(0.6);
+
+    // ── Compensation ──────────────────────────────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('Compensation').moveDown(0.4);
+    doc.fontSize(11).font('Helvetica');
+    if (offer.salary) {
+      doc.text(`Salary: ${offer.salary.currency} ${offer.salary.amount?.toLocaleString()} (${offer.salary.frequency})`).moveDown(0.2);
+    }
+    if ((offer as any).bonus?.amount) {
+      doc.text(`Bonus: ${offer.salary.currency} ${(offer as any).bonus.amount?.toLocaleString()} (${(offer as any).bonus.type})`).moveDown(0.2);
+    }
+    if (offer.probationPeriod) {
+      doc.text(`Probation Period: ${offer.probationPeriod} month(s)`).moveDown(0.2);
+    }
+    doc.moveDown(0.6);
+
+    // ── Benefits ──────────────────────────────────────────────────────────────
+    if (Array.isArray(offer.benefits) && offer.benefits.length > 0) {
+      doc.fontSize(13).font('Helvetica-Bold').text('Benefits').moveDown(0.4);
+      doc.fontSize(11).font('Helvetica');
+      for (const b of offer.benefits) {
+        doc.text(`  • ${b}`).moveDown(0.1);
+      }
+      doc.moveDown(0.6);
+    }
+
+    // ── Additional Terms ──────────────────────────────────────────────────────
+    if ((offer as any).additionalTerms) {
+      doc.fontSize(13).font('Helvetica-Bold').text('Additional Terms').moveDown(0.4);
+      doc.fontSize(11).font('Helvetica').text((offer as any).additionalTerms).moveDown(0.6);
+    }
+
+    // ── Sign-off ──────────────────────────────────────────────────────────────
+    doc.text('Please confirm your acceptance within 7 days of receiving this offer.').moveDown(0.4);
+    doc.text('We look forward to welcoming you to our team!').moveDown(1.5);
+    doc.font('Helvetica-Bold').text('Warm regards,').moveDown(0.2);
+    doc.text(company?.name || 'HR Team');
+
+    doc.end();
+
+    logger.info(`[downloadOfferPDF] PDF streamed for offer ${id} by ${req.user?.email}`);
+  } catch (error: any) {
+    logger.error('Error in downloadOfferPDF:', error);
+    if (!res.headersSent) {
+      return sendError(res, error.message || 'Failed to generate PDF', 500);
+    }
+  }
+};

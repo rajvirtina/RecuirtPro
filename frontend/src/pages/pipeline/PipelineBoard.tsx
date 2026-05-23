@@ -83,35 +83,23 @@ export default function PipelineBoard() {
     fetchJobs();
   }, []);
 
-  // Fetch pipeline data
+  // Fetch pipeline data from dedicated endpoint
   const fetchPipeline = useCallback(async () => {
     try {
       setLoading(true);
-      // Use applications endpoint and group client-side (no dedicated /pipeline endpoint)
-      const params = selectedJob ? `?jobId=${selectedJob}&limit=200` : '?limit=200';
-      const res = await apiClient.get(`/applications${params}`);
+      const params = selectedJob ? `?jobId=${selectedJob}` : '';
+      const res = await apiClient.get(`/pipeline${params}`);
       const d = res.data as any;
 
-      // Unwrap paginated or direct response shapes
-      const apps: any[] = Array.isArray(d) ? d
-        : Array.isArray(d?.data) ? d.data
-        : Array.isArray(d?.applications) ? d.applications
-        : Array.isArray(d?.data?.applications) ? d.data.applications
-        : [];
+      // API returns { pipeline: { applied: { candidates: [], count: 0 }, ... } }
+      const serverPipeline: Record<string, { candidates: any[]; count: number }> = d?.pipeline ?? {};
 
-      // Group by status into pipeline columns
-      const grouped: Record<string, PipelineCandidate[]> = {};
+      const normalized: Record<string, PipelineCandidate[]> = {};
       for (const stage of DEFAULT_STAGES) {
-        grouped[stage.id] = [];
+        normalized[stage.id] = serverPipeline[stage.id]?.candidates ?? [];
       }
-      for (const app of apps) {
-        const status = app.status || 'applied';
-        if (grouped[status]) {
-          grouped[status].push(app as PipelineCandidate);
-        }
-      }
-      setPipeline(grouped);
-    } catch (err) {
+      setPipeline(normalized);
+    } catch {
       toast.error('Failed to load pipeline data');
     } finally {
       setLoading(false);

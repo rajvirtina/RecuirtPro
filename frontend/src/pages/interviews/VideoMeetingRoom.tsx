@@ -92,6 +92,7 @@ export default function VideoMeetingRoom() {
   
   const [interview, setInterview] = useState<Interview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Map<string, Participant>>(new Map());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -144,7 +145,6 @@ export default function VideoMeetingRoom() {
           
           if (!systemCheckCompleted) {
             console.log('⚠️ Proctoring enabled but system check not completed. Redirecting...');
-            alert('You must complete the system check before joining this interview.');
             navigate(`/proctoring-check/${id}`, { replace: true });
             return;
           }
@@ -161,43 +161,81 @@ export default function VideoMeetingRoom() {
             setInterview(startResponse.data);
           }
         } else if (interviewData.status === 'completed') {
-          alert('This interview has already been completed.');
-          navigate('/interviews');
+          setMediaError('This interview has already been completed.');
+          setLoading(false);
           return;
         } else if (interviewData.status === 'cancelled') {
-          alert('This interview has been cancelled.');
-          navigate('/interviews');
+          setMediaError('This interview has been cancelled.');
+          setLoading(false);
           return;
         }
       }
 
-      // Get user media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
+      // Get user media with full permission + device-enumeration check
+      const stream = await initializeMediaDevices();
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        // Browsers may block autoPlay without an explicit .play() call
         localVideoRef.current.play().catch(() => {
-          /* autoplay policy — user gesture will trigger it once they interact */
+          /* autoplay policy — user gesture will trigger it */
         });
       }
 
       // Connect to Socket.IO
       connectSocket();
-      
       setLoading(false);
     } catch (error: any) {
       console.error('Error initializing meeting:', error);
-      alert('Failed to access camera/microphone. Please check permissions.');
-      navigate('/interviews');
+      setLoading(false);
+      setMediaError(error.message || 'Failed to access camera/microphone. Please check your browser permissions.');
+    }
+  };
+
+  /** Full device-enumeration + permission check before requesting stream */
+  const initializeMediaDevices = async (): Promise<MediaStream> => {
+    const MEDIA_ERRORS: Record<string, string> = {
+      NotAllowedError:   'Camera/microphone access is blocked. Please click the lock icon in the address bar and allow access.',
+      NotFoundError:     'No camera or microphone detected. Please connect your devices and refresh.',
+      NotReadableError:  'Camera or microphone is already in use by another application. Close it and retry.',
+      OverconstrainedError: 'Your camera does not support the requested resolution. Retrying with lower quality.',
+      PERMISSION_DENIED: 'Camera/microphone access is denied. Please allow access in your browser settings and refresh.',
+      DEVICE_NOT_FOUND:  'No camera or microphone found. Please connect your devices.',
+    };
+
+    // 1. Check Permissions API (Chrome / Edge)
+    try {
+      const [camPerm, micPerm] = await Promise.all([
+        navigator.permissions.query({ name: 'camera' as PermissionName }),
+        navigator.permissions.query({ name: 'microphone' as PermissionName }),
+      ]);
+      if (camPerm.state === 'denied' || micPerm.state === 'denied') {
+        throw Object.assign(new Error('PERMISSION_DENIED'), { name: 'PERMISSION_DENIED' });
+      }
+    } catch (permErr: any) {
+      if (permErr.name === 'PERMISSION_DENIED') throw new Error(MEDIA_ERRORS.PERMISSION_DENIED);
+      // Permissions API not supported in this browser — fall through
+    }
+
+    // 2. Enumerate devices
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const hasCamera = devices.some(d => d.kind === 'videoinput');
+    const hasMic    = devices.some(d => d.kind === 'audioinput');
+    if (!hasCamera || !hasMic) {
+      throw new Error(MEDIA_ERRORS.DEVICE_NOT_FOUND);
+    }
+
+    // 3. Request stream
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (err: any) {
+      // Fallback: retry with lower constraints if OverconstrainedError
+      if (err.name === 'OverconstrainedError') {
+        return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      }
+      throw new Error(MEDIA_ERRORS[err.name] || `Media access failed: ${err.message}`);
     }
   };
 
@@ -645,6 +683,41 @@ export default function VideoMeetingRoom() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div>
           <p className="mt-4 text-gray-300">Joining meeting...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Media or interview-state error — shown instead of the meeting room
+  if (mediaError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 p-6">
+        <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-lg p-8 text-center space-y-5 border border-gray-700">
+          <div className="w-16 h-16 bg-red-900/40 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-white">Unable to Join Meeting</h2>
+          <p className="text-gray-300 text-sm leading-relaxed">{mediaError}</p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => { setMediaError(null); setLoading(true); initializeMeeting(); }}
+              className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => navigate('/interviews')}
+              className="w-full px-4 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 font-medium transition-colors"
+            >
+              Back to Interviews
+            </button>
+          </div>
+          <p className="text-xs text-gray-500">
+            If camera/microphone access is blocked, click the 🔒 lock icon in your browser's address bar and allow access, then retry.
+          </p>
         </div>
       </div>
     );

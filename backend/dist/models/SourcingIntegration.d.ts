@@ -5,7 +5,7 @@ export interface ISourcingIntegrationDocument extends Document {
     userId: mongoose.Types.ObjectId;
     platform: SourcingPlatform;
     status: IntegrationStatus;
-    accessToken: string;
+    accessToken?: string;
     refreshToken?: string;
     tokenExpiresAt?: Date;
     scopes?: string[];
@@ -15,6 +15,8 @@ export interface ISourcingIntegrationDocument extends Document {
     lastSyncAt?: Date;
     errorMessage?: string;
     deletedAt?: Date;
+    oauthState?: string;
+    oauthStateExpiresAt?: Date;
     createdAt: Date;
     updatedAt: Date;
     getDecryptedAccessToken(): string;

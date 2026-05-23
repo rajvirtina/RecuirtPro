@@ -8,8 +8,46 @@ import { sourcingService, SourcingCriteria } from '../services/sourcingService';
 import { getTenantCompanyId } from '../middleware/auth';
 import logger from '../utils/logger';
 
-// In-memory state store for OAuth (use Redis in production)
-const oauthStates = new Map<string, { userId: string; companyId: string; platform: string; expiresAt: number }>();
+// ─── OAuth state helpers (DB-backed, survives server restarts / multi-instance) ──
+// We store the state in the SourcingIntegration document itself as a transient field
+// rather than relying on an in-memory Map (which fails under PM2 cluster mode).
+
+async function saveOAuthState(
+  state: string,
+  payload: { userId: string; companyId: string; platform: string; expiresAt: number }
+): Promise<void> {
+  await SourcingIntegration.findOneAndUpdate(
+    { userId: payload.userId, platform: payload.platform },
+    {
+      $set: {
+        userId: payload.userId,
+        companyId: payload.companyId,
+        platform: payload.platform,
+        status: 'pending',
+        oauthState: state,
+        oauthStateExpiresAt: new Date(payload.expiresAt),
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+}
+
+async function consumeOAuthState(
+  state: string,
+  platform: string
+): Promise<{ userId: string; companyId: string } | null> {
+  const doc = await SourcingIntegration.findOneAndUpdate(
+    {
+      oauthState: state,
+      platform,
+      oauthStateExpiresAt: { $gt: new Date() },
+    },
+    { $unset: { oauthState: '', oauthStateExpiresAt: '' } },
+    { new: false }
+  );
+  if (!doc) return null;
+  return { userId: doc.userId?.toString(), companyId: doc.companyId?.toString() };
+}
 
 // ============================================================
 // INTEGRATION MANAGEMENT
@@ -94,11 +132,11 @@ export const initiateOAuth = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     const state = crypto.randomBytes(32).toString('hex');
-    oauthStates.set(state, {
-      userId: req.user!._id as string,
+    await saveOAuthState(state, {
+      userId:    req.user!._id as string,
       companyId,
       platform,
-      expiresAt: Date.now() + 10 * 60 * 1000,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10-minute window
     });
 
     const authUrl = sourcingService.getOAuthUrl(platform as SourcingPlatform, state);
@@ -117,11 +155,10 @@ export const oauthCallback = async (req: AuthRequest, res: Response): Promise<vo
     if (oauthError) return sendError(res, `OAuth error: ${oauthError}`, 400);
     if (!code || !state) return sendError(res, 'Missing code or state', 400);
 
-    const stateData = oauthStates.get(state as string);
-    if (!stateData || stateData.expiresAt < Date.now() || stateData.platform !== platform) {
-      return sendError(res, 'Invalid or expired OAuth state', 400);
+    const stateData = await consumeOAuthState(state as string, platform);
+    if (!stateData) {
+      return sendError(res, 'Invalid or expired OAuth state. Please try connecting again.', 400);
     }
-    oauthStates.delete(state as string);
 
     const tokenData = await sourcingService.exchangeOAuthCode(platform as SourcingPlatform, code as string);
     const tokenExpiresAt = tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000) : undefined;

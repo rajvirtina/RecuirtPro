@@ -35,6 +35,7 @@ import noteRoutes from './routes/notes';
 import companySettingsRoutes from './routes/companySettings';
 import jobTemplateRoutes from './routes/jobTemplates';
 import scheduleRoutes from './routes/schedule';
+import pipelineRoutes from './routes/pipeline';
 // import userRoutes from './routes/user';
 // ... other routes
 
@@ -173,6 +174,7 @@ app.use('/api/v1/proctoring', proctoringSessionRoutes);
 app.use('/api/v1', noteRoutes);
 app.use('/api/v1/companies', companySettingsRoutes);
 app.use('/api/v1/job-templates', jobTemplateRoutes);
+app.use('/api/v1/pipeline', pipelineRoutes);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 

@@ -16,5 +16,7 @@ router.get('/:id', offerController_1.getOfferById); // Candidates can view their
 router.put('/:id', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.HR, types_1.UserRole.EMPLOYER), offerController_1.updateOffer);
 router.put('/:id/status', offerController_1.updateOfferStatus); // Candidates can accept/reject
 router.post('/:id/generate-letter', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.HR, types_1.UserRole.EMPLOYER), offerController_1.generateOfferLetter);
+// Download offer as PDF
+router.get('/:id/pdf', (0, auth_1.authorize)(types_1.UserRole.ADMIN, types_1.UserRole.HR, types_1.UserRole.EMPLOYER), offerController_1.downloadOfferPDF);
 exports.default = router;
 //# sourceMappingURL=offers.js.map

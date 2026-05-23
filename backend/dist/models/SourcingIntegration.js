@@ -60,7 +60,7 @@ const sourcingIntegrationSchema = new mongoose_1.Schema({
     },
     accessToken: {
         type: String,
-        required: true,
+        required: false, // not present during the OAuth pending state
         select: false,
     },
     refreshToken: {
@@ -75,6 +75,9 @@ const sourcingIntegrationSchema = new mongoose_1.Schema({
     lastSyncAt: Date,
     errorMessage: String,
     deletedAt: Date,
+    // Transient OAuth CSRF state — stored during the OAuth flow, cleared after use
+    oauthState: { type: String, index: true, sparse: true },
+    oauthStateExpiresAt: { type: Date },
 }, { timestamps: true });
 // Encrypt tokens before save
 sourcingIntegrationSchema.pre('save', function (next) {

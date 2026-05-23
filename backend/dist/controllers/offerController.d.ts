@@ -36,4 +36,10 @@ export declare const updateOffer: (req: AuthRequest, res: Response) => Promise<v
  * @access  Private (HR/Admin)
  */
 export declare const generateOfferLetter: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc    Generate and stream offer letter as PDF (pdfkit)
+ * @route   GET /api/v1/offers/:id/pdf
+ * @access  Private (HR / Admin / Employer)
+ */
+export declare const downloadOfferPDF: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=offerController.d.ts.map

@@ -142,12 +142,24 @@ export default function OfferApprovals() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => setSelectedId(selectedId === offer._id ? null : offer._id)}
-                  className="text-sm text-primary-600 hover:text-primary-700 font-medium whitespace-nowrap"
-                >
-                  {selectedId === offer._id ? 'Collapse' : 'Review'}
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Download PDF button */}
+                  <a
+                    href={`${(import.meta as any).env?.VITE_API_URL || '/api/v1'}/offers/${offer._id}/pdf`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-2 py-1 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition-colors"
+                    title="Download offer letter as PDF"
+                  >
+                    ↓ PDF
+                  </a>
+                  <button
+                    onClick={() => setSelectedId(selectedId === offer._id ? null : offer._id)}
+                    className="text-sm text-primary-600 hover:text-primary-700 font-medium whitespace-nowrap"
+                  >
+                    {selectedId === offer._id ? 'Collapse' : 'Review'}
+                  </button>
+                </div>
               </div>
 
               {/* Expanded review panel */}

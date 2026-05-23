@@ -80,47 +80,24 @@ export default function JobDetail() {
     }
   };
 
-  const handleCloseJob = async () => {
-    if (!confirm('Are you sure you want to close this job posting?')) return;
-
+  /** Central status updater — uses the dedicated PATCH endpoint */
+  const handleJobStatus = async (newStatus: string, confirmMsg?: string) => {
+    if (confirmMsg && !confirm(confirmMsg)) return;
     try {
-      await apiClient.put(`/jobs/${id}`, { status: 'closed' });
-      setMessage({ type: 'success', text: 'Job closed successfully!' });
+      await apiClient.patch(`/jobs/${id}/status`, { status: newStatus });
+      setMessage({ type: 'success', text: `Job ${newStatus.replace('_', ' ')} successfully!` });
       await fetchJobDetail();
     } catch (error: any) {
       setMessage({
         type: 'error',
-        text: error.response?.data?.message || 'Failed to close job',
+        text: error?.data?.message || error?.response?.data?.message || `Failed to set status to ${newStatus}`,
       });
     }
   };
 
-  const handlePublishJob = async () => {
-    try {
-      await apiClient.put(`/jobs/${id}`, { status: 'published' });
-      setMessage({ type: 'success', text: 'Job published successfully!' });
-      await fetchJobDetail();
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to publish job',
-      });
-    }
-  };
-
-  const handleHoldJob = async () => {
-    if (!confirm('Put this job on hold? It will stop accepting new applications.')) return;
-    try {
-      await apiClient.put(`/jobs/${id}`, { status: 'on_hold' });
-      setMessage({ type: 'success', text: 'Job put on hold.' });
-      await fetchJobDetail();
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to hold job',
-      });
-    }
-  };
+  const handleCloseJob   = () => handleJobStatus('closed',    'Are you sure you want to close this job posting?');
+  const handlePublishJob = () => handleJobStatus('published');
+  const handleHoldJob    = () => handleJobStatus('on_hold',   'Put this job on hold? It will stop accepting new applications.');
 
   if (loading) {
     return (

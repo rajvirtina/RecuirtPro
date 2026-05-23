@@ -64,6 +64,18 @@ router.put('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOY
     (0, express_validator_1.body)('companyId').optional().isMongoId().withMessage('Invalid company ID'),
 ], validator_1.validate, jobController_1.updateJob);
 /**
+ * @route   PATCH /api/v1/jobs/:id/status
+ * @desc    Update job status (Publish / Hold / Close)
+ * @access  Private (Employer, HR, Admin)
+ */
+router.patch('/:id/status', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [
+    (0, express_validator_1.param)('id').isMongoId().withMessage('Invalid job ID'),
+    (0, express_validator_1.body)('status')
+        .notEmpty()
+        .isIn(['draft', 'published', 'on_hold', 'closed'])
+        .withMessage('Status must be one of: draft, published, on_hold, closed'),
+], validator_1.validate, jobController_1.updateJobStatus);
+/**
  * @route   DELETE /api/v1/jobs/:id
  * @desc    Delete job (soft delete)
  * @access  Private (HR, Admin only — Employers may not delete jobs)

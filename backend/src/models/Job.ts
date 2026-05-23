@@ -78,7 +78,8 @@ const jobSchema = new Schema<IJobDocument>(
     },
     description: {
       type: String,
-      required: [true, 'Job description is required'],
+      // NOT required at schema level — draft jobs may have no description.
+      // Publish-time validation is enforced in the controller (jobController.ts).
       maxlength: [20000, 'Job description cannot exceed 20,000 characters'], // BUG-005/VAL-002
     },
     responsibilities: {

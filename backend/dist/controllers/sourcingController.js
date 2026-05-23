@@ -12,8 +12,31 @@ const models_1 = require("../models");
 const sourcingService_1 = require("../services/sourcingService");
 const auth_1 = require("../middleware/auth");
 const logger_1 = __importDefault(require("../utils/logger"));
-// In-memory state store for OAuth (use Redis in production)
-const oauthStates = new Map();
+// ─── OAuth state helpers (DB-backed, survives server restarts / multi-instance) ──
+// We store the state in the SourcingIntegration document itself as a transient field
+// rather than relying on an in-memory Map (which fails under PM2 cluster mode).
+async function saveOAuthState(state, payload) {
+    await models_1.SourcingIntegration.findOneAndUpdate({ userId: payload.userId, platform: payload.platform }, {
+        $set: {
+            userId: payload.userId,
+            companyId: payload.companyId,
+            platform: payload.platform,
+            status: 'pending',
+            oauthState: state,
+            oauthStateExpiresAt: new Date(payload.expiresAt),
+        },
+    }, { upsert: true, new: true, setDefaultsOnInsert: true });
+}
+async function consumeOAuthState(state, platform) {
+    const doc = await models_1.SourcingIntegration.findOneAndUpdate({
+        oauthState: state,
+        platform,
+        oauthStateExpiresAt: { $gt: new Date() },
+    }, { $unset: { oauthState: '', oauthStateExpiresAt: '' } }, { new: false });
+    if (!doc)
+        return null;
+    return { userId: doc.userId?.toString(), companyId: doc.companyId?.toString() };
+}
 // ============================================================
 // INTEGRATION MANAGEMENT
 // ============================================================
@@ -81,11 +104,11 @@ const initiateOAuth = async (req, res) => {
             return (0, response_1.sendSuccess)(res, { platform, status: 'connected' }, `${platform} connected in demo mode (simulated results)`);
         }
         const state = crypto_1.default.randomBytes(32).toString('hex');
-        oauthStates.set(state, {
+        await saveOAuthState(state, {
             userId: req.user._id,
             companyId,
             platform,
-            expiresAt: Date.now() + 10 * 60 * 1000,
+            expiresAt: Date.now() + 10 * 60 * 1000, // 10-minute window
         });
         const authUrl = sourcingService_1.sourcingService.getOAuthUrl(platform, state);
         return (0, response_1.sendSuccess)(res, { authUrl, state }, 'OAuth URL generated');
@@ -104,11 +127,10 @@ const oauthCallback = async (req, res) => {
             return (0, response_1.sendError)(res, `OAuth error: ${oauthError}`, 400);
         if (!code || !state)
             return (0, response_1.sendError)(res, 'Missing code or state', 400);
-        const stateData = oauthStates.get(state);
-        if (!stateData || stateData.expiresAt < Date.now() || stateData.platform !== platform) {
-            return (0, response_1.sendError)(res, 'Invalid or expired OAuth state', 400);
+        const stateData = await consumeOAuthState(state, platform);
+        if (!stateData) {
+            return (0, response_1.sendError)(res, 'Invalid or expired OAuth state. Please try connecting again.', 400);
         }
-        oauthStates.delete(state);
         const tokenData = await sourcingService_1.sourcingService.exchangeOAuthCode(platform, code);
         const tokenExpiresAt = tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000) : undefined;
         await models_1.SourcingIntegration.findOneAndUpdate({ userId: stateData.userId, platform }, {

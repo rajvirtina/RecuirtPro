@@ -224,7 +224,14 @@ const updateApplicationStatus = async (req, res) => {
         const currentStatus = application.status;
         const allowedNext = validTransitions[currentStatus] || [];
         if (!allowedNext.includes(status)) {
-            return (0, response_1.sendError)(res, `Cannot transition from '${currentStatus}' to '${status}'. Allowed: ${allowedNext.join(', ') || 'none (terminal state)'}`, 400);
+            return res.status(400).json({
+                success: false,
+                message: `Cannot transition from '${currentStatus}' to '${status}'.`,
+                allowedTransitions: allowedNext, // structured array for frontend to consume
+                detail: allowedNext.length
+                    ? `Allowed next stages: ${allowedNext.join(', ')}`
+                    : 'This status is terminal — no further transitions are allowed.',
+            });
         }
         // Update status
         application.status = status;

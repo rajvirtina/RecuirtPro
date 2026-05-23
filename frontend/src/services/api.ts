@@ -37,10 +37,34 @@ class ApiClient {
       return cfg;
     });
 
-    // Response interceptor — silent token refresh on 401
+    // Response interceptor — content-type guard + silent token refresh on 401
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Guard: if server returned HTML instead of JSON, surface a clear error
+        const ct = response.headers['content-type'] || '';
+        if (!ct.includes('application/json') && typeof response.data === 'string' && response.data.trim().startsWith('<')) {
+          const htmlErr: any = new Error('Server returned an HTML page instead of JSON. The endpoint may not exist or the server crashed.');
+          htmlErr.isHtmlResponse = true;
+          htmlErr.response = response;
+          throw htmlErr;
+        }
+        return response;
+      },
       async (error) => {
+        // Guard: non-JSON error responses (HTML error pages from Express/Nginx)
+        const ct = error.response?.headers?.['content-type'] || '';
+        if (error.response && !ct.includes('application/json')) {
+          const status = error.response.status;
+          const friendly =
+            status === 404 ? 'API endpoint not found (404). Please contact support.' :
+            status >= 500  ? 'Server error. Please try again in a moment.' :
+            'Server returned an unexpected response. Please try again.';
+          const wrappedErr: any = new Error(friendly);
+          wrappedErr.response = { ...error.response, data: { success: false, message: friendly } };
+          wrappedErr.isHtmlResponse = true;
+          return Promise.reject(wrappedErr);
+        }
+
         const original = error.config;
 
         if (error.response?.status === 401 && !original._retry) {

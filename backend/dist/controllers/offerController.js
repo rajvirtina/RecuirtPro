@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.generateOfferLetter = exports.updateOffer = exports.updateOfferStatus = exports.getOfferById = exports.getOffers = exports.createOffer = void 0;
+exports.downloadOfferPDF = exports.generateOfferLetter = exports.updateOffer = exports.updateOfferStatus = exports.getOfferById = exports.getOffers = exports.createOffer = void 0;
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const models_1 = require("../models");
@@ -328,4 +328,108 @@ const generateOfferLetter = async (req, res) => {
     }
 };
 exports.generateOfferLetter = generateOfferLetter;
+/**
+ * @desc    Generate and stream offer letter as PDF (pdfkit)
+ * @route   GET /api/v1/offers/:id/pdf
+ * @access  Private (HR / Admin / Employer)
+ */
+const downloadOfferPDF = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const companyId = (0, auth_1.getTenantCompanyId)(req.user) || req.user?.companyId;
+        if (!companyId)
+            return (0, response_1.sendError)(res, 'Company context required', 400);
+        const offer = await models_1.Offer.findOne({ _id: id, companyId, deletedAt: null })
+            .populate('candidateId', 'firstName lastName email')
+            .populate('jobId', 'title')
+            .populate('companyId', 'name');
+        if (!offer)
+            return (0, response_1.sendError)(res, 'Offer not found', 404);
+        const candidate = offer.candidateId;
+        const job = offer.jobId;
+        const company = offer.companyId;
+        // Lazy-load pdfkit (optional dep)
+        let PDFDocument;
+        try {
+            PDFDocument = require('pdfkit');
+        }
+        catch {
+            return (0, response_1.sendError)(res, 'PDF generation is not available (pdfkit not installed). Please install it: npm install pdfkit', 500);
+        }
+        const doc = new PDFDocument({ margin: 60, size: 'A4' });
+        const safeFilename = `offer_${candidate?.firstName || 'candidate'}_${candidate?.lastName || ''}.pdf`
+            .replace(/\s+/g, '_')
+            .replace(/[^a-zA-Z0-9._-]/g, '');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+        doc.pipe(res);
+        // ── Header ────────────────────────────────────────────────────────────────
+        doc
+            .fontSize(22).font('Helvetica-Bold').text(company?.name || 'Company', { align: 'center' })
+            .moveDown(0.3)
+            .fontSize(14).font('Helvetica').text('Offer of Employment', { align: 'center' })
+            .moveDown(1);
+        // Date
+        doc.fontSize(11).text(`Date: ${new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}`).moveDown(0.5);
+        // Salutation
+        doc.text(`Dear ${candidate?.firstName} ${candidate?.lastName},`).moveDown(0.5);
+        doc.text(`We are pleased to offer you the position of ${offer.designation}` +
+            `${offer.department ? ` in the ${offer.department} department` : ''} at ${company?.name || 'our company'}.`).moveDown(1);
+        // ── Position Details ──────────────────────────────────────────────────────
+        doc.fontSize(13).font('Helvetica-Bold').text('Position Details').moveDown(0.4);
+        doc.fontSize(11).font('Helvetica');
+        const rows = [
+            ['Designation', offer.designation],
+            ['Department', offer.department || 'N/A'],
+            ['Location', offer.location || 'N/A'],
+            ['Work Mode', offer.workMode || 'N/A'],
+            ['Joining Date', offer.joiningDate ? new Date(offer.joiningDate).toLocaleDateString('en-IN') : 'TBD'],
+        ];
+        for (const [label, value] of rows) {
+            doc.text(`${label}:  ${value}`).moveDown(0.2);
+        }
+        doc.moveDown(0.6);
+        // ── Compensation ──────────────────────────────────────────────────────────
+        doc.fontSize(13).font('Helvetica-Bold').text('Compensation').moveDown(0.4);
+        doc.fontSize(11).font('Helvetica');
+        if (offer.salary) {
+            doc.text(`Salary: ${offer.salary.currency} ${offer.salary.amount?.toLocaleString()} (${offer.salary.frequency})`).moveDown(0.2);
+        }
+        if (offer.bonus?.amount) {
+            doc.text(`Bonus: ${offer.salary.currency} ${offer.bonus.amount?.toLocaleString()} (${offer.bonus.type})`).moveDown(0.2);
+        }
+        if (offer.probationPeriod) {
+            doc.text(`Probation Period: ${offer.probationPeriod} month(s)`).moveDown(0.2);
+        }
+        doc.moveDown(0.6);
+        // ── Benefits ──────────────────────────────────────────────────────────────
+        if (Array.isArray(offer.benefits) && offer.benefits.length > 0) {
+            doc.fontSize(13).font('Helvetica-Bold').text('Benefits').moveDown(0.4);
+            doc.fontSize(11).font('Helvetica');
+            for (const b of offer.benefits) {
+                doc.text(`  • ${b}`).moveDown(0.1);
+            }
+            doc.moveDown(0.6);
+        }
+        // ── Additional Terms ──────────────────────────────────────────────────────
+        if (offer.additionalTerms) {
+            doc.fontSize(13).font('Helvetica-Bold').text('Additional Terms').moveDown(0.4);
+            doc.fontSize(11).font('Helvetica').text(offer.additionalTerms).moveDown(0.6);
+        }
+        // ── Sign-off ──────────────────────────────────────────────────────────────
+        doc.text('Please confirm your acceptance within 7 days of receiving this offer.').moveDown(0.4);
+        doc.text('We look forward to welcoming you to our team!').moveDown(1.5);
+        doc.font('Helvetica-Bold').text('Warm regards,').moveDown(0.2);
+        doc.text(company?.name || 'HR Team');
+        doc.end();
+        logger_1.default.info(`[downloadOfferPDF] PDF streamed for offer ${id} by ${req.user?.email}`);
+    }
+    catch (error) {
+        logger_1.default.error('Error in downloadOfferPDF:', error);
+        if (!res.headersSent) {
+            return (0, response_1.sendError)(res, error.message || 'Failed to generate PDF', 500);
+        }
+    }
+};
+exports.downloadOfferPDF = downloadOfferPDF;
 //# sourceMappingURL=offerController.js.map

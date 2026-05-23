@@ -86,6 +86,49 @@ router.post('/hr-users/:id/resend-invitation', resendHRInvitation);
 router.delete('/hr-users/:id', deleteHRUser);
 
 /**
+ * @route   PUT /api/v1/admin/hr-users/:id
+ * @desc    Update HR user firstName / lastName
+ * @access  Private (Admin OR HR — HR can only update users in their own company)
+ */
+router.put(
+  '/hr-users/:id',
+  protect,
+  authorize(UserRole.ADMIN, UserRole.HR),
+  [
+    body('firstName').optional().trim().notEmpty().withMessage('First name cannot be empty'),
+    body('lastName').optional().trim().notEmpty().withMessage('Last name cannot be empty'),
+  ],
+  async (req: any, res: any) => {
+    try {
+      const { User } = require('../models');
+      const { sendSuccess, sendError } = require('../utils/response');
+      const { getTenantCompanyId } = require('../middleware/auth');
+
+      const targetUser = await User.findById(req.params.id);
+      if (!targetUser) return sendError(res, 'User not found', 404);
+
+      // Tenant isolation — HR can only update users in their own company
+      const tenantId = getTenantCompanyId(req.user);
+      if (tenantId && targetUser.companyId?.toString() !== tenantId) {
+        return sendError(res, 'Not authorized to update this user', 403);
+      }
+
+      const { firstName, lastName } = req.body;
+      if (firstName) targetUser.firstName = firstName.trim();
+      if (lastName)  targetUser.lastName  = lastName.trim();
+      await targetUser.save();
+
+      const safe = targetUser.toObject();
+      delete safe.password;
+      return sendSuccess(res, safe, 'User updated successfully');
+    } catch (error: any) {
+      const { sendError } = require('../utils/response');
+      return sendError(res, error.message || 'Failed to update user', 500);
+    }
+  }
+);
+
+/**
  * @route   GET /api/v1/admin/stats
  * @desc    Get admin dashboard stats
  * @access  Private/Admin

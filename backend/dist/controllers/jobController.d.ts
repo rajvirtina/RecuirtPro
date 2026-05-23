@@ -6,5 +6,6 @@ export declare const getJobsByCompanySlug: (req: AuthRequest, res: Response, nex
 export declare const getJobById: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 export declare const createJob: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 export declare const updateJob: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
+export declare const updateJobStatus: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 export declare const deleteJob: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 //# sourceMappingURL=jobController.d.ts.map

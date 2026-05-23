@@ -7,6 +7,7 @@ import {
   getCompanyInfoBySlug,
   createJob,
   updateJob,
+  updateJobStatus,
   deleteJob,
 } from '../controllers/jobController';
 import { duplicateJob } from '../controllers/jobTemplateController';
@@ -95,6 +96,26 @@ router.put(
   ],
   validate,
   updateJob
+);
+
+/**
+ * @route   PATCH /api/v1/jobs/:id/status
+ * @desc    Update job status (Publish / Hold / Close)
+ * @access  Private (Employer, HR, Admin)
+ */
+router.patch(
+  '/:id/status',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [
+    param('id').isMongoId().withMessage('Invalid job ID'),
+    body('status')
+      .notEmpty()
+      .isIn(['draft', 'published', 'on_hold', 'closed'])
+      .withMessage('Status must be one of: draft, published, on_hold, closed'),
+  ],
+  validate,
+  updateJobStatus
 );
 
 /**

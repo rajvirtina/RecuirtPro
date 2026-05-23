@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteJob = exports.updateJob = exports.createJob = exports.getJobById = exports.getJobsByCompanySlug = exports.getCompanyInfoBySlug = exports.getJobs = void 0;
+exports.deleteJob = exports.updateJobStatus = exports.updateJob = exports.createJob = exports.getJobById = exports.getJobsByCompanySlug = exports.getCompanyInfoBySlug = exports.getJobs = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const models_1 = require("../models");
 const response_1 = require("../utils/response");
@@ -266,6 +266,52 @@ const updateJob = async (req, res, next) => {
     }
 };
 exports.updateJob = updateJob;
+// Valid status transitions enforced at controller level
+const JOB_STATUS_TRANSITIONS = {
+    draft: ['published', 'on_hold'],
+    published: ['on_hold', 'closed'],
+    on_hold: ['published', 'closed', 'draft'],
+    closed: [], // terminal
+};
+const updateJobStatus = async (req, res, next) => {
+    try {
+        const job = await models_1.Job.findById(req.params.id);
+        if (!job) {
+            (0, response_1.sendError)(res, 'Job not found', 404);
+            return;
+        }
+        // Tenant isolation
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        if (tenantId && job.companyId.toString() !== tenantId) {
+            logger_1.default.warn(`[updateJobStatus] Access denied: ${req.user?.email} tried to update job from another company`);
+            (0, response_1.sendError)(res, "You don't have permission to update this job", 403);
+            return;
+        }
+        const newStatus = req.body.status;
+        const currentStatus = job.status;
+        const allowed = JOB_STATUS_TRANSITIONS[currentStatus] ?? [];
+        if (!allowed.includes(newStatus)) {
+            (0, response_1.sendError)(res, `Cannot transition from '${currentStatus}' to '${newStatus}'. Allowed: ${allowed.join(', ') || 'none (terminal state)'}`, 400);
+            return;
+        }
+        // Require description before publishing
+        if (newStatus === types_1.JobStatus.PUBLISHED) {
+            const descText = (job.description || '').replace(/<[^>]*>/g, '').trim();
+            if (!descText || descText.length < 10) {
+                (0, response_1.sendError)(res, 'Job description is required before publishing (at least 10 characters).', 400);
+                return;
+            }
+        }
+        job.status = newStatus;
+        await job.save();
+        logger_1.default.info(`[updateJobStatus] Job ${job._id} transitioned ${currentStatus} → ${newStatus} by ${req.user?.email}`);
+        (0, response_1.sendSuccess)(res, { job }, 'Job status updated');
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.updateJobStatus = updateJobStatus;
 const deleteJob = async (req, res, next) => {
     try {
         const job = await models_1.Job.findById(req.params.id);

@@ -7,7 +7,7 @@ export interface ISourcingIntegrationDocument extends Document {
   userId: mongoose.Types.ObjectId;
   platform: SourcingPlatform;
   status: IntegrationStatus;
-  accessToken: string;
+  accessToken?: string;   // optional during pending OAuth state
   refreshToken?: string;
   tokenExpiresAt?: Date;
   scopes?: string[];
@@ -17,6 +17,9 @@ export interface ISourcingIntegrationDocument extends Document {
   lastSyncAt?: Date;
   errorMessage?: string;
   deletedAt?: Date;
+  // Transient OAuth CSRF state (cleared after use)
+  oauthState?: string;
+  oauthStateExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   getDecryptedAccessToken(): string;
@@ -47,7 +50,7 @@ const sourcingIntegrationSchema = new Schema<ISourcingIntegrationDocument>(
     },
     accessToken: {
       type: String,
-      required: true,
+      required: false, // not present during the OAuth pending state
       select: false,
     },
     refreshToken: {
@@ -62,6 +65,9 @@ const sourcingIntegrationSchema = new Schema<ISourcingIntegrationDocument>(
     lastSyncAt: Date,
     errorMessage: String,
     deletedAt: Date,
+    // Transient OAuth CSRF state — stored during the OAuth flow, cleared after use
+    oauthState:           { type: String, index: true, sparse: true },
+    oauthStateExpiresAt:  { type: Date },
   },
   { timestamps: true }
 );

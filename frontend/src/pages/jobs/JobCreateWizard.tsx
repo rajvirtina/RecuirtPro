@@ -392,6 +392,7 @@ export default function JobCreateWizard() {
   });
 
   const performAutoSave = async () => {
+    // Auto-save only when a draft already exists (i.e. after Step 4 first save)
     if (!jobId) return;
     setSaveStatus({ state: 'saving' });
     try {
@@ -403,12 +404,18 @@ export default function JobCreateWizard() {
     }
   };
 
+  /**
+   * createInitialDraft — called ONLY from the Step 4 final action, never Step 1.
+   * At this point all steps are complete so description will be present.
+   */
   const createInitialDraft = async (): Promise<string | null> => {
     setSaveStatus({ state: 'saving' });
     try {
-      const res  = await apiClient.post('/jobs', buildPayload('draft'));
-      const job  = (res.data as any);
-      const newId = job?._id ?? job?.job?._id;
+      // Use the combined payload from all four steps
+      const payload = buildPayload('draft', s1Ref.current, s2Ref.current, s4Ref.current);
+      const res     = await apiClient.post('/jobs', payload);
+      const job     = (res.data as any);
+      const newId   = job?._id ?? job?.job?._id;
       if (newId) {
         setJobId(newId);
         isDirtyRef.current = false;
@@ -456,14 +463,9 @@ export default function JobCreateWizard() {
   };
 
   const handleNext = async () => {
-    if (step === 1) {
-      if (!validateStep1()) return;
-      // Create the draft if not yet created
-      if (!jobId) {
-        const id = await createInitialDraft();
-        if (!id) return; // API error
-      }
-    }
+    // Step 1 & 2: validate locally — NO API call yet.
+    // The API is only called at Step 4 (handleFinalAction) once all data is ready.
+    if (step === 1 && !validateStep1()) return;
     if (step === 2 && !validateStep2()) return;
 
     setCompletedSteps(prev => new Set([...prev, step]));

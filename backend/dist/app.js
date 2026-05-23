@@ -39,6 +39,7 @@ const notes_1 = __importDefault(require("./routes/notes"));
 const companySettings_1 = __importDefault(require("./routes/companySettings"));
 const jobTemplates_1 = __importDefault(require("./routes/jobTemplates"));
 const schedule_1 = __importDefault(require("./routes/schedule"));
+const pipeline_1 = __importDefault(require("./routes/pipeline"));
 // import userRoutes from './routes/user';
 // ... other routes
 const app = (0, express_1.default)();
@@ -164,6 +165,7 @@ app.use('/api/v1/proctoring', proctoringSessionRoutes_1.default);
 app.use('/api/v1', notes_1.default);
 app.use('/api/v1/companies', companySettings_1.default);
 app.use('/api/v1/job-templates', jobTemplates_1.default);
+app.use('/api/v1/pipeline', pipeline_1.default);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 // Serve frontend in production

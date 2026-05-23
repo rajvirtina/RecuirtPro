@@ -263,6 +263,52 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
   } catch (error) { next(error); }
 };
 
+// Valid status transitions enforced at controller level
+const JOB_STATUS_TRANSITIONS: Record<string, string[]> = {
+  draft:      ['published', 'on_hold'],
+  published:  ['on_hold', 'closed'],
+  on_hold:    ['published', 'closed', 'draft'],
+  closed:     [], // terminal
+};
+
+export const updateJobStatus = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) { sendError(res, 'Job not found', 404); return; }
+
+    // Tenant isolation
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && job.companyId.toString() !== tenantId) {
+      logger.warn(`[updateJobStatus] Access denied: ${req.user?.email} tried to update job from another company`);
+      sendError(res, "You don't have permission to update this job", 403);
+      return;
+    }
+
+    const newStatus = req.body.status as string;
+    const currentStatus = job.status as string;
+    const allowed = JOB_STATUS_TRANSITIONS[currentStatus] ?? [];
+
+    if (!allowed.includes(newStatus)) {
+      sendError(res, `Cannot transition from '${currentStatus}' to '${newStatus}'. Allowed: ${allowed.join(', ') || 'none (terminal state)'}`, 400);
+      return;
+    }
+
+    // Require description before publishing
+    if (newStatus === JobStatus.PUBLISHED) {
+      const descText = ((job as any).description || '').replace(/<[^>]*>/g, '').trim();
+      if (!descText || descText.length < 10) {
+        sendError(res, 'Job description is required before publishing (at least 10 characters).', 400);
+        return;
+      }
+    }
+
+    (job as any).status = newStatus;
+    await job.save();
+    logger.info(`[updateJobStatus] Job ${job._id} transitioned ${currentStatus} → ${newStatus} by ${req.user?.email}`);
+    sendSuccess(res, { job }, 'Job status updated');
+  } catch (error) { next(error); }
+};
+
 export const deleteJob = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const job = await Job.findById(req.params.id);
