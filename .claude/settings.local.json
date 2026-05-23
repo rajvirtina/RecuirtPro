@@ -16,7 +16,8 @@
       "Bash(Sort-Object FullName)",
       "Bash(cd /c/Users/HP/Downloads/RecuirtPro/frontend/src && find . -name \"*.ts\" -o -name \"*.tsx\" | grep -E \"\\(hook|store|component\\)\" | head -20)",
       "Read(//c/c/Users/HP/Downloads/RecuirtPro/frontend/**)",
-      "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\HP\\\\Downloads\\\\RecuirtPro\\\\frontend\\\\src\\\\components\\\\form\")"
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\HP\\\\Downloads\\\\RecuirtPro\\\\frontend\\\\src\\\\components\\\\form\")",
+      "Bash(grep \"replace.*\\\\\\\\/\\\\\\\\+\" c:/Users/HP/Downloads/RecuirtPro/deploy/dist/controllers/resumeParserController.js)"
     ]
   }
 }
