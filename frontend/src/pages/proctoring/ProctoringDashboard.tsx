@@ -95,15 +95,19 @@ export default function ProctoringDashboard() {
       
       // Load active interviews
       const interviewsRes = await apiClient.get('/interviews?status=in-progress');
-      setActiveInterviews(interviewsRes.data.data.interviews || []);
+      setActiveInterviews(interviewsRes.data?.interviews || []);
 
       // Load recent violations
       const violationsRes = await apiClient.get('/proctoring/events/recent?limit=20');
-      setRecentViolations(violationsRes.data.data || []);
+      // Filter out system/informational events — only count real violations
+      const SYSTEM_EVENT_TYPES = ['consent_given', 'consent_denied', 'interview_started', 'interview_ended', 'system_check_passed', 'system_check_failed', 'screenshot_captured'];
+      const allEvents = Array.isArray(violationsRes.data) ? violationsRes.data : [];
+      const violationOnly = allEvents.filter((e: any) => !SYSTEM_EVENT_TYPES.includes(e.eventType));
+      setRecentViolations(violationOnly);
 
       // Calculate stats
-      const active = interviewsRes.data.data.interviews?.length || 0;
-      const violations = violationsRes.data.data || [];
+      const active = interviewsRes.data?.interviews?.length || 0;
+      const violations = violationOnly;
       
       setStats({
         totalActive: active,

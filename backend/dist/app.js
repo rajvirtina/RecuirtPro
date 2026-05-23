@@ -184,7 +184,13 @@ if (config_1.default.env === 'production') {
         const indexPath = path_1.default.join(frontendDist, 'index.html');
         console.log(`Frontend found at: ${frontendDist}`);
         app.use(express_1.default.static(frontendDist));
-        app.get('*', (_req, res) => res.sendFile(indexPath));
+        app.get('*', (_req, res, next) => {
+            // Skip API routes and static uploads — let them fall through to 404/error handlers
+            if (_req.path.startsWith('/api/') || _req.path.startsWith('/uploads/')) {
+                return next();
+            }
+            res.sendFile(indexPath);
+        });
     }
     else {
         console.warn(`Frontend not found. __dirname: ${__dirname}`);

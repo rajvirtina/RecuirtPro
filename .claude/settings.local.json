@@ -17,7 +17,10 @@
       "Bash(cd /c/Users/HP/Downloads/RecuirtPro/frontend/src && find . -name \"*.ts\" -o -name \"*.tsx\" | grep -E \"\\(hook|store|component\\)\" | head -20)",
       "Read(//c/c/Users/HP/Downloads/RecuirtPro/frontend/**)",
       "PowerShell(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\HP\\\\Downloads\\\\RecuirtPro\\\\frontend\\\\src\\\\components\\\\form\")",
-      "Bash(grep \"replace.*\\\\\\\\/\\\\\\\\+\" c:/Users/HP/Downloads/RecuirtPro/deploy/dist/controllers/resumeParserController.js)"
+      "Bash(grep \"replace.*\\\\\\\\/\\\\\\\\+\" c:/Users/HP/Downloads/RecuirtPro/deploy/dist/controllers/resumeParserController.js)",
+      "Bash(grep -o '[^;]\\\\{0,400\\\\}method:\"POST\"[^;]\\\\{0,400\\\\}' c:/Users/HP/Downloads/RecuirtPro/frontend/dist/assets/index-DYns9Gmc.js)",
+      "Bash(grep -o '[^,]\\\\{0,500\\\\}Next Round Decision[^,]\\\\{0,500\\\\}' c:/Users/HP/Downloads/RecuirtPro/frontend/dist/assets/index-DYns9Gmc.js)",
+      "Bash(grep -o '[^;]\\\\{0,1000\\\\}Competency Assessment[^;]\\\\{0,500\\\\}' c:/Users/HP/Downloads/RecuirtPro/frontend/dist/assets/index-DYns9Gmc.js)"
     ]
   }
 }

@@ -136,7 +136,7 @@ export function TimelineTab({ applicationId }: { applicationId: string }) {
 function useTimelineQuery(applicationId: string) {
   const { data, isLoading, refetch } = useQuery<TimelineResponse>({
     queryKey: ['timeline', applicationId],
-    queryFn: () => apiClient.get(`/applications/${applicationId}/timeline`).then(r => r.data),
+    queryFn: () => apiClient.get<TimelineResponse>(`/applications/${applicationId}/timeline`),
   });
 
   // API may return either `pages` or `totalPages` — handle both safely

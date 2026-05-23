@@ -167,7 +167,7 @@ export function RichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]); // intentionally only when editor becomes available
 
-  const EDITOR_ID = label
+  const EDITOR_ID = typeof label === 'string' && label
     ? `rte-${label.toLowerCase().replace(/\s+/g, '-')}`
     : 'rich-text-editor';
 
