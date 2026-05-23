@@ -94,7 +94,12 @@ export declare enum ProctoringEventType {
     MULTIPLE_DISPLAYS = "multiple_displays",
     SYSTEM_RESOURCE_ISSUE = "system_resource_issue",
     SESSION_ACTIVE = "session_active",
-    SUSPICIOUS_BEHAVIOR = "suspicious_behavior"
+    SUSPICIOUS_BEHAVIOR = "suspicious_behavior",
+    PASTE_ATTEMPT = "paste_attempt",
+    BACKGROUND_NOISE = "background_noise",
+    RIGHT_CLICK = "right_click",
+    DEVTOOLS_OPEN = "devtools_open",
+    COPY_ATTEMPT = "copy_attempt"
 }
 export declare enum NotificationType {
     EMAIL = "email",

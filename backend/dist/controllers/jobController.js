@@ -172,7 +172,17 @@ const createJob = async (req, res, next) => {
         }
         jobData.companyId = companyId;
         jobData.createdBy = req.user?._id;
-        jobData.status = types_1.JobStatus.DRAFT; // New jobs always start as draft
+        // Allow status override only to 'published'; everything else defaults to DRAFT
+        const requestedStatus = req.body.status;
+        jobData.status = requestedStatus === types_1.JobStatus.PUBLISHED ? types_1.JobStatus.PUBLISHED : types_1.JobStatus.DRAFT;
+        // Description required only when publishing
+        if (jobData.status === types_1.JobStatus.PUBLISHED) {
+            const descText = (jobData.description || '').replace(/<[^>]*>/g, '').trim();
+            if (!descText || descText.length < 10) {
+                (0, response_1.sendError)(res, 'Job description is required before publishing (at least 10 characters).', 400);
+                return;
+            }
+        }
         // VAL-003: Strip empty/blank skill strings before persisting
         if (Array.isArray(jobData.skills)) {
             jobData.skills = jobData.skills
@@ -224,6 +234,15 @@ const updateJob = async (req, res, next) => {
         for (const field of allowedUpdateFields) {
             if (req.body[field] !== undefined) {
                 sanitizedUpdate[field] = req.body[field];
+            }
+        }
+        // Description required when publishing
+        if (sanitizedUpdate.status === types_1.JobStatus.PUBLISHED) {
+            const existingDesc = sanitizedUpdate.description ?? job.description ?? '';
+            const descText = existingDesc.replace(/<[^>]*>/g, '').trim();
+            if (!descText || descText.length < 10) {
+                (0, response_1.sendError)(res, 'Job description is required before publishing (at least 10 characters).', 400);
+                return;
             }
         }
         // Cross-field validation (EC-01/EC-02)

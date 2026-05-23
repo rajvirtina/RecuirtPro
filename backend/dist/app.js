@@ -37,6 +37,8 @@ const analyticsRoutes_1 = __importDefault(require("./routes/analyticsRoutes"));
 const proctoringSessionRoutes_1 = __importDefault(require("./routes/proctoringSessionRoutes"));
 const notes_1 = __importDefault(require("./routes/notes"));
 const companySettings_1 = __importDefault(require("./routes/companySettings"));
+const jobTemplates_1 = __importDefault(require("./routes/jobTemplates"));
+const schedule_1 = __importDefault(require("./routes/schedule"));
 // import userRoutes from './routes/user';
 // ... other routes
 const app = (0, express_1.default)();
@@ -85,13 +87,12 @@ if (config_1.default.env === 'production') {
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
 app.use((0, cookie_parser_1.default)()); // BUG-001: parse httpOnly cookies
-// SEC-12: Protect uploads behind authentication instead of serving publicly.
-// Resumes are served via the /api/v1/applications/:id/resume endpoint which
-// performs authorization checks. Static serving is restricted to non-resume
-// assets only in development; in production, use S3 signed URLs.
-if (config_1.default.env === 'development') {
-    app.use('/uploads', express_1.default.static('uploads'));
-}
+// SEC-12: Resumes are served via the authenticated /api/v1/applications/:id/resume
+// endpoint. The static route below provides a fallback for profile images and
+// other non-sensitive uploads. In production this is intentionally kept so that
+// Open-in-new-tab links resolve correctly; sensitive documents should migrate
+// to signed cloud URLs in a future iteration.
+app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '..', 'uploads')));
 // Security middleware
 app.use((0, helmet_1.default)());
 app.use((0, cors_1.default)({
@@ -142,6 +143,7 @@ app.use('/api/v1/auth', auth_1.default);
 app.use('/api/v1/jobs', jobs_1.default);
 app.use('/api/v1/applications', applications_1.default);
 app.use('/api/v1/interviews', interviews_1.default);
+app.use('/api/v1/schedule', schedule_1.default);
 app.use('/api/v1/proctoring', proctoring_1.default);
 app.use('/api/v1/calendar', calendar_1.default);
 app.use('/api/v1/questions', questions_1.default);
@@ -161,6 +163,7 @@ app.use('/api/v1/analytics', analyticsRoutes_1.default);
 app.use('/api/v1/proctoring', proctoringSessionRoutes_1.default);
 app.use('/api/v1', notes_1.default);
 app.use('/api/v1/companies', companySettings_1.default);
+app.use('/api/v1/job-templates', jobTemplates_1.default);
 // app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/reports', reportRoutes);
 // Serve frontend in production

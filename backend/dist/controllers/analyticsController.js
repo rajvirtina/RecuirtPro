@@ -3,9 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getRecruiterProductivity = exports.getTimeToHire = exports.getSourceBreakdown = exports.getApplicationsOverTime = exports.getFunnel = void 0;
+exports.getAIScoreDistribution = exports.getOfferRate = exports.getRecruiterProductivity = exports.getTimeToHire = exports.getSourceBreakdown = exports.getApplicationsOverTime = exports.getFunnel = void 0;
 const mongoose_1 = __importDefault(require("mongoose"));
 const models_1 = require("../models");
+const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const auth_1 = require("../middleware/auth");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -315,4 +316,126 @@ const getRecruiterProductivity = async (req, res) => {
     }
 };
 exports.getRecruiterProductivity = getRecruiterProductivity;
+// ─── 6. Offer Acceptance Rate ─────────────────────────────────────────────────
+/**
+ * @desc  Offer funnel: sent, accepted, rejected, negotiating, withdrawn
+ * @route GET /api/v1/analytics/offer-rate?startDate=&endDate=
+ */
+const getOfferRate = async (req, res) => {
+    try {
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        const { start, end } = parseDates(req);
+        const match = { createdAt: { $gte: start, $lte: end } };
+        if (tenantId)
+            match.companyId = oid(tenantId);
+        const pipeline = [
+            { $match: match },
+            {
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 },
+                },
+            },
+        ];
+        const results = await models_1.Offer.aggregate(pipeline);
+        const statusMap = {};
+        results.forEach((r) => { statusMap[r._id] = r.count; });
+        const total = Object.values(statusMap).reduce((s, v) => s + v, 0);
+        const sent = (statusMap[types_1.OfferStatus.SENT] ?? 0) + (statusMap[types_1.OfferStatus.ACCEPTED] ?? 0) + (statusMap[types_1.OfferStatus.REJECTED] ?? 0) + (statusMap[types_1.OfferStatus.NEGOTIATING] ?? 0);
+        const accepted = statusMap[types_1.OfferStatus.ACCEPTED] ?? 0;
+        const rejected = statusMap[types_1.OfferStatus.REJECTED] ?? 0;
+        const negotiating = statusMap[types_1.OfferStatus.NEGOTIATING] ?? 0;
+        const withdrawn = statusMap[types_1.OfferStatus.WITHDRAWN] ?? 0;
+        return (0, response_1.sendSuccess)(res, {
+            total,
+            sent,
+            accepted,
+            rejected,
+            negotiating,
+            withdrawn,
+            acceptanceRate: sent > 0 ? Math.round((accepted / sent) * 100) : 0,
+            breakdown: [
+                { label: 'Accepted', value: accepted, color: '#22c55e' },
+                { label: 'Rejected', value: rejected, color: '#ef4444' },
+                { label: 'Negotiating', value: negotiating, color: '#f59e0b' },
+                { label: 'Withdrawn', value: withdrawn, color: '#6b7280' },
+                { label: 'Pending', value: (statusMap[types_1.OfferStatus.SENT] ?? 0), color: '#3b82f6' },
+            ].filter(b => b.value > 0),
+        }, 'Offer acceptance rate retrieved');
+    }
+    catch (error) {
+        logger_1.default.error('getOfferRate error:', error);
+        return (0, response_1.sendError)(res, error.message || 'Failed to retrieve offer data', 500);
+    }
+};
+exports.getOfferRate = getOfferRate;
+// ─── 7. AI Score Distribution ─────────────────────────────────────────────────
+/**
+ * @desc  Histogram of AI interview overallScore across applications
+ * @route GET /api/v1/analytics/ai-score-distribution?startDate=&endDate=
+ */
+const getAIScoreDistribution = async (req, res) => {
+    try {
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        const { start, end } = parseDates(req);
+        const match = {
+            overallScore: { $exists: true, $ne: null },
+            createdAt: { $gte: start, $lte: end },
+        };
+        if (tenantId)
+            match.companyId = oid(tenantId);
+        // Bucket scores into 10-point ranges: 0-10, 10-20, ..., 90-100
+        const pipeline = [
+            { $match: match },
+            {
+                $bucket: {
+                    groupBy: '$overallScore',
+                    boundaries: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 101],
+                    default: 'other',
+                    output: { count: { $sum: 1 } },
+                },
+            },
+        ];
+        const results = await models_1.Application.aggregate(pipeline);
+        // Build histogram data
+        const bucketLabels = ['0-9', '10-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79', '80-89', '90-100'];
+        const boundaries = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+        const histogram = boundaries.map((b, i) => {
+            const found = results.find((r) => r._id === b);
+            return {
+                range: bucketLabels[i],
+                count: found?.count ?? 0,
+            };
+        });
+        // Stats
+        const statsAgg = await models_1.Application.aggregate([
+            { $match: match },
+            {
+                $group: {
+                    _id: null,
+                    avg: { $avg: '$overallScore' },
+                    median: { $avg: '$overallScore' }, // approximate
+                    min: { $min: '$overallScore' },
+                    max: { $max: '$overallScore' },
+                    total: { $sum: 1 },
+                },
+            },
+        ]);
+        const stats = statsAgg[0] ?? { avg: 0, min: 0, max: 0, total: 0 };
+        return (0, response_1.sendSuccess)(res, {
+            histogram,
+            stats: {
+                average: Math.round((stats.avg ?? 0) * 10) / 10,
+                min: stats.min ?? 0,
+                max: stats.max ?? 0,
+                total: stats.total ?? 0,
+            },
+        }, 'AI score distribution retrieved');
+    }
+    catch (error) {
+        logger_1.default.error('getAIScoreDistribution error:', error);
+        return (0, response_1.sendError)(res, error.message || 'Failed to retrieve AI score data', 500);
+    }
+};
+exports.getAIScoreDistribution = getAIScoreDistribution;
 //# sourceMappingURL=analyticsController.js.map

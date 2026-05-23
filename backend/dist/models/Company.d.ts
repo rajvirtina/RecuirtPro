@@ -27,6 +27,7 @@ export interface ICompanyDocument extends Document {
         logoUrl?: string;
         primaryColor?: string;
         faviconUrl?: string;
+        customDomain?: string;
     };
     settings?: {
         enableProctoring?: boolean;
@@ -43,6 +44,7 @@ export interface ICompanyDocument extends Document {
         emailOnNewApplication?: boolean;
         emailOnStageChange?: boolean;
         smsEnabled?: boolean;
+        dailyDigest?: boolean;
     };
     emailVerified: boolean;
     emailVerificationToken?: string;

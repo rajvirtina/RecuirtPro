@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resendVerification = exports.changePassword = exports.resetPassword = exports.forgotPassword = exports.verifyEmail = exports.refresh = exports.logout = exports.getMe = exports.login = exports.register = void 0;
+exports.resendVerification = exports.updateProfile = exports.changePassword = exports.resetPassword = exports.forgotPassword = exports.verifyEmail = exports.refresh = exports.logout = exports.getMe = exports.login = exports.register = void 0;
 const express_validator_1 = require("express-validator");
 const models_1 = require("../models");
 const response_1 = require("../utils/response");
@@ -192,14 +192,30 @@ const register = async (req, res, next) => {
             user.emailVerified = true;
             await user.save();
         }
-        // Generate tokens
+        logger_1.default.info(`New user registered: ${user.email}`);
+        // If the user still needs to verify email (production, non-SKIP_EMAIL mode),
+        // do NOT issue auth tokens. The user must verify first, then login normally.
+        if (emailVerificationEnabled && !user.emailVerified) {
+            (0, response_1.sendSuccess)(res, {
+                user: {
+                    id: user._id,
+                    email: user.email,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    role: user.role,
+                    emailVerified: false,
+                },
+                requiresEmailVerification: true,
+            }, 'Registration successful. Please check your email and verify your account before signing in.', 201);
+            return;
+        }
+        // User is immediately active (dev/SKIP_EMAIL mode, or verification disabled)
         const accessToken = user.generateAuthToken();
         const refreshToken = user.generateRefreshToken();
         // BUG-001: Set httpOnly auth cookies
         setAccessCookie(res, accessToken);
         setRefreshCookie(res, refreshToken);
         const csrfToken = setCsrfCookie(res);
-        logger_1.default.info(`New user registered: ${user.email}`);
         (0, response_1.sendSuccess)(res, {
             user: {
                 id: user._id,
@@ -212,7 +228,7 @@ const register = async (req, res, next) => {
             accessToken,
             refreshToken,
             csrfToken,
-        }, 'Registration successful. Please check your email to verify your account.', 201);
+        }, 'Registration successful!', 201);
     }
     catch (error) {
         next(error);
@@ -669,6 +685,37 @@ const changePassword = async (req, res, next) => {
     }
 };
 exports.changePassword = changePassword;
+/**
+ * @desc    Update user profile (firstName, lastName, phoneNumber)
+ * @route   PUT /api/v1/auth/profile
+ * @access  Private
+ */
+const updateProfile = async (req, res, next) => {
+    try {
+        const { firstName, lastName, phoneNumber } = req.body;
+        if (!firstName?.trim() || !lastName?.trim()) {
+            (0, response_1.sendError)(res, 'First name and last name are required', 400);
+            return;
+        }
+        const updateData = {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+        };
+        if (phoneNumber !== undefined)
+            updateData.phoneNumber = phoneNumber;
+        const updated = await models_1.User.findByIdAndUpdate(req.user?._id, updateData, { new: true, runValidators: true }).select('-password');
+        if (!updated) {
+            (0, response_1.sendError)(res, 'User not found', 404);
+            return;
+        }
+        logger_1.default.info(`Profile updated for user: ${updated.email}`);
+        (0, response_1.sendSuccess)(res, { user: updated }, 'Profile updated successfully');
+    }
+    catch (error) {
+        next(error);
+    }
+};
+exports.updateProfile = updateProfile;
 /**
  * @desc    Resend verification email
  * @route   POST /api/v1/auth/resend-verification

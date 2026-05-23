@@ -12,6 +12,10 @@ export interface IApplicationDocument extends Document {
     companyId: mongoose.Types.ObjectId;
     resumeUrl?: string;
     coverLetter?: string;
+    expectedSalary?: number;
+    currentSalary?: number;
+    preferredLocation?: string;
+    currentLocation?: string;
     status: ApplicationStatus;
     statusHistory: IStatusHistory[];
     skillMatchScore?: number;

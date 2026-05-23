@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const express_validator_1 = require("express-validator");
 const jobController_1 = require("../controllers/jobController");
+const jobTemplateController_1 = require("../controllers/jobTemplateController");
 const auth_1 = require("../middleware/auth");
 const validator_1 = require("../middleware/validator");
 const types_1 = require("../types");
@@ -38,7 +39,8 @@ router.get('/:id', auth_1.optionalAuth, [(0, express_validator_1.param)('id').is
  */
 router.post('/', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [
     (0, express_validator_1.body)('title').trim().notEmpty().withMessage('Job title is required'),
-    (0, express_validator_1.body)('description').trim().notEmpty().withMessage('Job description is required'),
+    // Description is required only for 'published' jobs; drafts may omit it
+    (0, express_validator_1.body)('description').optional({ nullable: true, checkFalsy: false }).trim(),
     (0, express_validator_1.body)('companyId').optional().isMongoId().withMessage('Invalid company ID'),
     (0, express_validator_1.body)('location').optional().trim(),
     (0, express_validator_1.body)('jobType').optional().isIn(['full_time', 'part_time', 'contract', 'internship', 'temporary']),
@@ -67,5 +69,11 @@ router.put('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOY
  * @access  Private (HR, Admin only — Employers may not delete jobs)
  */
 router.delete('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Invalid job ID')], validator_1.validate, jobController_1.deleteJob);
+/**
+ * @route   POST /api/v1/jobs/:id/duplicate
+ * @desc    Duplicate a job as a new draft
+ * @access  Private (Employer, HR, Admin)
+ */
+router.post('/:id/duplicate', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Invalid job ID')], validator_1.validate, jobTemplateController_1.duplicateJob);
 exports.default = router;
 //# sourceMappingURL=jobs.js.map

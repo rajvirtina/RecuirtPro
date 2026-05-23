@@ -19,7 +19,7 @@ const auth_1 = require("../middleware/auth");
  */
 const submitApplication = async (req, res) => {
     try {
-        const { jobId, coverLetter, expectedSalary } = req.body;
+        const { jobId, coverLetter, expectedSalary, currentSalary, preferredLocation, currentLocation } = req.body;
         const userId = req.user?._id;
         // Get resume URL from uploaded file or body
         let resumeUrl = req.body.resumeUrl;
@@ -61,9 +61,12 @@ const submitApplication = async (req, res) => {
                 jobId,
                 candidateId: userId,
                 companyId: job.companyId,
-                coverLetter,
+                coverLetter: coverLetter || undefined,
                 resumeUrl: resumeUrl || candidateProfile.resumeUrl,
-                expectedSalary,
+                expectedSalary: expectedSalary ? Number(expectedSalary) : undefined,
+                currentSalary: currentSalary ? Number(currentSalary) : undefined,
+                preferredLocation: preferredLocation || undefined,
+                currentLocation: currentLocation || undefined,
                 status: types_1.ApplicationStatus.APPLIED,
             });
         }
@@ -365,7 +368,9 @@ const downloadResume = async (req, res) => {
         // Prevent path traversal (SEC-04/B-05)
         const path = require('path');
         const uploadsDir = path.resolve(__dirname, '../../uploads');
-        const filePath = path.resolve(__dirname, '../../', application.resumeUrl);
+        // Strip leading slashes so path.resolve doesn't treat the stored URL as absolute
+        const sanitizedResumeUrl = application.resumeUrl.replace(/^\/+/, '');
+        const filePath = path.resolve(__dirname, '../../', sanitizedResumeUrl);
         // Ensure resolved path stays within the uploads directory
         if (!filePath.startsWith(uploadsDir)) {
             logger_1.default.warn(`[downloadResume] Path traversal attempt blocked: ${application.resumeUrl}`);

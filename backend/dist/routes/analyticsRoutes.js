@@ -28,5 +28,9 @@ router.get('/time-to-hire', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmpl
 ], validator_1.validate, analyticsController_1.getTimeToHire);
 /** Per-recruiter activity: applications, interviews, offers, response time */
 router.get('/recruiter-productivity', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmployer), dateQueryValidators, validator_1.validate, analyticsController_1.getRecruiterProductivity);
+/** Offer acceptance rate breakdown */
+router.get('/offer-rate', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmployer), dateQueryValidators, validator_1.validate, analyticsController_1.getOfferRate);
+/** AI interview score distribution histogram */
+router.get('/ai-score-distribution', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmployer), dateQueryValidators, validator_1.validate, analyticsController_1.getAIScoreDistribution);
 exports.default = router;
 //# sourceMappingURL=analyticsRoutes.js.map

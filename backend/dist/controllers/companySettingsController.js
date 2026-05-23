@@ -3,11 +3,43 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updatePipelineStages = exports.getPipelineStages = exports.uploadLogo = exports.updateBranding = exports.updateCompanySettings = exports.getCompanySettings = void 0;
+exports.updatePipelineStages = exports.getPipelineStages = exports.uploadLogo = exports.updateBranding = exports.updateCompanySettings = exports.getCompanySettings = exports.getPublicBranding = void 0;
 const models_1 = require("../models");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
 const auth_1 = require("../middleware/auth");
+/**
+ * GET /api/v1/companies/public/:slug/branding
+ * Public — no auth required. Returns branding for the white-label portal.
+ */
+const getPublicBranding = async (req, res) => {
+    try {
+        const { slug } = req.params;
+        if (!slug)
+            return (0, response_1.sendError)(res, 'Slug is required', 400);
+        const company = await models_1.Company.findOne({ slug, status: 'active', deletedAt: null }).lean();
+        if (!company)
+            return (0, response_1.sendError)(res, 'Company not found', 404);
+        return (0, response_1.sendSuccess)(res, {
+            name: company.name,
+            slug: company.slug,
+            logo: company.logo || company.branding?.logoUrl || null,
+            description: company.description || null,
+            website: company.website || null,
+            branding: {
+                primaryColor: company.branding?.primaryColor || '#4f46e5',
+                logoUrl: company.branding?.logoUrl || company.logo || null,
+                faviconUrl: company.branding?.faviconUrl || null,
+                customDomain: company.branding?.customDomain || null,
+            },
+        }, 'Public branding retrieved');
+    }
+    catch (error) {
+        logger_1.default.error('Error in getPublicBranding:', error);
+        return (0, response_1.sendError)(res, 'Error fetching company branding', 500);
+    }
+};
+exports.getPublicBranding = getPublicBranding;
 /**
  * GET /api/v1/companies/settings
  */
@@ -85,7 +117,7 @@ const updateBranding = async (req, res) => {
         const companyId = (0, auth_1.getTenantCompanyId)(req.user);
         if (!companyId)
             return (0, response_1.sendError)(res, 'No company associated', 400);
-        const { primaryColor, faviconUrl, logoUrl } = req.body;
+        const { primaryColor, faviconUrl, logoUrl, customDomain } = req.body;
         const update = {};
         if (primaryColor) {
             if (!/^#[0-9a-fA-F]{6}$/.test(primaryColor)) {
@@ -97,6 +129,8 @@ const updateBranding = async (req, res) => {
             update['branding.faviconUrl'] = faviconUrl;
         if (logoUrl !== undefined)
             update['branding.logoUrl'] = logoUrl;
+        if (customDomain !== undefined)
+            update['branding.customDomain'] = customDomain || null;
         const company = await models_1.Company.findByIdAndUpdate(companyId, { $set: update }, { new: true }).lean();
         if (!company)
             return (0, response_1.sendError)(res, 'Company not found', 404);

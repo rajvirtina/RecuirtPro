@@ -55,6 +55,12 @@ export declare const resetPassword: (req: AuthRequest, res: Response, next: Next
  */
 export declare const changePassword: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
 /**
+ * @desc    Update user profile (firstName, lastName, phoneNumber)
+ * @route   PUT /api/v1/auth/profile
+ * @access  Private
+ */
+export declare const updateProfile: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>;
+/**
  * @desc    Resend verification email
  * @route   POST /api/v1/auth/resend-verification
  * @access  Private

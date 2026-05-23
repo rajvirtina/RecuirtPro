@@ -1,5 +1,10 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../types';
+/**
+ * GET /api/v1/companies/public/:slug/branding
+ * Public — no auth required. Returns branding for the white-label portal.
+ */
+export declare const getPublicBranding: (req: Request, res: Response) => Promise<Response<any, Record<string, any>>>;
 /**
  * GET /api/v1/companies/settings
  */

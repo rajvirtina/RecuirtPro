@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.startInterview = exports.submitInterviewFeedback = exports.cancelInterview = exports.updateInterviewStatus = exports.updateInterview = exports.getInterviewById = exports.getInterviews = exports.scheduleInterview = void 0;
+exports.getInterviewFeedbackInfo = exports.startInterview = exports.submitInterviewFeedback = exports.cancelInterview = exports.updateInterviewStatus = exports.updateInterview = exports.getInterviewById = exports.getInterviews = exports.scheduleInterview = void 0;
 const models_1 = require("../models");
 const ActivityEvent_1 = require("../models/ActivityEvent");
 const types_1 = require("../types");
@@ -468,4 +468,48 @@ const startInterview = async (req, res) => {
     }
 };
 exports.startInterview = startInterview;
+/**
+ * @desc    Get interview info for external scorecard form
+ * @route   GET /api/v1/interviews/:id/feedback-info
+ * @access  Private (Panel member / HR / Admin / Employer)
+ */
+const getInterviewFeedbackInfo = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const interview = await models_1.Interview.findById(id)
+            .populate('jobId', 'title location')
+            .populate('candidateId', 'firstName lastName email')
+            .lean();
+        if (!interview) {
+            return (0, response_1.sendError)(res, 'Interview not found', 404);
+        }
+        // Authorization: company members, panel members, or super admin
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        const isPanelMember = interview.panel.some((m) => (m.userId?.toString?.() ?? m.userId) === req.user?._id?.toString());
+        const isCompanyMember = tenantId
+            ? interview.companyId?.toString() === tenantId
+            : false;
+        if (!(0, auth_1.isSuperAdmin)(req.user) && !isPanelMember && !isCompanyMember) {
+            return (0, response_1.sendError)(res, 'Not authorized to view this interview scorecard', 403);
+        }
+        const job = interview.jobId;
+        const candidate = interview.candidateId;
+        return (0, response_1.sendSuccess)(res, {
+            jobTitle: job?.title || 'N/A',
+            candidateName: candidate
+                ? `${candidate.firstName} ${candidate.lastName}`
+                : 'Candidate',
+            interviewType: interview.round || 'Interview',
+            interviewerName: `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Interviewer',
+            status: interview.status,
+            scheduledTime: interview.scheduledTime,
+            existingFeedback: interview.feedback.find((fb) => fb.interviewerId?.toString() === req.user?._id?.toString()) ?? null,
+        }, 'Interview info retrieved');
+    }
+    catch (error) {
+        logger_1.default.error('Error in getInterviewFeedbackInfo:', error);
+        return (0, response_1.sendError)(res, error.message || 'Error retrieving interview info', 500);
+    }
+};
+exports.getInterviewFeedbackInfo = getInterviewFeedbackInfo;
 //# sourceMappingURL=interviewController.js.map

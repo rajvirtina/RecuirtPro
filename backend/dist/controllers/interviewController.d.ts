@@ -48,4 +48,10 @@ export declare const submitInterviewFeedback: (req: AuthRequest, res: Response) 
  * @access  Private (Panel members, Employer/HR/Admin, Candidate)
  */
 export declare const startInterview: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc    Get interview info for external scorecard form
+ * @route   GET /api/v1/interviews/:id/feedback-info
+ * @access  Private (Panel member / HR / Admin / Employer)
+ */
+export declare const getInterviewFeedbackInfo: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=interviewController.d.ts.map

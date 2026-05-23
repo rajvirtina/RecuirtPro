@@ -313,5 +313,40 @@ router.post('/change-password', auth_1.protect, [
  *         description: Verification email sent
  */
 router.post('/resend-verification', auth_1.protect, authController.resendVerification);
+/**
+ * @swagger
+ * /api/v1/auth/profile:
+ *   put:
+ *     summary: Update user profile (firstName, lastName, phoneNumber)
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - firstName
+ *               - lastName
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       400:
+ *         description: Validation error
+ */
+router.put('/profile', auth_1.protect, [
+    (0, express_validator_1.body)('firstName').trim().notEmpty().withMessage('First name is required'),
+    (0, express_validator_1.body)('lastName').trim().notEmpty().withMessage('Last name is required'),
+    (0, express_validator_1.body)('phoneNumber').optional().isMobilePhone('any'),
+], authController.updateProfile);
 exports.default = router;
 //# sourceMappingURL=auth.js.map

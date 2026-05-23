@@ -13,6 +13,7 @@ const response_1 = require("../utils/response");
 const auth_1 = require("../middleware/auth");
 const config_1 = __importDefault(require("../config"));
 const logger_1 = __importDefault(require("../utils/logger"));
+const ActivityEvent_1 = require("../models/ActivityEvent");
 // ─── LLM client (reuse pattern from aiInterviewController) ───────────────────
 const llm = axios_1.default.create({
     baseURL: config_1.default.llm.serviceUrl,
@@ -23,12 +24,27 @@ const llm = axios_1.default.create({
     },
 });
 // ─── File reading helpers ─────────────────────────────────────────────────────
-/** Resolve a stored resumeUrl to an absolute filesystem path */
+/**
+ * Resolve a stored resumeUrl to an absolute filesystem path.
+ *
+ * The upload middleware stores files at:
+ *   <backend>/uploads/resumes/<filename>
+ *
+ * This file compiles to <backend>/dist/controllers/resumeParserController.js,
+ * so __dirname resolves to <backend>/dist/controllers/ and
+ * two levels up (../../) gives us <backend>/, which is exactly where
+ * the `uploads/` directory lives — regardless of process.cwd().
+ *
+ * Using __dirname is more reliable than process.cwd() in production
+ * (Hostinger, Docker) where the working directory may differ from the
+ * backend root.
+ */
 function resolveResumePath(resumeUrl) {
-    // resumeUrl is stored as /uploads/resumes/filename.pdf
-    if (path_1.default.isAbsolute(resumeUrl))
-        return resumeUrl;
-    return path_1.default.resolve(process.cwd(), resumeUrl.replace(/^\//, ''));
+    // __dirname = <backend>/dist/controllers  →  ../../ = <backend>/
+    const backendRoot = path_1.default.join(__dirname, '..', '..');
+    // Always treat resumeUrl as relative to backendRoot.
+    // Strip any leading slash to prevent path.join from treating it as absolute.
+    return path_1.default.join(backendRoot, resumeUrl.replace(/^\/+/, ''));
 }
 /** Extract plain text from a PDF or DOCX/DOC resume file */
 async function extractResumeText(resumeUrl) {
@@ -112,6 +128,14 @@ const parseResume = async (req, res) => {
             parsedAt: new Date(),
         };
         await models_1.Application.findByIdAndUpdate(id, { $set: update });
+        // Log activity event
+        await ActivityEvent_1.ActivityEvent.create({
+            applicationId: id,
+            actorId: req.user?._id,
+            actorName: `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'System',
+            type: 'resume_parsed',
+            metadata: { parsedAt: update.parsedAt, skillCount: update.parsedSkills.length },
+        });
         logger_1.default.info(`Resume parsed for application ${id}: ${update.parsedSkills.length} skills extracted`);
         return (0, response_1.sendSuccess)(res, {
             applicationId: id,

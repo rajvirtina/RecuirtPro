@@ -109,6 +109,7 @@ const companySchema = new mongoose_1.Schema({
         logoUrl: String,
         primaryColor: { type: String, default: '#4f46e5' },
         faviconUrl: String,
+        customDomain: { type: String, trim: true },
     },
     defaultPipelineStages: {
         type: [{
@@ -130,6 +131,7 @@ const companySchema = new mongoose_1.Schema({
         emailOnNewApplication: { type: Boolean, default: true },
         emailOnStageChange: { type: Boolean, default: true },
         smsEnabled: { type: Boolean, default: false },
+        dailyDigest: { type: Boolean, default: false },
     },
     status: {
         type: String,

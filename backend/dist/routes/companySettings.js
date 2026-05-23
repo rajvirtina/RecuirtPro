@@ -63,6 +63,8 @@ const logoUpload = (0, multer_1.default)({
     },
 });
 const router = (0, express_1.Router)();
+// Public endpoint — no auth required
+router.get('/public/:slug/branding', ctrl.getPublicBranding);
 router.use(auth_1.protect);
 router.get('/settings', ctrl.getCompanySettings);
 router.patch('/settings', (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), ctrl.updateCompanySettings);

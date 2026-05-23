@@ -120,6 +120,12 @@ var ProctoringEventType;
     ProctoringEventType["SYSTEM_RESOURCE_ISSUE"] = "system_resource_issue";
     ProctoringEventType["SESSION_ACTIVE"] = "session_active";
     ProctoringEventType["SUSPICIOUS_BEHAVIOR"] = "suspicious_behavior";
+    // Browser detection events
+    ProctoringEventType["PASTE_ATTEMPT"] = "paste_attempt";
+    ProctoringEventType["BACKGROUND_NOISE"] = "background_noise";
+    ProctoringEventType["RIGHT_CLICK"] = "right_click";
+    ProctoringEventType["DEVTOOLS_OPEN"] = "devtools_open";
+    ProctoringEventType["COPY_ATTEMPT"] = "copy_attempt";
 })(ProctoringEventType || (exports.ProctoringEventType = ProctoringEventType = {}));
 // Notification Type
 var NotificationType;

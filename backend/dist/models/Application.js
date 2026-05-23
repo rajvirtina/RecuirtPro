@@ -71,6 +71,10 @@ const applicationSchema = new mongoose_1.Schema({
     },
     resumeUrl: String,
     coverLetter: String,
+    expectedSalary: { type: Number, min: 0 },
+    currentSalary: { type: Number, min: 0 },
+    preferredLocation: String,
+    currentLocation: String,
     status: {
         type: String,
         enum: Object.values(types_1.ApplicationStatus),

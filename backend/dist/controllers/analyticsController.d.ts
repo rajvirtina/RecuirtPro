@@ -25,4 +25,14 @@ export declare const getTimeToHire: (req: AuthRequest, res: Response) => Promise
  * @route GET /api/v1/analytics/recruiter-productivity?startDate=&endDate=
  */
 export declare const getRecruiterProductivity: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc  Offer funnel: sent, accepted, rejected, negotiating, withdrawn
+ * @route GET /api/v1/analytics/offer-rate?startDate=&endDate=
+ */
+export declare const getOfferRate: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc  Histogram of AI interview overallScore across applications
+ * @route GET /api/v1/analytics/ai-score-distribution?startDate=&endDate=
+ */
+export declare const getAIScoreDistribution: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=analyticsController.d.ts.map

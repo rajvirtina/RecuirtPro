@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const express_validator_1 = require("express-validator");
 const interviewController = __importStar(require("../controllers/interviewController"));
+const scheduleController_1 = require("../controllers/scheduleController");
 const auth_1 = require("../middleware/auth");
 const validator_1 = require("../middleware/validator");
 const types_1 = require("../types");
@@ -190,6 +191,19 @@ router.post('/:id/feedback', auth_1.protect, [
 ], validator_1.validate, interviewController.submitInterviewFeedback);
 /**
  * @swagger
+ * /api/v1/interviews/{id}/feedback-info:
+ *   get:
+ *     summary: Get interview info needed to display the external scorecard form
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Interview info retrieved
+ */
+router.get('/:id/feedback-info', auth_1.protect, [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required')], validator_1.validate, interviewController.getInterviewFeedbackInfo);
+/**
+ * @swagger
  * /api/v1/interviews/{id}:
  *   delete:
  *     summary: Cancel interview
@@ -204,5 +218,21 @@ router.delete('/:id', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMP
     (0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required'),
     (0, express_validator_1.body)('reason').optional().isString().isLength({ max: 500 }),
 ], validator_1.validate, interviewController.cancelInterview);
+/**
+ * @swagger
+ * /api/v1/interviews/{id}/self-schedule-link:
+ *   post:
+ *     summary: Generate a self-scheduling link for the candidate
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Self-schedule link generated
+ */
+router.post('/:id/self-schedule-link', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required')], validator_1.validate, (req, res) => {
+    req.params.interviewId = req.params.id;
+    return (0, scheduleController_1.generateSelfScheduleLink)(req, res);
+});
 exports.default = router;
 //# sourceMappingURL=interviews.js.map
