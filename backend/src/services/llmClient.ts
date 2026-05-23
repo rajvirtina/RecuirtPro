@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 
 /**
  * LLM Service Client — calls the Python LLM microservice for AI features.
- * Endpoints: /api/schedule, /api/feedback, /api/candidate-message
+ * Endpoints: /api/schedule-interview, /api/analyze-feedback, /api/candidate-message
  */
 class LLMServiceClient {
   private client: AxiosInstance;
@@ -68,7 +68,7 @@ class LLMServiceClient {
     }
 
     try {
-      const res = await this.client.post('/api/schedule', data);
+      const res = await this.client.post('/api/schedule-interview', data);
       return res.data;
     } catch (error: any) {
       logger.error('LLM schedule error:', error.message);
@@ -100,7 +100,7 @@ class LLMServiceClient {
     }
 
     try {
-      const res = await this.client.post('/api/feedback', data);
+      const res = await this.client.post('/api/analyze-feedback', data);
       return res.data;
     } catch (error: any) {
       logger.error('LLM feedback error:', error.message);

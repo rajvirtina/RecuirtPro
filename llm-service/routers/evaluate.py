@@ -11,8 +11,8 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Header
-from pydantic import BaseModel, Field, validator
-import openai
+from pydantic import BaseModel, Field, field_validator
+from openai import OpenAI as _OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL   = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 API_SECRET_KEY = os.getenv("API_SECRET_KEY", "default-secret-key")
 
+_client: Optional[_OpenAI] = None
 if OPENAI_API_KEY:
-    openai.api_key = OPENAI_API_KEY
+    _client = _OpenAI(api_key=OPENAI_API_KEY)
 
 router = APIRouter()
 
@@ -59,9 +60,9 @@ async def verify_api_key(x_api_key: str = Header(None)):
 
 def _call_llm(prompt: str, temperature: float = 0.2, max_tokens: int = 1200) -> str:
     """Call OpenAI. Raises ValueError (not HTTPException) so callers can fallback."""
-    if not OPENAI_API_KEY:
+    if not _client:
         raise ValueError("OPENAI_API_KEY not configured")
-    response = openai.ChatCompletion.create(
+    response = _client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
             {
@@ -77,7 +78,7 @@ def _call_llm(prompt: str, temperature: float = 0.2, max_tokens: int = 1200) -> 
         temperature=temperature,
         max_tokens=max_tokens,
     )
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content
 
 
 def _parse_json(text: str, fallback: dict) -> dict:
@@ -105,19 +106,21 @@ def _parse_json(text: str, fallback: dict) -> dict:
 class GenerateQuestionsRequest(BaseModel):
     job_title: str        = Field(..., max_length=200)
     job_description: str  = Field(..., max_length=3000)
-    required_skills: List[str] = Field(..., max_items=30)
+    required_skills: List[str] = Field(..., max_length=30)
     interview_round: str  = Field(..., description="L1|L2|L3|HR|technical|managerial")
     difficulty: str       = Field("senior", description="junior|senior|expert")
     num_questions: int    = Field(7, ge=3, le=12)
 
-    @validator("interview_round")
+    @field_validator("interview_round")
+    @classmethod
     def valid_round(cls, v):
         allowed = {"L1", "L2", "L3", "HR", "technical", "managerial"}
         if v not in allowed:
             raise ValueError(f"interview_round must be one of {allowed}")
         return v
 
-    @validator("difficulty")
+    @field_validator("difficulty")
+    @classmethod
     def valid_difficulty(cls, v):
         if v not in {"junior", "senior", "expert"}:
             raise ValueError("difficulty must be junior, senior, or expert")
@@ -141,7 +144,7 @@ class GenerateQuestionsResponse(BaseModel):
 
 class EvaluateResponseRequest(BaseModel):
     job_title: str       = Field(..., max_length=200)
-    required_skills: List[str] = Field(..., max_items=30)
+    required_skills: List[str] = Field(..., max_length=30)
     question: str        = Field(..., max_length=1000)
     question_type: str   = Field(..., description="technical|behavioral|situational|hr")
     response_text: str   = Field(..., max_length=3000)

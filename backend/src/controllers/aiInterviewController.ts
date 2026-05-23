@@ -7,6 +7,7 @@ import { Interview, Job, Company, Application } from '../models';
 import { AuthRequest, ApplicationStatus, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId } from '../middleware/auth';
+import { sendEmail } from '../services/emailService';
 import config from '../config';
 import logger from '../utils/logger';
 
@@ -49,6 +50,77 @@ function deriveRecommendation(
   if (meanOverall >= 6 && passRate >= 0.6) return 'hire';
   if (meanOverall >= 4 && passRate >= 0.4) return 'hold';
   return 'reject';
+}
+
+/**
+ * Fire-and-forget: email the interview panel when an AI session completes.
+ * Failures are swallowed so they never surface to the candidate's response.
+ */
+async function notifyRecruitersOfCompletion(
+  interviewId: mongoose.Types.ObjectId,
+  session: { jobTitle: string; candidateId: mongoose.Types.ObjectId },
+  analysis: IAIAnalysis
+): Promise<void> {
+  try {
+    const interview = await Interview.findById(interviewId)
+      .populate<{ candidateId: { firstName: string; lastName: string; email: string } }>('candidateId', 'firstName lastName email')
+      .populate<{ panel: Array<{ email: string; firstName: string }> }>('panel', 'email firstName')
+      .lean();
+
+    if (!interview) return;
+
+    const candidate = interview.candidateId as any;
+    const candName  = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : 'Candidate';
+
+    // Gather recipient emails: panel members first, fall back to createdBy if panel is empty
+    const panelEmails: string[] = (interview.panel as any[])
+      .map((p: any) => p?.email)
+      .filter((e): e is string => !!e);
+
+    if (panelEmails.length === 0) return; // no one to notify
+
+    const recLabel: Record<string, string> = {
+      strong_hire: '✅ Strong Hire',
+      hire:        '✅ Hire',
+      hold:        '⏸ On Hold',
+      reject:      '❌ Not Recommended',
+    };
+
+    const reviewUrl = `${config.frontendUrl}/interviews/${interviewId}`;
+
+    const emailHtml = `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#374151;">
+        <h2 style="color:#111827;margin-bottom:4px;">AI Interview Complete</h2>
+        <p style="color:#6b7280;margin-top:0;">${session.jobTitle}</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
+        <p><strong>Candidate:</strong> ${candName}</p>
+        <p><strong>Overall Score:</strong> ${analysis.overallScore}%</p>
+        <p><strong>Questions:</strong> ${analysis.questionsAnswered} answered · ${analysis.questionsPassed} passed</p>
+        <p><strong>Recommendation:</strong> ${recLabel[analysis.recommendation] ?? analysis.recommendation}</p>
+        <p style="margin-top:8px;color:#6b7280;font-style:italic;">${analysis.summary}</p>
+        <a href="${reviewUrl}"
+           style="display:inline-block;margin-top:16px;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">
+          View Full Report
+        </a>
+        <p style="margin-top:24px;font-size:12px;color:#9ca3af;">
+          This notification was sent automatically by RecruitPro AI Interview.
+        </p>
+      </div>`;
+
+    await Promise.allSettled(
+      panelEmails.map(email =>
+        sendEmail({
+          to:      email,
+          subject: `AI Interview Complete — ${candName} · ${session.jobTitle}`,
+          html:    emailHtml,
+        })
+      )
+    );
+
+    logger.info(`Recruiter notification sent for session interviewId=${interviewId} to ${panelEmails.length} recipient(s)`);
+  } catch (err: any) {
+    logger.warn(`notifyRecruitersOfCompletion failed (non-fatal): ${err.message}`);
+  }
 }
 
 /** Build a final analysis object from stored responses. */
@@ -402,6 +474,11 @@ export const submitAnswer = async (req: Request, res: Response): Promise<void> =
 
     await AIInterviewSession.updateOne({ sessionId }, update);
 
+    // Notify panel asynchronously — do NOT await so candidate gets an instant response
+    if (isComplete && analysis) {
+      void notifyRecruitersOfCompletion(session.interviewId, session, analysis);
+    }
+
     const nextQuestion = isComplete ? null : session.questions[nextIndex];
 
     sendSuccess(res, {
@@ -482,6 +559,29 @@ export const getSessionForReview = async (req: AuthRequest, res: Response): Prom
   } catch (error: any) {
     logger.error('getSessionForReview error:', error);
     sendError(res, error.message || 'Failed to retrieve session', 500);
+  }
+};
+
+/**
+ * @desc  Candidate flags a technical/content issue — logs it without touching session status
+ * @route POST /api/v1/ai-interviews/session/:sessionId/flag
+ * @auth  Public (session ID is the credential)
+ */
+export const flagSession = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { sessionId } = req.params;
+    const { reason }    = req.body;
+
+    const session = await resolveSession(sessionId);
+    if (!session) { sendError(res, 'Session not found or expired', 404); return; }
+
+    // Log prominently so ops/support can act without terminating the session
+    logger.warn(`[AI Interview FLAG] session=${sessionId} candidate=${session.candidateId} job="${session.jobTitle}" reason="${reason?.slice(0, 300)}"`);
+
+    sendSuccess(res, {}, 'Issue reported');
+  } catch (error: any) {
+    logger.error('flagSession error:', error);
+    sendError(res, 'Failed to report issue', 500);
   }
 };
 

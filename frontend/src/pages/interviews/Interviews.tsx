@@ -5,6 +5,7 @@ import apiClient from '../../services/api';
 import { StatusBadge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import { Button } from '../../components/ui/Button';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyInterviews } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
 import { toast } from 'sonner';
@@ -47,9 +48,11 @@ export default function Interviews() {
   const user = useAuthStore((state) => state.user);
   const isEmployer = user?.role !== 'candidate';
 
-  const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [filter, setFilter]         = useState('');
+  const [interviews, setInterviews]   = useState<Interview[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [filter, setFilter]           = useState('');
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelling, setCancelling]   = useState(false);
 
   const fetchInterviews = useCallback(async () => {
     try {
@@ -66,14 +69,18 @@ export default function Interviews() {
 
   useEffect(() => { fetchInterviews(); }, [fetchInterviews]);
 
-  const handleCancel = async (id: string) => {
-    if (!window.confirm('Cancel this interview? This cannot be undone.')) return;
+  const handleConfirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
     try {
-      await apiClient.delete(`/interviews/${id}`, { data: { reason: 'Cancelled by interviewer' } });
+      await apiClient.delete(`/interviews/${cancelTarget}`, { data: { reason: 'Cancelled by interviewer' } });
       toast.success('Interview cancelled');
+      setCancelTarget(null);
       fetchInterviews();
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to cancel');
+      toast.error(e?.response?.data?.message || 'Failed to cancel interview');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -206,7 +213,7 @@ export default function Interviews() {
                             variant="ghost"
                             size="sm"
                             className="text-error-600 hover:bg-error-50"
-                            onClick={() => handleCancel(iv._id)}
+                            onClick={() => setCancelTarget(iv._id)}
                           >
                             Cancel
                           </Button>
@@ -242,6 +249,17 @@ export default function Interviews() {
           })
         )}
       </div>
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title="Cancel this interview?"
+        message="The candidate and interviewers will be notified. This action cannot be undone."
+        confirmLabel="Cancel Interview"
+        variant="destructive"
+        loading={cancelling}
+        onConfirm={handleConfirmCancel}
+        onCancel={() => setCancelTarget(null)}
+      />
     </div>
   );
 }

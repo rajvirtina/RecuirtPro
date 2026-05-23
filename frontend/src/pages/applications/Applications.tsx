@@ -146,24 +146,23 @@ export default function Applications() {
     }
   };
 
-  /* ── Bulk parse ───────────────────────────────────────────── */
+  /* ── Bulk parse (uses backend sequential endpoint, rate-limit safe) ──── */
   const handleBulkParse = async () => {
     if (selected.size === 0) return;
     setParsing(true);
-    const ids = Array.from(selected);
-    let ok = 0, failed = 0;
-    for (const id of ids) {
-      try {
-        await apiClient.post(`/applications/${id}/parse-resume`);
-        ok++;
-      } catch {
-        failed++;
-      }
+    try {
+      const res = await apiClient.post('/applications/bulk-parse', {
+        applicationIds: Array.from(selected),
+      });
+      const { parsed = 0, failed = 0 } = (res.data as any) ?? {};
+      toast.success(`Parsed ${parsed} resume${parsed !== 1 ? 's' : ''}${failed ? ` (${failed} failed)` : ''}`);
+      setSelected(new Set());
+      fetchApplications();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Bulk parse failed');
+    } finally {
+      setParsing(false);
     }
-    toast.success(`Parsed ${ok} resume${ok !== 1 ? 's' : ''}${failed ? ` (${failed} failed)` : ''}`);
-    setSelected(new Set());
-    fetchApplications();
-    setParsing(false);
   };
 
   /* ── Rank all (requires a jobId context) ─────────────────── */

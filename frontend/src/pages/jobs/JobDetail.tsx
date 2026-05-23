@@ -1,8 +1,13 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import ApplicationForm from '../../components/applications/ApplicationForm';
+import { Button } from '../../components/ui/Button';
+import { StatusBadge } from '../../components/ui/Badge';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { SkeletonPage } from '../../components/ui/Skeleton';
 
 interface Job {
   _id: string;
@@ -30,335 +35,300 @@ interface Job {
   updatedAt: string;
 }
 
+type ConfirmAction = 'delete' | 'close' | 'hold' | null;
+
+function MetaChip({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-sm text-neutral-500">
+      <span className="text-neutral-400" aria-hidden="true">{icon}</span>
+      {text}
+    </span>
+  );
+}
+
+const CONFIRM_CONFIG: Record<string, { title: string; message: string; label: string }> = {
+  delete: {
+    title: 'Delete this job posting?',
+    message: 'All applications for this job will be permanently removed. This cannot be undone.',
+    label: 'Delete Job',
+  },
+  close: {
+    title: 'Close this job posting?',
+    message: 'The job will stop accepting new applications. Existing candidates will not be affected.',
+    label: 'Close Job',
+  },
+  hold: {
+    title: 'Put this job on hold?',
+    message: 'The job will stop accepting new applications until you resume it.',
+    label: 'Put on Hold',
+  },
+};
+
 export default function JobDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
-  const [job, setJob] = useState<Job | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showApplicationForm, setShowApplicationForm] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
 
-  useEffect(() => {
-    fetchJobDetail();
-  }, [id]);
+  const [job, setJob]                         = useState<Job | null>(null);
+  const [loading, setLoading]                 = useState(true);
+  const [showApplicationForm, setShowApplicationForm] = useState(false);
+  const [confirmAction, setConfirmAction]     = useState<ConfirmAction>(null);
+  const [actionPending, setActionPending]     = useState(false);
+
+  useEffect(() => { fetchJobDetail(); }, [id]);
 
   const fetchJobDetail = async () => {
     try {
       setLoading(true);
       const response = await apiClient.get(`/jobs/${id}`);
-      console.log('Job API response:', response);
       setJob(response.data.job);
-    } catch (error) {
-      console.error('Failed to fetch job:', error);
-      setMessage({ type: 'error', text: 'Failed to load job details' });
+    } catch {
+      toast.error('Failed to load job details');
+      navigate('/jobs');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleApply = () => {
-    if (!user) {
-      navigate('/login', { state: { from: `/jobs/${id}` } });
-      return;
-    }
-
-    setShowApplicationForm(true);
-  };
-
-  const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this job posting?')) return;
-
-    try {
-      await apiClient.delete(`/jobs/${id}`);
-      navigate('/jobs');
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error.response?.data?.message || 'Failed to delete job',
-      });
-    }
-  };
-
-  /** Central status updater — uses the dedicated PATCH endpoint */
-  const handleJobStatus = async (newStatus: string, confirmMsg?: string) => {
-    if (confirmMsg && !confirm(confirmMsg)) return;
+  /** Shared status updater — called after confirm */
+  const performStatusChange = async (newStatus: string) => {
+    setActionPending(true);
     try {
       await apiClient.patch(`/jobs/${id}/status`, { status: newStatus });
-      setMessage({ type: 'success', text: `Job ${newStatus.replace('_', ' ')} successfully!` });
+      toast.success(`Job ${newStatus.replace('_', ' ')} successfully`);
+      setConfirmAction(null);
       await fetchJobDetail();
-    } catch (error: any) {
-      setMessage({
-        type: 'error',
-        text: error?.data?.message || error?.response?.data?.message || `Failed to set status to ${newStatus}`,
-      });
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || `Failed to set status to ${newStatus}`);
+    } finally {
+      setActionPending(false);
     }
   };
 
-  const handleCloseJob   = () => handleJobStatus('closed',    'Are you sure you want to close this job posting?');
-  const handlePublishJob = () => handleJobStatus('published');
-  const handleHoldJob    = () => handleJobStatus('on_hold',   'Put this job on hold? It will stop accepting new applications.');
+  const handleConfirm = async () => {
+    if (confirmAction === 'delete') {
+      setActionPending(true);
+      try {
+        await apiClient.delete(`/jobs/${id}`);
+        toast.success('Job deleted', { description: 'This action cannot be undone.' });
+        navigate('/jobs');
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Failed to delete job');
+      } finally {
+        setActionPending(false);
+        setConfirmAction(null);
+      }
+    } else if (confirmAction === 'close') {
+      await performStatusChange('closed');
+    } else if (confirmAction === 'hold') {
+      await performStatusChange('on_hold');
+    }
+  };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      </div>
-    );
-  }
+  const handlePublishJob = () => performStatusChange('published');
+
+  if (loading) return <SkeletonPage />;
 
   if (!job) {
     return (
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-        <h2 className="text-2xl font-bold text-gray-900">Job not found</h2>
-        <button
-          onClick={() => navigate('/jobs')}
-          className="mt-4 text-indigo-600 hover:text-indigo-800"
-        >
-           Back to Jobs
-        </button>
+      <div className="max-w-4xl mx-auto px-4 py-12 text-center">
+        <h2 className="text-h2 text-neutral-900">Job not found</h2>
+        <Button variant="ghost" className="mt-4" onClick={() => navigate('/jobs')}>
+          ← Back to Jobs
+        </Button>
       </div>
     );
   }
 
-  // HR / Admin / Employer can manage any job within their company (not restricted to creator)
-  const isOwner = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
+  const isOwner  = user?.role === 'employer' || user?.role === 'hr' || user?.role === 'admin';
   const canApply = user?.role === 'candidate' && (job.status === 'published' || job.status === 'active');
 
+  const formatSalary = () => {
+    if (!job.salaryMin && !job.salaryMax) return null;
+    const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
+    if (job.salaryMin && job.salaryMax) return `${fmt(job.salaryMin)} – ${fmt(job.salaryMax)}`;
+    if (job.salaryMin) return `From ${fmt(job.salaryMin)}`;
+    return `Up to ${fmt(job.salaryMax!)}`;
+  };
+
+  const salary = formatSalary();
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <button
-        onClick={() => navigate('/jobs')}
-        className="mb-6 text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-      >
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6 animate-fade-in">
+      {/* Back nav */}
+      <Button variant="ghost" size="sm" onClick={() => navigate('/jobs')}>
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
         </svg>
         Back to Jobs
-      </button>
+      </Button>
 
-      {message.text && (
-        <div
-          className={`mb-6 p-4 rounded-lg ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
-
-      <div className="bg-white shadow rounded-lg overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900">{job.title}</h1>
-              <div className="mt-4 flex flex-wrap gap-4 text-sm text-gray-600">
-                <span className="flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {job.location}
-                </span>
-                <span className="flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  {job.jobType?.replace('_', ' ').toUpperCase()}
-                </span>
-                <span className="flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                  {job.workMode?.charAt(0).toUpperCase() + job.workMode?.slice(1)}
-                </span>
-                <span className="flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                  {job.experienceMin}-{job.experienceMax} years
-                </span>
+      {/* Main card */}
+      <div className="card overflow-hidden">
+        {/* Header */}
+        <div className="p-6 border-b border-neutral-100">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-h1 text-neutral-900">{job.title}</h1>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+                {job.location && (
+                  <MetaChip
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+                    text={job.location}
+                  />
+                )}
+                {job.jobType && (
+                  <MetaChip
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
+                    text={job.jobType.replace('_', ' ').toUpperCase()}
+                  />
+                )}
+                {job.workMode && (
+                  <MetaChip
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>}
+                    text={job.workMode.charAt(0).toUpperCase() + job.workMode.slice(1)}
+                  />
+                )}
+                <MetaChip
+                  icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
+                  text={`${job.experienceMin}–${job.experienceMax} yrs exp`}
+                />
+                {salary && (
+                  <MetaChip
+                    icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                    text={salary}
+                  />
+                )}
               </div>
             </div>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium ml-4 ${
-                job.status === 'published'
-                  ? 'bg-green-100 text-green-800'
-                  : job.status === 'draft'
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : job.status === 'closed'
-                  ? 'bg-red-100 text-red-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              {job.status?.toUpperCase()}
-            </span>
+            <StatusBadge status={job.status} />
           </div>
 
-          {job.salaryMin && job.salaryMax && (
-            <div className="mt-4 text-lg font-semibold text-indigo-600">
-              {job.currency} {job.salaryMin.toLocaleString()} - {job.salaryMax.toLocaleString()}
-            </div>
-          )}
+          {/* Stats row */}
+          <div className="mt-4 flex items-center gap-4 text-xs text-neutral-400">
+            <span>Posted {new Date(job.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+            {job.applicationCount !== undefined && (
+              <span>{job.applicationCount} application{job.applicationCount !== 1 ? 's' : ''}</span>
+            )}
+            {job.positions && job.positions > 1 && (
+              <span>{job.positions} positions available</span>
+            )}
+          </div>
         </div>
 
-        <div className="p-6">
-          <section className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">Job Description</h2>
-            <div className="prose text-gray-700 whitespace-pre-wrap">{job.description}</div>
-          </section>
+        {/* Body */}
+        <div className="p-6 space-y-8">
+          {job.description && (
+            <section>
+              <h2 className="text-h3 text-neutral-900 mb-3">Job Description</h2>
+              <p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">{job.description}</p>
+            </section>
+          )}
 
           {job.requirements && job.requirements.length > 0 && (
-            <section className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Requirements</h2>
-              <ul className="list-disc list-inside space-y-2 text-gray-700">
-                {job.requirements.map((req, index) => (
-                  <li key={index}>{req}</li>
+            <section>
+              <h2 className="text-h3 text-neutral-900 mb-3">Requirements</h2>
+              <ul className="space-y-1.5">
+                {job.requirements.map((req, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-neutral-700">
+                    <span className="mt-1 w-1.5 h-1.5 bg-primary-400 rounded-full shrink-0" />
+                    {req}
+                  </li>
                 ))}
               </ul>
             </section>
           )}
 
           {job.skills && job.skills.length > 0 && (
-            <section className="mb-8">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Required Skills</h2>
+            <section>
+              <h2 className="text-h3 text-neutral-900 mb-3">Required Skills</h2>
               <div className="flex flex-wrap gap-2">
-                {job.skills.map((skill, index) => (
-                  <span
-                    key={index}
-                    className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium"
-                  >
+                {job.skills.map((skill, i) => (
+                  <span key={i} className="px-3 py-1 bg-primary-50 text-primary-700 border border-primary-100 rounded-full text-sm font-medium">
                     {skill}
                   </span>
                 ))}
               </div>
             </section>
           )}
-
-          <section className="text-sm text-gray-500">
-            Posted on {new Date(job.createdAt).toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-            {job.applicationCount !== undefined && (
-              <span className="ml-4">
-                {job.applicationCount} application{job.applicationCount !== 1 ? 's' : ''}
-              </span>
-            )}
-            {job.positions && job.positions > 1 && (
-              <span className="ml-4">
-                {job.positions} position{job.positions !== 1 ? 's' : ''} available
-              </span>
-            )}
-          </section>
         </div>
 
-        <div className="p-6 bg-gray-50 border-t border-gray-200 flex gap-3 flex-wrap">
+        {/* Action footer */}
+        <div className="px-6 py-4 bg-neutral-50 border-t border-neutral-100 flex gap-3 flex-wrap items-center">
           {canApply && job.status !== 'closed' && (
-            <button
-              onClick={handleApply}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
-            >
+            <Button variant="primary" onClick={() => setShowApplicationForm(true)}>
               Apply Now
-            </button>
+            </Button>
           )}
 
           {user?.role === 'candidate' && job.status === 'closed' && (
-            <div className="px-6 py-3 bg-red-50 text-red-800 rounded-lg border border-red-200">
-              This position is closed
-            </div>
-          )}
-
-          {isOwner && (
-            <>
-              {job.status === 'draft' && (
-                <button
-                  onClick={handlePublishJob}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
-                >
-                  Publish Job
-                </button>
-              )}
-              {job.status === 'closed' && (
-                <button
-                  onClick={handlePublishJob}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
-                >
-                  Reopen Job
-                </button>
-              )}
-              {job.status === 'published' && (
-                <>
-                  <button
-                    onClick={handleHoldJob}
-                    className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium transition-colors"
-                  >
-                    Put on Hold
-                  </button>
-                  <button
-                    onClick={handleCloseJob}
-                    className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-medium transition-colors"
-                  >
-                    Close Job
-                  </button>
-                </>
-              )}
-              {job.status === 'on_hold' && (
-                <button
-                  onClick={handlePublishJob}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
-                >
-                  Resume Job
-                </button>
-              )}
-              <button
-                onClick={() => navigate(`/jobs/${id}/edit`)}
-                className="px-6 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-50 font-medium transition-colors"
-              >
-                Edit Job
-              </button>
-              {/* Employers cannot delete jobs — that is an HR/Admin action */}
-              {(user?.role === 'hr' || user?.role === 'admin') && (
-                <button
-                  onClick={handleDelete}
-                  className="px-6 py-3 bg-white text-red-600 border border-red-600 rounded-lg hover:bg-red-50 font-medium transition-colors"
-                >
-                  Delete Job
-                </button>
-              )}
-            </>
+            <p className="text-sm text-error-600 font-medium">This position is closed.</p>
           )}
 
           {!user && (
-            <button
-              onClick={() => navigate('/login', { state: { from: `/jobs/${id}` } })}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
-            >
+            <Button variant="primary" onClick={() => navigate('/login', { state: { from: `/jobs/${id}` } })}>
               Login to Apply
-            </button>
+            </Button>
+          )}
+
+          {isOwner && (
+            <div className="flex gap-2 flex-wrap ml-auto">
+              {(job.status === 'draft' || job.status === 'closed' || job.status === 'on_hold') && (
+                <Button variant="primary" loading={actionPending} onClick={handlePublishJob}>
+                  {job.status === 'draft' ? 'Publish Job' : 'Resume Job'}
+                </Button>
+              )}
+              {job.status === 'published' && (
+                <>
+                  <Button variant="secondary" onClick={() => setConfirmAction('hold')}>
+                    Put on Hold
+                  </Button>
+                  <Button variant="secondary" onClick={() => setConfirmAction('close')}>
+                    Close Job
+                  </Button>
+                </>
+              )}
+              <Button variant="secondary" onClick={() => navigate(`/jobs/${id}/edit`)}>
+                Edit Job
+              </Button>
+              {(user?.role === 'hr' || user?.role === 'admin') && (
+                <Button variant="destructive" onClick={() => setConfirmAction('delete')}>
+                  Delete Job
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </div>
 
       {/* Application Form Modal */}
       {showApplicationForm && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowApplicationForm(false);
-          }}
+        <div
+          className="fixed inset-0 bg-neutral-900/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowApplicationForm(false); }}
         >
           <ApplicationForm
             jobId={id!}
             onSuccess={() => {
               setShowApplicationForm(false);
-              setMessage({ type: 'success', text: 'Application submitted successfully!' });
+              toast.success('Application submitted successfully!');
             }}
             onCancel={() => setShowApplicationForm(false)}
           />
         </div>
       )}
+
+      {/* Confirm dialog for destructive actions */}
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={CONFIRM_CONFIG[confirmAction ?? 'delete']?.title ?? ''}
+        message={CONFIRM_CONFIG[confirmAction ?? 'delete']?.message}
+        confirmLabel={CONFIRM_CONFIG[confirmAction ?? 'delete']?.label ?? 'Confirm'}
+        variant="destructive"
+        loading={actionPending}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

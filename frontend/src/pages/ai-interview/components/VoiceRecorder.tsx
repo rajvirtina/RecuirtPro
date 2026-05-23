@@ -76,6 +76,9 @@ export default function VoiceRecorder({
   const recognitionRef   = useRef<any>(null);
   const finalTranscript  = useRef('');
 
+  // Ref that mirrors isRecording state — avoids stale closure in rec.onend callback
+  const isRecordingRef   = useRef(false);
+
   useEffect(() => {
     ensureWaveformStyle();
     return () => stopRecording();
@@ -146,8 +149,11 @@ export default function VoiceRecorder({
           if (e.error !== 'no-speech') console.warn('Speech API error:', e.error);
         };
         rec.onend = () => {
-          // Auto-restart if still recording (browser stops after ~60 s)
-          if (isRecording) {
+          // Auto-restart if still recording (browser stops after ~60 s).
+          // Use isRecordingRef rather than isRecording to avoid the stale
+          // closure: isRecording would always be `false` here because the
+          // callback is created before setIsRecording(true) fires.
+          if (isRecordingRef.current) {
             try { rec.start(); } catch { /* ignore */ }
           }
         };
@@ -160,6 +166,7 @@ export default function VoiceRecorder({
       setRecordingSec(0);
       timerRef.current = setInterval(() => setRecordingSec(s => s + 1), 1000);
 
+      isRecordingRef.current = true;
       setIsRecording(true);
     } catch (err: any) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -183,6 +190,7 @@ export default function VoiceRecorder({
     }
     mediaRecorderRef.current = null;
 
+    isRecordingRef.current = false;
     setIsRecording(false);
   }, []);
 

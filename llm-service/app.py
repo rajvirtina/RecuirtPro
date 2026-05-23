@@ -21,8 +21,8 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
-import openai
+from pydantic import BaseModel, Field, field_validator
+from openai import OpenAI as _OpenAI, AuthenticationError as _AuthError, RateLimitError as _RateLimitError
 
 # =========================
 # LOGGING CONFIGURATION
@@ -46,10 +46,11 @@ APP_ENV = os.getenv("APP_ENV", "development")
 if APP_ENV == "production" and API_SECRET_KEY == "default-secret-key":
     raise RuntimeError("FATAL: API_SECRET_KEY must be set to a secure value in production. Do not use default-secret-key.")
 
+_openai_client: Optional[_OpenAI] = None
 if not OPENAI_API_KEY:
     logger.warning("OPENAI_API_KEY not set. LLM calls will fail.")
 else:
-    openai.api_key = OPENAI_API_KEY
+    _openai_client = _OpenAI(api_key=OPENAI_API_KEY)
 
 # =========================
 # FASTAPI APP
@@ -136,15 +137,14 @@ class ScheduleRequest(BaseModel):
     interview_type: str = Field(..., description="Type of interview (Technical, HR, Final)")
     duration_minutes: Optional[int] = Field(60, description="Interview duration in minutes")
     
-    class Config:
-        schema_extra = {
+    model_config = {"json_schema_extra": {
             "example": {
                 "hr_availability": ["2026-01-20T10:00:00Z", "2026-01-20T14:00:00Z"],
                 "candidate_availability": ["2026-01-20T10:00:00Z", "2026-01-21T09:00:00Z"],
                 "interview_type": "Technical",
                 "duration_minutes": 60
             }
-        }
+        }}
 
 
 class FeedbackRequest(BaseModel):
@@ -152,20 +152,20 @@ class FeedbackRequest(BaseModel):
     interview_type: str = Field(..., description="Type of interview conducted")
     raw_feedback: str = Field(..., description="Unstructured interviewer notes")
     
-    @validator('raw_feedback')
+    @field_validator('raw_feedback')
+    @classmethod
     def validate_feedback(cls, v):
         if len(v.strip()) < 10:
             raise ValueError('Feedback must be at least 10 characters')
         return v
     
-    class Config:
-        schema_extra = {
+    model_config = {"json_schema_extra": {
             "example": {
                 "role": "Senior Backend Engineer",
                 "interview_type": "Technical Round",
                 "raw_feedback": "Candidate demonstrated strong knowledge of Python and FastAPI. Solved the algorithm problem efficiently. Communication was clear but could improve on system design thinking."
             }
-        }
+        }}
 
 
 class CandidateMessageRequest(BaseModel):
@@ -173,20 +173,20 @@ class CandidateMessageRequest(BaseModel):
     outcome: str = Field(..., description="Outcome: offer, hold, reject")
     candidate_name: Optional[str] = Field(None, description="Candidate name for personalization")
     
-    @validator('outcome')
+    @field_validator('outcome')
+    @classmethod
     def validate_outcome(cls, v):
         if v.lower() not in ['offer', 'hold', 'reject']:
             raise ValueError('Outcome must be offer, hold, or reject')
         return v.lower()
     
-    class Config:
-        schema_extra = {
+    model_config = {"json_schema_extra": {
             "example": {
                 "evaluation_summary": "Strong technical skills, good communication, needs improvement in system design",
                 "outcome": "hold",
                 "candidate_name": "John Doe"
             }
-        }
+        }}
 
 
 class ScheduleResponse(BaseModel):
@@ -224,27 +224,27 @@ def call_llm(prompt: str, temperature: float = 0.2, max_tokens: int = 1000) -> s
     Call OpenAI LLM with error handling and retry logic
     """
     try:
-        if not OPENAI_API_KEY:
+        if not _openai_client:
             raise ValueError("OPENAI_API_KEY not configured")
-        
-        response = openai.ChatCompletion.create(
+
+        response = _openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             temperature=temperature,
-            max_tokens=max_tokens
+            max_tokens=max_tokens,
         )
-        
-        result = response.choices[0].message["content"]
+
+        result = response.choices[0].message.content
         logger.info(f"LLM call successful. Tokens used: {response.usage.total_tokens}")
         return result
-        
-    except openai.error.AuthenticationError:
+
+    except _AuthError:
         logger.error("OpenAI authentication failed")
         raise HTTPException(status_code=500, detail="LLM service authentication failed")
-    except openai.error.RateLimitError:
+    except _RateLimitError:
         logger.error("OpenAI rate limit exceeded")
         raise HTTPException(status_code=429, detail="LLM service rate limit exceeded")
     except Exception as e:

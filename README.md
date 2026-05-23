@@ -16,6 +16,7 @@ End-to-end recruitment automation platform integrating with Microsoft Teams, Goo
 - **Backend**: Node.js, Express, TypeScript, MongoDB
 - **Frontend**: React, TypeScript, Tailwind CSS
 - **LLM Service**: Python, FastAPI, OpenAI (Interview AI Automation)
+- **Desktop Monitor**: Electron (Windows & macOS) — companion proctoring app
 - **Authentication**: JWT with RBAC
 - **API Documentation**: Swagger/OpenAPI
 - **Integrations**: Microsoft Graph, Google Calendar, Zoho, Naukri
@@ -162,9 +163,42 @@ RecuirtPro/
 │   │   └── App.tsx         # Main app component
 │   ├── public/             # Static files
 │   └── package.json
+├── desktop-app/            # Electron desktop monitor (see below)
+├── llm-service/            # Python/FastAPI AI interview service
 ├── docs/                   # Documentation
 └── package.json            # Root package.json
 ```
+
+## Desktop Monitor App (`desktop-app/`)
+
+**Framework:** Electron (cross-platform — Windows & macOS)
+
+The `desktop-app/` is a companion **proctoring monitor** distributed to candidates before an AI interview. It runs invisibly in the system tray and reports violations to the backend in real time.
+
+### What it does
+| Monitor | Details |
+|---------|---------|
+| **Process detection** | Blocks TeamViewer, AnyDesk, UltraViewer, VNC, RDP, Chrome Remote Desktop |
+| **Display detection** | Detects secondary monitor connection/disconnection |
+| **Window focus** | Reports when the candidate switches away from the interview |
+| **WebSocket alerts** | Pushes live violations to HR dashboard via Socket.IO |
+
+### How it connects
+- REST: `POST /api/v1/proctoring/event` and `POST /api/v1/proctoring/heartbeat`
+- WebSocket: socket.io-client — receives `interview-terminated` / `interview-warning` events
+- Auth: JWT token passed from the web app at launch
+
+### Build & run
+```powershell
+cd desktop-app
+npm install
+npm run dev        # development
+npm run package:win  # → release/RecuirtPro-Monitor-Setup-{version}.exe
+npm run package:mac  # → release/RecuirtPro-Monitor-{version}.dmg
+```
+
+### Status
+Actively developed. No binary is committed to the repo — build it locally or via CI before distributing to candidates.
 
 ## Development
 

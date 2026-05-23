@@ -108,13 +108,17 @@ export interface Application {
   // AI resume parsing
   parsedSkills?: string[];
   parsedExperienceYears?: number;
-  parsedEducation?: { degree: string; institution: string }[];
+  parsedEducation?: { degree: string; institution: string; year?: number }[];
   parsedNoticePeriod?: string;
   parsedAt?: string;
+  parsedCurrentRole?: string;
+  parsedCurrentCompany?: string;
+  parsedWorkHistory?: { company: string; role: string; durationMonths?: number; highlights?: string[] }[];
 
   // AI ranking results
   missingSkills?: string[];
   matchingSkills?: string[];
+  aiFitSummary?: string;
 
   // Sourcing / referral tracking
   source?: 'direct' | 'naukri' | 'linkedin' | 'referral';

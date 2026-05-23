@@ -9,6 +9,7 @@ import { Button }         from '../../components/ui/Button';
 import { SkeletonPage }   from '../../components/ui/Skeleton';
 import { ConfirmDialog }  from '../../components/ui/ConfirmDialog';
 import ProctoringReport   from '../proctoring/ProctoringReport';
+import ScheduleInterviewModal from '../../components/interviews/ScheduleInterviewModal';
 import { NotesTab }        from './tabs/NotesTab';
 import { TimelineTab }     from './tabs/TimelineTab';
 import { toast }          from 'sonner';
@@ -22,21 +23,27 @@ interface AppDetail {
   status:           string;
   coverLetter?:     string;
   resume?:          string;
+  resumeUrl?:       string;
   skillMatchScore?:     number;
   experienceMatchScore?:number;
   overallScore?:        number;
   appliedAt:        string;
 
-  // Parsed resume
+  // Parsed resume — core
   parsedSkills?:         string[];
   parsedExperienceYears?:number;
-  parsedEducation?:      { degree: string; institution: string }[];
+  parsedEducation?:      { degree: string; institution: string; year?: number }[];
   parsedNoticePeriod?:   string;
   parsedAt?:             string;
+  // Parsed resume — rich (v2)
+  parsedCurrentRole?:    string;
+  parsedCurrentCompany?: string;
+  parsedWorkHistory?:    { company: string; role: string; durationMonths?: number; highlights?: string[] }[];
 
   // AI ranking
   missingSkills?:  string[];
   matchingSkills?: string[];
+  aiFitSummary?:   string;
 }
 
 type ActiveTab = 'overview' | 'resume' | 'notes' | 'timeline' | 'proctoring';
@@ -83,259 +90,21 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
   );
 }
 
-/* ── Schedule Interview Modal ─────────────────────────────────── */
-function ScheduleModal({
-  application, user, onClose, onScheduled,
-}: {
-  application: AppDetail;
-  user: any;
-  onClose: () => void;
-  onScheduled: () => void;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [platform, setPlatform] = useState<'google_meet' | 'teams' | 'zoho' | 'custom'>('google_meet');
-  const [enableAI, setEnableAI] = useState(false);
-  const [panelMembers, setPanelMembers] = useState<{ userId: string; name: string; email: string; role: string }[]>([
-    { userId: user?._id, name: `${user?.firstName} ${user?.lastName}`, email: user?.email, role: user?.role },
-  ]);
-  const [newPanelEmail, setNewPanelEmail] = useState('');
-  const [availability, setAvailability] = useState<{ email: string; slots: string[] }[]>([]);
-  const [checkingAvailability, setCheckingAvailability] = useState(false);
-
-  const generateMeetingLink = () => {
-    switch (platform) {
-      case 'google_meet': return `https://meet.google.com/${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}-${Math.random().toString(36).substring(2, 5)}`;
-      case 'teams': return `https://teams.microsoft.com/l/meetup-join/${Math.random().toString(36).substring(2, 14)}`;
-      case 'zoho': return `https://meeting.zoho.com/meeting/${Math.random().toString(36).substring(2, 12)}`;
-      default: return '';
-    }
-  };
-
-  const addPanelMember = () => {
-    if (!newPanelEmail.trim()) return;
-    if (panelMembers.some(m => m.email === newPanelEmail)) return;
-    setPanelMembers([...panelMembers, { userId: '', name: newPanelEmail.split('@')[0], email: newPanelEmail, role: 'interviewer' }]);
-    setNewPanelEmail('');
-  };
-
-  const removePanelMember = (email: string) => {
-    setPanelMembers(panelMembers.filter(m => m.email !== email));
-  };
-
-  const checkAvailability = async (date: string) => {
-    if (!date || panelMembers.length === 0) return;
-    setCheckingAvailability(true);
-    try {
-      const res = await apiClient.post('/calendar/check-availability', {
-        emails: panelMembers.map(m => m.email),
-        date,
-      });
-      setAvailability((res.data as any)?.slots || []);
-    } catch {
-      // Availability check not configured — silently ignore
-      setAvailability([]);
-    } finally {
-      setCheckingAvailability(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    try {
-      setLoading(true);
-      const scheduledTime = new Date(`${fd.get('date')}T${fd.get('time')}`).toISOString();
-      const customLink = fd.get('meetingLink') as string;
-      const interviewRes = await apiClient.post('/interviews', {
-        applicationId: application._id,
-        jobId:         application.job._id,
-        candidateId:   application.candidate?._id,
-        scheduledTime,
-        duration:    parseInt(fd.get('duration') as string) || 60,
-        mode:        fd.get('mode'),
-        location:    fd.get('location') || '',
-        meetingLink: customLink || generateMeetingLink(),
-        calendarProvider: platform !== 'custom' ? platform : undefined,
-        round:       fd.get('round'),
-        panel:       panelMembers,
-      });
-      // Create AI interview session if enabled
-      if (enableAI) {
-        try {
-          const interviewId = (interviewRes.data as any)?._id || (interviewRes.data as any)?.data?._id;
-          if (interviewId) {
-            await apiClient.post('/ai-interviews', { interviewId });
-            toast.success('AI Interview session created! Candidate will receive the link.');
-          }
-        } catch {
-          toast.error('Interview scheduled but AI session creation failed — you can create it later.');
-        }
-      }
-      toast.success('Interview scheduled!');
-      onScheduled();
-      onClose();
-    } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Failed to schedule interview');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/50 animate-fade-in">
-      <div className="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-h3">Schedule Interview</h2>
-            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 p-1 rounded">✕</button>
-          </div>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="field-label">Round</label>
-                <select name="round" className="field-input" defaultValue="L1">
-                  {['L1', 'L2', 'L3', 'HR', 'technical', 'managerial'].map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="field-label">Mode</label>
-                <select name="mode" className="field-input" defaultValue="online">
-                  {['online', 'onsite', 'hybrid'].map(m => (
-                    <option key={m} value={m} className="capitalize">{m}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="field-label">Date</label>
-                <input type="date" name="date" required className="field-input"
-                  min={new Date().toISOString().split('T')[0]}
-                  onChange={e => checkAvailability(e.target.value)} />
-              </div>
-              <div>
-                <label className="field-label">Time</label>
-                <input type="time" name="time" required className="field-input" defaultValue="10:00" />
-              </div>
-            </div>
-
-            {/* Panel Availability Indicator */}
-            {checkingAvailability && (
-              <p className="text-xs text-neutral-500 animate-pulse">Checking panel availability…</p>
-            )}
-            {availability.length > 0 && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-xs font-medium text-green-800 mb-1">Available slots for panel:</p>
-                <div className="flex flex-wrap gap-1">
-                  {availability.map((slot: any, i: number) => (
-                    <span key={i} className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      {slot.startTime}–{slot.endTime}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="field-label">Duration (minutes)</label>
-              <select name="duration" className="field-input" defaultValue="60">
-                {[30, 45, 60, 90, 120].map(d => <option key={d} value={d}>{d} min</option>)}
-              </select>
-            </div>
-
-            {/* Meeting Platform Selector */}
-            <div>
-              <label className="field-label">Meeting Platform</label>
-              <div className="grid grid-cols-4 gap-2 mt-1">
-                {([
-                  ['google_meet', 'Google Meet', 'bg-green-50 border-green-300 text-green-800'],
-                  ['teams', 'MS Teams', 'bg-blue-50 border-blue-300 text-blue-800'],
-                  ['zoho', 'Zoho Meeting', 'bg-orange-50 border-orange-300 text-orange-800'],
-                  ['custom', 'Custom Link', 'bg-neutral-50 border-neutral-300 text-neutral-800'],
-                ] as const).map(([val, label, cls]) => (
-                  <button key={val} type="button" onClick={() => setPlatform(val as any)}
-                    className={`px-2 py-2 text-xs font-medium rounded-lg border transition-all ${
-                      platform === val ? cls + ' ring-2 ring-offset-1 ring-primary-400' : 'bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50'
-                    }`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="field-label">Location / Office</label>
-              <input type="text" name="location" placeholder="Office address or leave blank" className="field-input" />
-            </div>
-            {platform === 'custom' && (
-              <div>
-                <label className="field-label">Custom Meeting Link</label>
-                <input type="url" name="meetingLink" placeholder="https://…" className="field-input" />
-              </div>
-            )}
-            {platform !== 'custom' && <input type="hidden" name="meetingLink" value="" />}
-
-            {/* Interview Panel */}
-            <div>
-              <label className="field-label">Interview Panel</label>
-              <div className="space-y-2 mt-1">
-                {panelMembers.map((m, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <div className="w-6 h-6 bg-primary-100 rounded-full flex items-center justify-center text-xs font-medium text-primary-700">
-                      {m.name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="text-neutral-700 flex-1 truncate">{m.name} <span className="text-neutral-400">({m.email})</span></span>
-                    {i > 0 && (
-                      <button type="button" onClick={() => removePanelMember(m.email)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
-                    )}
-                  </div>
-                ))}
-                <div className="flex gap-2">
-                  <input type="email" value={newPanelEmail} onChange={e => setNewPanelEmail(e.target.value)}
-                    placeholder="Add interviewer email" className="field-input flex-1 text-sm"
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPanelMember(); } }} />
-                  <button type="button" onClick={addPanelMember}
-                    className="px-3 py-1.5 bg-neutral-100 text-neutral-700 text-sm rounded-lg hover:bg-neutral-200">
-                    Add
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* AI Interview Toggle */}
-            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-              <label className="flex items-center justify-between cursor-pointer">
-                <div>
-                  <p className="text-sm font-medium text-indigo-900">Enable AI Interview</p>
-                  <p className="text-xs text-indigo-600">AI will conduct the interview automatically with real-time scoring</p>
-                </div>
-                <div className="relative">
-                  <input type="checkbox" checked={enableAI} onChange={e => setEnableAI(e.target.checked)}
-                    className="sr-only" />
-                  <div className={`w-10 h-5 rounded-full transition-colors ${enableAI ? 'bg-indigo-600' : 'bg-neutral-300'}`}>
-                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform mt-0.5 ${enableAI ? 'translate-x-5.5 ml-[22px]' : 'ml-0.5'}`} />
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
-              <Button type="submit" variant="primary" loading={loading} className="flex-1">Schedule Interview</Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ScheduleInterviewModal is imported from components/interviews/ScheduleInterviewModal
+// and replaces the previous inline ScheduleModal implementation.
 
 // ─── Parsed Resume Section ────────────────────────────────────────────────────
 
 function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () => void }) {
-  const [parsing, setParsing] = useState(false);
+  const [parsing,  setParsing]  = useState(false);
+  const [openJobs, setOpenJobs] = useState<Set<number>>(new Set());
+
+  const toggleJob = (i: number) =>
+    setOpenJobs(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
 
   const handleParse = async () => {
     setParsing(true);
@@ -383,7 +152,7 @@ function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () =
 
       {!isParsed ? (
         <div className="p-4 bg-neutral-50 rounded-lg text-center">
-          {app.resume ? (
+          {app.resume || app.resumeUrl ? (
             <p className="text-sm text-neutral-500">
               Click <strong>Parse Resume</strong> to extract skills and experience using AI.
             </p>
@@ -393,25 +162,27 @@ function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () =
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Skills */}
-          {app.parsedSkills && app.parsedSkills.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Extracted Skills</p>
-              <div className="flex flex-wrap gap-1.5" role="list" aria-label="Extracted skills">
-                {app.parsedSkills.map(skill => (
-                  <span
-                    key={skill}
-                    role="listitem"
-                    className="px-2.5 py-1 bg-primary-50 border border-primary-100 text-primary-700 rounded-md text-xs font-medium"
-                  >
-                    {skill}
-                  </span>
-                ))}
+          {/* Current position (v2 rich fields) */}
+          {(app.parsedCurrentRole || app.parsedCurrentCompany) && (
+            <div className="flex items-center gap-3 p-3 bg-primary-50 border border-primary-100 rounded-lg">
+              <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center shrink-0">
+                <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                    d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                {app.parsedCurrentRole && (
+                  <p className="text-sm font-semibold text-primary-900 truncate">{app.parsedCurrentRole}</p>
+                )}
+                {app.parsedCurrentCompany && (
+                  <p className="text-xs text-primary-600 truncate">{app.parsedCurrentCompany}</p>
+                )}
               </div>
             </div>
           )}
 
-          {/* Experience + notice period */}
+          {/* Stats grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {app.parsedExperienceYears != null && (
               <div className="p-3 bg-neutral-50 rounded-md">
@@ -429,6 +200,24 @@ function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () =
             )}
           </div>
 
+          {/* Skills */}
+          {app.parsedSkills && app.parsedSkills.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Extracted Skills</p>
+              <div className="flex flex-wrap gap-1.5" role="list" aria-label="Extracted skills">
+                {[...app.parsedSkills].sort().map(skill => (
+                  <span
+                    key={skill}
+                    role="listitem"
+                    className="px-2.5 py-1 bg-primary-50 border border-primary-100 text-primary-700 rounded-md text-xs font-medium"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Education */}
           {app.parsedEducation && app.parsedEducation.length > 0 && (
             <div>
@@ -443,11 +232,72 @@ function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () =
                     <span>
                       <span className="font-medium text-neutral-800">{edu.degree}</span>
                       {edu.institution && <span className="text-neutral-500"> · {edu.institution}</span>}
+                      {edu.year && <span className="text-neutral-400"> ({edu.year})</span>}
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
+          )}
+
+          {/* Work History accordion */}
+          {app.parsedWorkHistory && app.parsedWorkHistory.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Work History</p>
+              <ol className="space-y-1.5" aria-label="Work history">
+                {app.parsedWorkHistory.map((job, i) => (
+                  <li key={i} className="border border-neutral-200 rounded-lg overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleJob(i)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-neutral-50 transition-colors"
+                      aria-expanded={openJobs.has(i)}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-neutral-800 truncate">{job.role}</p>
+                        <p className="text-xs text-neutral-500 truncate">
+                          {job.company}
+                          {job.durationMonths != null && (
+                            <span className="text-neutral-400">
+                              {' · '}{Math.floor(job.durationMonths / 12) > 0
+                                ? `${Math.floor(job.durationMonths / 12)}y `
+                                : ''}{job.durationMonths % 12 > 0
+                                ? `${job.durationMonths % 12}m`
+                                : ''}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <svg
+                        className={`w-4 h-4 text-neutral-400 shrink-0 ml-2 transition-transform ${openJobs.has(i) ? 'rotate-180' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {openJobs.has(i) && job.highlights && job.highlights.length > 0 && (
+                      <div className="px-4 pb-3 pt-1 border-t border-neutral-100 bg-neutral-50/50">
+                        <ul className="space-y-1">
+                          {job.highlights.map((h, hi) => (
+                            <li key={hi} className="flex items-start gap-2 text-xs text-neutral-600">
+                              <span className="w-1 h-1 rounded-full bg-neutral-400 shrink-0 mt-1.5" aria-hidden="true" />
+                              {h}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Parsed timestamp */}
+          {app.parsedAt && (
+            <p className="text-[10px] text-neutral-400 pt-1">
+              Parsed {formatDistanceToNow(new Date(app.parsedAt), { addSuffix: true })}
+            </p>
           )}
         </div>
       )}
@@ -457,13 +307,45 @@ function ParsedResumeSection({ app, onParsed }: { app: AppDetail; onParsed: () =
 
 // ─── AI Fit Analysis Section ──────────────────────────────────────────────────
 
-function AIFitSection({ app }: { app: AppDetail }) {
+function AIFitSection({ app, onReanalyse }: { app: AppDetail; onReanalyse: () => void }) {
+  const [reanalysing, setReanalysing] = useState(false);
+
   const hasScores = app.skillMatchScore != null || app.experienceMatchScore != null || app.overallScore != null;
   if (!hasScores) return null;
 
+  const handleReanalyse = async () => {
+    setReanalysing(true);
+    try {
+      await apiClient.post(`/applications/${app._id}/parse-resume`);
+      // Rank is a job-level operation; we trigger it via the parent which has jobId
+      onReanalyse();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Failed to re-analyse');
+    } finally {
+      setReanalysing(false);
+    }
+  };
+
   return (
     <div>
-      <h3 className="text-sm font-semibold text-neutral-900 mb-3">AI Fit Analysis</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-neutral-900">AI Fit Analysis</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={reanalysing}
+          onClick={handleReanalyse}
+          icon={
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          }
+        >
+          Re-analyse
+        </Button>
+      </div>
+
       <div className="space-y-3 p-4 bg-neutral-50 rounded-lg">
         {app.skillMatchScore != null && (
           <ScoreBar label="Skill Match" value={app.skillMatchScore} color="bg-info-500" />
@@ -476,6 +358,11 @@ function AIFitSection({ app }: { app: AppDetail }) {
         )}
       </div>
 
+      {/* AI fit summary */}
+      {app.aiFitSummary && (
+        <p className="mt-3 text-sm text-neutral-600 italic leading-relaxed">{app.aiFitSummary}</p>
+      )}
+
       {/* Skill gaps */}
       {app.missingSkills && app.missingSkills.length > 0 && (
         <div className="mt-3">
@@ -484,7 +371,7 @@ function AIFitSection({ app }: { app: AppDetail }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Gap skills
+            Skill gaps
           </p>
           <div className="flex flex-wrap gap-1.5" role="list" aria-label="Missing skills">
             {app.missingSkills.map(s => (
@@ -891,7 +778,7 @@ export default function ApplicationDetail() {
                   )}
 
                   {/* AI Fit Analysis (employer only) */}
-                  {isEmployer && <AIFitSection app={app} />}
+                  {isEmployer && <AIFitSection app={app} onReanalyse={fetchDetail} />}
 
                   {/* Cover letter */}
                   {app.coverLetter ? (
@@ -970,9 +857,8 @@ export default function ApplicationDetail() {
 
       {/* Schedule modal */}
       {showSchedule && app && (
-        <ScheduleModal
+        <ScheduleInterviewModal
           application={app}
-          user={user}
           onClose={() => setShowSchedule(false)}
           onScheduled={fetchDetail}
         />

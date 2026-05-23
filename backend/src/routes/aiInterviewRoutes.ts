@@ -6,6 +6,7 @@ import {
   startSession,
   submitAnswer,
   completeSession,
+  flagSession,
   getSessionForReview,
 } from '../controllers/aiInterviewController';
 import { protect, authorize } from '../middleware/auth';
@@ -100,6 +101,20 @@ router.post(
   [param('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID')],
   validate,
   completeSession
+);
+
+/**
+ * @route  POST /api/v1/ai-interviews/session/:sessionId/flag
+ * @desc   Candidate reports a technical/content issue — logs it, does NOT end the session
+ */
+router.post(
+  '/session/:sessionId/flag',
+  [
+    param('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID'),
+    body('reason').trim().notEmpty().isLength({ max: 500 }).withMessage('reason is required (max 500 chars)'),
+  ],
+  validate,
+  flagSession
 );
 
 export default router;

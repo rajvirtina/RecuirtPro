@@ -140,12 +140,21 @@ export const parseResume = async (
       logger.warn(`LLM parse-resume failed for ${id}: ${llmErr.message} — storing empty data`);
     }
 
-    const update = {
+    const update: Record<string, any> = {
       parsedSkills:          Array.isArray(parsed.skills)    ? parsed.skills.filter(Boolean)    : [],
       parsedExperienceYears: typeof parsed.years_experience === 'number' ? parsed.years_experience : undefined,
       parsedEducation:       Array.isArray(parsed.education) ? parsed.education.filter((e: any) => e?.degree || e?.institution) : [],
       parsedNoticePeriod:    typeof parsed.notice_period === 'string' && parsed.notice_period ? parsed.notice_period : undefined,
       parsedAt:              new Date(),
+      // Rich fields added in v2
+      parsedCurrentRole:    typeof parsed.current_role    === 'string' && parsed.current_role    ? parsed.current_role.trim()    : undefined,
+      parsedCurrentCompany: typeof parsed.current_company === 'string' && parsed.current_company ? parsed.current_company.trim() : undefined,
+      parsedWorkHistory:    Array.isArray(parsed.work_history) ? parsed.work_history.filter((w: any) => w?.company || w?.role).map((w: any) => ({
+        company:        String(w.company || '').trim(),
+        role:           String(w.role    || '').trim(),
+        durationMonths: typeof w.duration_months === 'number' ? w.duration_months : undefined,
+        highlights:     Array.isArray(w.highlights) ? w.highlights.filter(Boolean).slice(0, 3) : [],
+      })) : [],
     };
 
     await Application.findByIdAndUpdate(id, { $set: update });
@@ -162,12 +171,15 @@ export const parseResume = async (
     logger.info(`Resume parsed for application ${id}: ${update.parsedSkills.length} skills extracted`);
 
     return sendSuccess(res, {
-      applicationId:        id,
-      parsedSkills:         update.parsedSkills,
-      parsedExperienceYears:update.parsedExperienceYears,
-      parsedEducation:      update.parsedEducation,
-      parsedNoticePeriod:   update.parsedNoticePeriod,
-      parsedAt:             update.parsedAt,
+      applicationId:         id,
+      parsedSkills:          update.parsedSkills,
+      parsedExperienceYears: update.parsedExperienceYears,
+      parsedEducation:       update.parsedEducation,
+      parsedNoticePeriod:    update.parsedNoticePeriod,
+      parsedCurrentRole:     update.parsedCurrentRole,
+      parsedCurrentCompany:  update.parsedCurrentCompany,
+      parsedWorkHistory:     update.parsedWorkHistory,
+      parsedAt:              update.parsedAt,
     }, 'Resume parsed successfully');
   } catch (error: any) {
     logger.error('parseResume error:', error);
@@ -227,6 +239,9 @@ export const parseAllResumes = async (
             parsedEducation:       Array.isArray(data.education) ? data.education : [],
             parsedNoticePeriod:    data.notice_period || undefined,
             parsedAt:              new Date(),
+            parsedCurrentRole:    data.current_role    || undefined,
+            parsedCurrentCompany: data.current_company || undefined,
+            parsedWorkHistory:    Array.isArray(data.work_history) ? data.work_history : [],
           },
         });
         parsed++;
@@ -280,8 +295,9 @@ export const rankCandidates = async (
       );
     }
 
-    const jobDescription  = job.description.slice(0, 2000);
-    const requiredSkills  = job.skills ?? [];
+    const jobDescription    = job.description.slice(0, 2000);
+    const requiredSkills    = job.skills ?? [];
+    const experienceRequired = job.experienceMin ?? 0;
 
     // Score each application concurrently (max 5 at a time to avoid LLM rate limits)
     const CHUNK = 5;
@@ -291,21 +307,31 @@ export const rankCandidates = async (
       const chunk = applications.slice(i, i + CHUNK);
       const settled = await Promise.allSettled(
         chunk.map(async (app) => {
-          // Build a short profile summary from parsed data for the LLM
-          const profileLines = [
-            `Skills: ${app.parsedSkills?.join(', ') || 'Not specified'}`,
-            `Experience: ${app.parsedExperienceYears != null ? `${app.parsedExperienceYears} years` : 'Unknown'}`,
-            `Education: ${app.parsedEducation?.map((e: any) => `${e.degree} from ${e.institution}`).join('; ') || 'Not specified'}`,
-            `Notice Period: ${app.parsedNoticePeriod || 'Not specified'}`,
-          ];
+          // Send structured candidate_profile — richer than raw text
+          const candidateProfile = {
+            skills:          app.parsedSkills ?? [],
+            years_experience:app.parsedExperienceYears ?? null,
+            current_role:    (app as any).parsedCurrentRole    ?? null,
+            current_company: (app as any).parsedCurrentCompany ?? null,
+            notice_period:   app.parsedNoticePeriod ?? null,
+            education:       app.parsedEducation ?? [],
+          };
 
-          let scores = { skill_match_pct: 50, experience_fit: 50, overall_fit: 50, missing_skills: [] as string[], matching_skills: [] as string[] };
+          type Scores = {
+            skill_match_pct: number; experience_fit: number; overall_fit: number;
+            missing_skills: string[]; matching_skills: string[]; fit_summary: string | null;
+          };
+          let scores: Scores = {
+            skill_match_pct: 50, experience_fit: 50, overall_fit: 50,
+            missing_skills: [], matching_skills: [], fit_summary: null,
+          };
 
           try {
             const llmRes = await llm.post('/api/rank-candidate', {
-              job_description: jobDescription,
-              resume_text:     profileLines.join('\n'),
-              required_skills: requiredSkills,
+              job_description:     jobDescription,
+              required_skills:     requiredSkills,
+              experience_required: experienceRequired,
+              candidate_profile:   candidateProfile,
             });
             const d = llmRes.data ?? {};
             scores = {
@@ -314,6 +340,7 @@ export const rankCandidates = async (
               overall_fit:     Number(d.overall_fit)     || 50,
               missing_skills:  Array.isArray(d.missing_skills)  ? d.missing_skills  : [],
               matching_skills: Array.isArray(d.matching_skills) ? d.matching_skills : [],
+              fit_summary:     typeof d.fit_summary === 'string' ? d.fit_summary.trim() : null,
             };
           } catch (llmErr: any) {
             logger.warn(`Rank LLM failed for ${app._id}: ${llmErr.message}`);
@@ -321,11 +348,12 @@ export const rankCandidates = async (
 
           await Application.findByIdAndUpdate(app._id, {
             $set: {
-              skillMatchScore:  scores.skill_match_pct,
+              skillMatchScore:      scores.skill_match_pct,
               experienceMatchScore: scores.experience_fit,
-              overallScore:     scores.overall_fit,
-              missingSkills:    scores.missing_skills,
-              matchingSkills:   scores.matching_skills,
+              overallScore:         scores.overall_fit,
+              missingSkills:        scores.missing_skills,
+              matchingSkills:       scores.matching_skills,
+              ...(scores.fit_summary ? { aiFitSummary: scores.fit_summary } : {}),
             },
           });
 
@@ -347,5 +375,109 @@ export const rankCandidates = async (
   } catch (error: any) {
     logger.error('rankCandidates error:', error);
     return sendError(res, error.message || 'Failed to rank candidates', 500);
+  }
+};
+
+/**
+ * @desc   Bulk-parse resumes for a given list of application IDs (sequential, rate-limit safe)
+ * @route  POST /api/v1/applications/bulk-parse
+ * @access HR / Admin / Employer
+ */
+export const bulkParse = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { applicationIds } = req.body as { applicationIds: string[] };
+
+    if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
+      return sendError(res, 'applicationIds must be a non-empty array', 400);
+    }
+    if (applicationIds.length > 50) {
+      return sendError(res, 'Maximum 50 applications per bulk-parse request', 400);
+    }
+
+    const tenantId = getTenantCompanyId(req.user);
+
+    let parsed = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const id of applicationIds) {
+      try {
+        const application = await Application.findById(id).lean();
+
+        if (!application || application.deletedAt) {
+          errors.push(`${id}: not found`);
+          failed++;
+          continue;
+        }
+
+        if (tenantId && application.companyId?.toString() !== tenantId && !isSuperAdmin(req.user)) {
+          errors.push(`${id}: unauthorized`);
+          failed++;
+          continue;
+        }
+
+        if (!application.resumeUrl) {
+          errors.push(`${id}: no resume uploaded`);
+          failed++;
+          continue;
+        }
+
+        let resumeText = '';
+        try {
+          resumeText = await extractResumeText(application.resumeUrl);
+        } catch (fileErr: any) {
+          errors.push(`${id}: ${fileErr.message}`);
+          failed++;
+          continue;
+        }
+
+        if (!resumeText.trim()) {
+          errors.push(`${id}: empty resume file`);
+          failed++;
+          continue;
+        }
+
+        let data: any = {};
+        try {
+          const llmRes = await llm.post('/api/parse-resume', {
+            resume_text: resumeText.slice(0, 5000),
+          });
+          data = llmRes.data ?? {};
+        } catch (llmErr: any) {
+          logger.warn(`Bulk LLM parse failed for ${id}: ${llmErr.message}`);
+        }
+
+        await Application.findByIdAndUpdate(id, {
+          $set: {
+            parsedSkills:          Array.isArray(data.skills) ? data.skills.filter(Boolean) : [],
+            parsedExperienceYears: typeof data.years_experience === 'number' ? data.years_experience : undefined,
+            parsedEducation:       Array.isArray(data.education) ? data.education : [],
+            parsedNoticePeriod:    data.notice_period || undefined,
+            parsedAt:              new Date(),
+            parsedCurrentRole:    data.current_role    || undefined,
+            parsedCurrentCompany: data.current_company || undefined,
+            parsedWorkHistory:    Array.isArray(data.work_history) ? data.work_history : [],
+          },
+        });
+        parsed++;
+      } catch (err: any) {
+        logger.warn(`Bulk parse failed for ${id}: ${err.message}`);
+        errors.push(`${id}: ${err.message}`);
+        failed++;
+      }
+    }
+
+    logger.info(`Bulk parse completed: ${parsed} parsed, ${failed} failed`);
+    return sendSuccess(
+      res,
+      { parsed, failed, errors: errors.slice(0, 20) },
+      `Parsed ${parsed} resume${parsed !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`
+    );
+  } catch (error: any) {
+    logger.error('bulkParse error:', error);
+    return sendError(res, error.message || 'Bulk parse failed', 500);
   }
 };

@@ -4,7 +4,7 @@
  * Required packages (run before using):
  *   npm install @tiptap/react @tiptap/pm @tiptap/starter-kit @tiptap/extension-placeholder
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -167,9 +167,13 @@ export function RichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]); // intentionally only when editor becomes available
 
-  const EDITOR_ID = typeof label === 'string' && label
-    ? `rte-${label.toLowerCase().replace(/\s+/g, '-')}`
-    : 'rich-text-editor';
+  // useId gives a stable unique ID even when label is a ReactNode (not a plain string).
+  // Never call .toLowerCase() on a non-string — guard first, then act.
+  const autoId = useId();
+  const labelStr = typeof label === 'string' ? label.trim() : '';
+  const EDITOR_ID = labelStr
+    ? `rte-${labelStr.toLowerCase().replace(/\s+/g, '-')}`
+    : `rte-${autoId.replace(/:/g, '')}`;
 
   return (
     <div className={className}>

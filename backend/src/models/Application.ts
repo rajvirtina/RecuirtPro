@@ -42,13 +42,22 @@ export interface IApplicationDocument extends Document {
   // AI resume parsing results
   parsedSkills: string[];
   parsedExperienceYears?: number;
-  parsedEducation: Array<{ degree: string; institution: string }>;
+  parsedEducation: Array<{ degree: string; institution: string; year?: number }>;
   parsedNoticePeriod?: string;
   parsedAt?: Date;
+  parsedCurrentRole?: string;
+  parsedCurrentCompany?: string;
+  parsedWorkHistory: Array<{
+    company: string;
+    role: string;
+    durationMonths?: number;
+    highlights: string[];
+  }>;
 
   // AI ranking results
   missingSkills: string[];
   matchingSkills: string[];
+  aiFitSummary?: string;
 }
 
 const statusHistorySchema = new Schema<IStatusHistory>(
@@ -152,15 +161,27 @@ const applicationSchema = new Schema<IApplicationDocument>(
     parsedSkills:          { type: [String], default: [] },
     parsedExperienceYears: { type: Number, min: 0, max: 100 },
     parsedEducation: {
-      type: [{ degree: String, institution: String }],
+      type: [{ degree: String, institution: String, year: Number }],
       default: [],
     },
-    parsedNoticePeriod: String,
-    parsedAt:           Date,
+    parsedNoticePeriod:   String,
+    parsedAt:             Date,
+    parsedCurrentRole:    String,
+    parsedCurrentCompany: String,
+    parsedWorkHistory: {
+      type: [{
+        company:        String,
+        role:           String,
+        durationMonths: { type: Number, min: 0 },
+        highlights:     [String],
+      }],
+      default: [],
+    },
 
     // AI ranking results
-    missingSkills:   { type: [String], default: [] },
-    matchingSkills:  { type: [String], default: [] },
+    missingSkills:  { type: [String], default: [] },
+    matchingSkills: { type: [String], default: [] },
+    aiFitSummary:   String,
   },
   {
     timestamps: true,
