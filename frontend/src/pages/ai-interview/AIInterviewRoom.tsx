@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import confetti from 'canvas-confetti';
 
 // ─── Axios instance (no JWT interceptors — session token in URL) ──────────────
 const api = axios.create({
@@ -143,7 +144,7 @@ export default function AIInterviewRoom() {
       const res = await withRetry(() => api.get(`/ai-interviews/session/${sessionId}`));
       const s: SessionInfo = res.data?.data ?? res.data;
       setSession(s);
-      if (s.status === 'completed') { setRoomState('completed'); }
+      if (s.status === 'completed') { setRoomState('completed'); confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } }); }
       else if (s.status === 'in_progress' && s.currentQuestionIndex > 0) {
         // Resume: re-fetch current question by restarting
         await resumeSession(s);
@@ -284,6 +285,8 @@ export default function AIInterviewRoom() {
       if (d.isComplete) {
         setAnalysis(d.analysis);
         setRoomState('completed');
+        // Fire confetti celebration
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
       } else {
         // Brief feedback pause then show next question
         setTimeout(() => {
