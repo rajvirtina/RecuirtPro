@@ -49,6 +49,7 @@ export interface IInterviewDocument extends Document {
   finalDecision?: 'selected' | 'rejected' | 'on_hold';
   recordingUrl?: string;
   proctoringEnabled: boolean;
+  proctoringLevel: 'none' | 'basic' | 'enhanced';
   proctoringConsent?: boolean;
   proctoringConsentAt?: Date;
   metadata?: {
@@ -206,6 +207,11 @@ const interviewSchema = new Schema<IInterviewDocument>(
     proctoringEnabled: {
       type: Boolean,
       default: false,
+    },
+    proctoringLevel: {
+      type: String,
+      enum: ['none', 'basic', 'enhanced'],
+      default: 'basic',
     },
     proctoringConsent: Boolean,
     proctoringConsentAt: Date,

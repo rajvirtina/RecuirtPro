@@ -31,6 +31,28 @@ interface ScheduleInterviewModalProps {
 type InterviewType = 'phone_screen' | 'technical' | 'behavioral' | 'ai_interview' | 'panel';
 type Platform = 'teams' | 'google_meet' | 'zoom' | 'in_person';
 type ScheduleMode = 'specific' | 'candidate_choice';
+type ProctoringLevel = 'none' | 'basic' | 'enhanced';
+
+const PROCTORING_LEVELS: { value: ProctoringLevel; label: string; description: string; icon: string }[] = [
+  {
+    value: 'none',
+    label: 'None',
+    description: 'No monitoring — standard interview',
+    icon: '🔓',
+  },
+  {
+    value: 'basic',
+    label: 'Basic',
+    description: 'Face detection & tab-switch alerts (browser)',
+    icon: '👁',
+  },
+  {
+    value: 'enhanced',
+    label: 'Enhanced',
+    description: 'Full-screen lock, screen recording, desktop app required',
+    icon: '🛡',
+  },
+];
 
 const INTERVIEW_TYPES: { value: InterviewType; label: string }[] = [
   { value: 'phone_screen', label: 'Phone Screen' },
@@ -62,6 +84,7 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
   const [availableInterviewers, setAvailableInterviewers] = useState<Interviewer[]>([]);
   const [platform, setPlatform] = useState<Platform>('google_meet');
   const [notes, setNotes] = useState('');
+  const [proctoringLevel, setProctoringLevel] = useState<ProctoringLevel>('basic');
 
   // Step 2 state
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('specific');
@@ -108,11 +131,15 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
         ? format(selectedDate, 'EEEE, MMMM d, yyyy') + ' at ' + selectedTime
         : 'a time of your choosing';
 
+      const enhancedNote = proctoringLevel === 'enhanced'
+        ? '\n\nIMPORTANT — Proctored Interview:\nThis interview requires our secure desktop app. Please download and install it before your interview:\n  👉 https://app.recruitpro.io/download/proctor\n\nThe app monitors your screen and ensures interview integrity. It will launch automatically when you open the interview link.\n'
+        : '';
+
       setEmailMessage(
-        `Hi ${candidateName},\n\nWe'd like to invite you for a ${interviewType.replace('_', ' ')} interview for the ${jobTitle} position${scheduleMode === 'specific' ? ` on ${dateStr}` : ''}.\n\n${scheduleMode === 'candidate_choice' ? 'Please use the link below to select a time that works best for you.\n\n' : ''}We look forward to speaking with you!\n\nBest regards`
+        `Hi ${candidateName},\n\nWe'd like to invite you for a ${interviewType.replace('_', ' ')} interview for the ${jobTitle} position${scheduleMode === 'specific' ? ` on ${dateStr}` : ''}.\n\n${scheduleMode === 'candidate_choice' ? 'Please use the link below to select a time that works best for you.\n\n' : ''}${enhancedNote}We look forward to speaking with you!\n\nBest regards`
       );
     }
-  }, [step, application, interviewType, scheduleMode, selectedDate, selectedTime]);
+  }, [step, application, interviewType, scheduleMode, selectedDate, selectedTime, proctoringLevel]);
 
   const toggleInterviewer = (interviewer: Interviewer) => {
     setSelectedInterviewers((prev) =>
@@ -138,6 +165,8 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
         platform,
         notes,
         isAI: interviewType === 'ai_interview',
+        proctoringLevel,
+        proctoringEnabled: proctoringLevel !== 'none',
       };
 
       if (scheduleMode === 'specific' && selectedDate) {
@@ -337,6 +366,36 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
                 />
               </div>
 
+              {/* Proctoring Level */}
+              <div>
+                <label className="field-label">Proctoring Level</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {PROCTORING_LEVELS.map((lvl) => (
+                    <button
+                      key={lvl.value}
+                      type="button"
+                      onClick={() => setProctoringLevel(lvl.value)}
+                      className={`flex flex-col items-start gap-1 px-3 py-2.5 rounded-lg border-2 text-left transition-all ${
+                        proctoringLevel === lvl.value
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-neutral-200 hover:border-primary-300'
+                      }`}
+                    >
+                      <span className="text-base leading-none">{lvl.icon}</span>
+                      <span className={`text-sm font-semibold ${proctoringLevel === lvl.value ? 'text-primary-700' : 'text-neutral-800'}`}>
+                        {lvl.label}
+                      </span>
+                      <span className="text-xs text-neutral-500 leading-tight">{lvl.description}</span>
+                    </button>
+                  ))}
+                </div>
+                {proctoringLevel === 'enhanced' && (
+                  <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    ⚠️ Enhanced proctoring requires the candidate to install the RecuirtPro desktop app before the interview. Instructions will be included in the invitation email.
+                  </p>
+                )}
+              </div>
+
               {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <Button type="button" variant="secondary" onClick={onClose} className="flex-1">Cancel</Button>
@@ -513,6 +572,15 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
                       </span>
                     </>
                   )}
+                  <span className="text-neutral-500">Proctoring</span>
+                  <span className={`font-medium capitalize ${
+                    proctoringLevel === 'enhanced' ? 'text-amber-700' :
+                    proctoringLevel === 'basic' ? 'text-primary-700' :
+                    'text-neutral-500'
+                  }`}>
+                    {PROCTORING_LEVELS.find((l) => l.value === proctoringLevel)?.icon}{' '}
+                    {proctoringLevel.charAt(0).toUpperCase() + proctoringLevel.slice(1)}
+                  </span>
                 </div>
               </div>
 

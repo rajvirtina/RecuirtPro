@@ -5,6 +5,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 COPY package*.json ./
+# Pass proctoring flag so the postinstall hook downloads face-api model files
+ARG VITE_ENABLE_PROCTORING=true
+ENV VITE_ENABLE_PROCTORING=$VITE_ENABLE_PROCTORING
 RUN npm ci && npm cache clean --force
 COPY . .
 RUN npm run build
