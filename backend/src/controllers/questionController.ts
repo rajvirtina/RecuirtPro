@@ -1,9 +1,21 @@
 import { Response } from 'express';
-import { Question, InterviewTemplate } from '../models';
+import axios from 'axios';
+import { Question, InterviewTemplate, Job } from '../models';
 import { AuthRequest, QuestionDifficulty } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse } from '../utils/response';
 import logger from '../utils/logger';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
+import config from '../config';
+
+// Lightweight axios instance for LLM calls within this controller
+const llmHttp = axios.create({
+  baseURL: (config as any).llm?.serviceUrl || 'http://localhost:8001',
+  timeout: 45_000,
+  headers: {
+    'Content-Type': 'application/json',
+    'X-API-Key': (config as any).llm?.apiSecretKey || '',
+  },
+});
 
 /**
  * @desc    Create a new question
@@ -299,6 +311,130 @@ export const autoGenerateQuestions = async (
   } catch (error: any) {
     logger.error('Error in autoGenerateQuestions:', error);
     return sendError(res, error.message || 'Error auto-generating questions', 500);
+  }
+};
+
+/**
+ * @desc    Generate questions from a job description via LLM (preview only — not saved)
+ *          HR reviews the results and POSTs selected questions to POST /questions to save them.
+ * @route   POST /api/v1/questions/generate
+ * @access  Private (Employer/HR/Admin)
+ */
+export const generateFromJob = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { jobId, count = 10 } = req.body;
+
+    if (!jobId) {
+      return sendError(res, 'jobId is required', 400);
+    }
+
+    const countNum = Math.min(Math.max(parseInt(String(count), 10) || 10, 5), 20);
+
+    const job = await Job.findById(jobId).lean();
+    if (!job) {
+      return sendError(res, 'Job not found', 404);
+    }
+
+    // Tenant isolation
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && (job as any).companyId?.toString() !== tenantId) {
+      return sendError(res, 'Not authorised to generate questions for this job', 403);
+    }
+
+    // Call LLM service
+    let generated: any[] = [];
+    let llmAvailable = false;
+    try {
+      const llmRes = await llmHttp.post('/api/generate-questions', {
+        job_title:        (job as any).title,
+        job_description:  (job as any).description || (job as any).title,
+        required_skills:  (job as any).skills || [],
+        interview_round:  'L1',
+        difficulty:       'senior',
+        num_questions:    countNum,
+      });
+      generated    = llmRes.data?.questions || [];
+      llmAvailable = generated.length > 0;
+    } catch (llmErr: any) {
+      logger.warn(`LLM generate-from-job failed: ${llmErr.message}`);
+    }
+
+    // Normalise into preview shape (not yet saved — no _id, no companyId)
+    const preview = generated
+      .map((q: any, i: number) => ({
+        _tempId:           i,
+        question:          q.text || q.question || '',
+        questionType:      q.type || 'technical',
+        difficulty:        'senior',
+        skills:            Array.isArray(q.skills) ? q.skills : ((job as any).skills || []).slice(0, 3),
+        expectedAnswer:    q.expected_answer || '',
+        estimatedDuration: 5,
+      }))
+      .filter((q) => q.question.trim().length > 0);
+
+    logger.info(`generateFromJob: ${preview.length} questions generated for job ${jobId}`);
+
+    return sendSuccess(
+      res,
+      {
+        jobTitle:       (job as any).title,
+        jobSkills:      (job as any).skills || [],
+        questions:      preview,
+        generatedCount: preview.length,
+        llmAvailable,
+      },
+      `${preview.length} questions generated`
+    );
+  } catch (error: any) {
+    logger.error('Error in generateFromJob:', error);
+    return sendError(res, error.message || 'Error generating questions', 500);
+  }
+};
+
+/**
+ * @desc    Batch-save accepted questions to the question bank
+ *          Called by the frontend after HR reviews and accepts generated questions.
+ * @route   POST /api/v1/questions/batch
+ * @access  Private (Employer/HR/Admin)
+ */
+export const batchCreateQuestions = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { questions } = req.body;
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return sendError(res, 'questions array is required', 400);
+    }
+
+    const companyId  = req.user?.companyId;
+    const createdById = req.user?._id;
+
+    const docs = questions.map((q: any) => ({
+      companyId,
+      question:          q.question || q.text,
+      questionType:      q.questionType || q.type || 'technical',
+      difficulty:        q.difficulty || 'senior',
+      skills:            Array.isArray(q.skills) ? q.skills : [],
+      expectedAnswer:    q.expectedAnswer || '',
+      estimatedDuration: q.estimatedDuration || 5,
+      isActive:          true,
+      createdBy:         createdById,
+      usageCount:        0,
+    }));
+
+    const saved = await Question.insertMany(docs, { ordered: false });
+
+    logger.info(`batchCreateQuestions: ${saved.length} questions saved for company ${companyId}`);
+
+    return sendSuccess(res, { savedCount: saved.length }, `${saved.length} questions saved to bank`, 201);
+  } catch (error: any) {
+    logger.error('Error in batchCreateQuestions:', error);
+    return sendError(res, error.message || 'Error saving questions', 500);
   }
 };
 

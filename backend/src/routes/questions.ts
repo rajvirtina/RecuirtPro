@@ -7,6 +7,8 @@ import {
   deleteQuestion,
   autoGenerateQuestions,
   getQuestionStats,
+  generateFromJob,
+  batchCreateQuestions,
 } from '../controllers/questionController';
 import { protect, authorize } from '../middleware/auth';
 import { UserRole } from '../types';
@@ -15,6 +17,18 @@ const router = express.Router();
 
 // All routes require authentication
 router.use(protect);
+
+// ── LLM-powered generation (must be before /:id so Express doesn't match "generate" as an id) ──
+router.post(
+  '/generate',
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  generateFromJob
+);
+router.post(
+  '/batch',
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  batchCreateQuestions
+);
 
 /**
  * Question CRUD routes

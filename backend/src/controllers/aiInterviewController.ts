@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { AIInterviewSession, IAIQuestion, IAIResponse, IAIAnalysis } from '../models/AIInterviewSession';
-import { Interview, Job, Company, Application } from '../models';
+import { Interview, Job, Company, Application, Question } from '../models';
 import { AuthRequest, ApplicationStatus, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId } from '../middleware/auth';
@@ -21,6 +21,125 @@ const llm = axios.create({
     'X-API-Key': config.llm.apiSecretKey,
   },
 });
+
+// ─── Question bank helpers ────────────────────────────────────────────────────
+
+/** Map Question.questionType → IAIQuestion.type */
+const QTYPE_MAP: Record<string, IAIQuestion['type']> = {
+  technical:     'technical',
+  behavioral:    'behavioral',
+  situational:   'situational',
+  coding:        'technical',
+  system_design: 'technical',
+  hr:            'hr',
+};
+
+/** Map session difficulty string → Question schema enum values */
+function mapDifficultyToEnum(difficulty: string): string {
+  const m: Record<string, string> = {
+    junior: 'junior',
+    mid:    'senior',
+    senior: 'senior',
+    expert: 'expert',
+    lead:   'expert',
+  };
+  return m[difficulty.toLowerCase()] ?? 'senior';
+}
+
+/**
+ * Bank-first question selection:
+ *   1. Pull best-rated / least-used questions from the company bank (+ global).
+ *   2. LLM fills remaining slots, targeting uncovered skills.
+ *   3. Increment usageCount on every consumed bank question.
+ *
+ * Always reserves at least 2 slots for LLM so each interview has fresh content.
+ */
+async function selectQuestionsForSession(
+  companyId: string,
+  jobSkills: string[],
+  sessionDifficulty: string,
+  jobTitle: string,
+  jobDescription: string,
+  interviewRound: string,
+  targetCount: number
+): Promise<IAIQuestion[]> {
+  const difficulty = mapDifficultyToEnum(sessionDifficulty);
+
+  // ── Step 1: query bank ────────────────────────────────────────────────────
+  const bankFilter: any = {
+    isActive: true,
+    difficulty,
+    $or: [
+      { companyId: new mongoose.Types.ObjectId(companyId) },
+      { companyId: null },
+      { companyId: { $exists: false } },
+    ],
+  };
+  if (jobSkills.length > 0) bankFilter.skills = { $in: jobSkills };
+
+  const bankDocs = await Question.find(bankFilter)
+    .sort({ averageRating: -1, usageCount: 1 })
+    .limit(targetCount * 2)
+    .lean();
+
+  // Reserve at least 2 slots for LLM fresh content
+  const maxFromBank = Math.max(0, targetCount - 2);
+  const selected    = bankDocs.slice(0, Math.min(maxFromBank, bankDocs.length));
+
+  // ── Step 2: determine LLM gap ────────────────────────────────────────────
+  const remaining       = targetCount - selected.length;
+  const coveredSkills   = selected.flatMap((q) => q.skills ?? []);
+  const uncoveredSkills = jobSkills.filter((s) => !coveredSkills.includes(s));
+  const excludeTexts    = selected.map((q) => q.question);
+
+  // ── Step 3: LLM gap-fill ─────────────────────────────────────────────────
+  let aiGenerated: IAIQuestion[] = [];
+  if (remaining > 0) {
+    try {
+      const llmRes = await llm.post('/api/generate-questions', {
+        job_title:         jobTitle,
+        job_description:   jobDescription || jobTitle,
+        required_skills:   uncoveredSkills.length > 0 ? uncoveredSkills : jobSkills,
+        interview_round:   interviewRound,
+        difficulty:        sessionDifficulty,
+        num_questions:     remaining,
+        exclude_questions: excludeTexts,
+      });
+
+      const raw: any[] = llmRes.data?.questions || [];
+      aiGenerated = raw.map((q: any, i: number): IAIQuestion => ({
+        id:                      q.id || `ai_${selected.length + i + 1}`,
+        text:                    q.text || 'Tell me about a relevant project you have worked on.',
+        type:                    (QTYPE_MAP[q.type] ?? q.type ?? 'behavioral') as IAIQuestion['type'],
+        expectedDurationSeconds: Number(q.expected_duration_seconds) || 150,
+        orderIndex:              selected.length + i + 1,
+      }));
+    } catch (llmErr: any) {
+      logger.warn(`LLM gap-fill failed in selectQuestionsForSession: ${llmErr.message}`);
+    }
+  }
+
+  // ── Step 4: increment usageCount (fire-and-forget) ───────────────────────
+  if (selected.length > 0) {
+    Question.updateMany(
+      { _id: { $in: selected.map((q) => q._id) } },
+      { $inc: { usageCount: 1 } }
+    ).catch((err: any) =>
+      logger.warn(`usageCount increment failed: ${err.message}`)
+    );
+  }
+
+  // ── Step 5: convert bank docs → IAIQuestion and merge ────────────────────
+  const bankAsAI: IAIQuestion[] = selected.map((q, i): IAIQuestion => ({
+    id:                      `bank_${q._id}`,
+    text:                    q.question,
+    type:                    QTYPE_MAP[q.questionType] ?? 'technical',
+    expectedDurationSeconds: (q.estimatedDuration ?? 5) * 60,
+    orderIndex:              i + 1,
+  }));
+
+  return [...bankAsAI, ...aiGenerated];
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -305,28 +424,24 @@ export const startSession = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // Generate questions via LLM service
+    // Bank-first question selection: curated bank + LLM gap-fill
     let questions: IAIQuestion[] = [];
     try {
-      const llmRes = await llm.post('/api/generate-questions', {
-        job_title:        session.jobTitle,
-        job_description:  session.jobDescription || session.jobTitle,
-        required_skills:  session.requiredSkills,
-        interview_round:  session.interviewRound,
-        difficulty:       session.difficulty,
-        num_questions:    session.totalQuestions,
-      });
+      questions = await selectQuestionsForSession(
+        session.companyId.toString(),
+        session.requiredSkills,
+        session.difficulty,
+        session.jobTitle,
+        session.jobDescription,
+        session.interviewRound,
+        session.totalQuestions
+      );
+    } catch (selErr: any) {
+      logger.warn(`selectQuestionsForSession failed, using fallback: ${selErr.message}`);
+    }
 
-      const raw: any[] = llmRes.data?.questions || [];
-      questions = raw.map((q: any, i: number): IAIQuestion => ({
-        id:                      q.id || `q${i + 1}`,
-        text:                    q.text || 'Tell me about yourself.',
-        type:                    q.type || 'behavioral',
-        expectedDurationSeconds: Number(q.expected_duration_seconds) || 150,
-        orderIndex:              Number(q.order_index) || i + 1,
-      }));
-    } catch (llmErr: any) {
-      logger.warn(`LLM question generation failed, using fallback: ${llmErr.message}`);
+    // Final safety net — should only trigger if both bank and LLM are down
+    if (questions.length === 0) {
       questions = buildFallbackQuestions(session.jobTitle, session.totalQuestions);
     }
 
