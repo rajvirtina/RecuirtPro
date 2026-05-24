@@ -34,3 +34,23 @@ export const uploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Rate limiter for AI interview answer submissions.
+ * 50 answers per session per hour (a 12-question session has ~12 submissions;
+ * this allows retries and retakes while blocking scripted abuse).
+ */
+export const aiAnswerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50,
+  keyGenerator: (req) => {
+    // Key = sessionId + IP so multiple candidates on the same NAT can each submit
+    const sessionId = req.params?.sessionId || 'unknown';
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    return `ai-answer:${sessionId}:${ip}`;
+  },
+  message: { success: false, message: 'Too many answer submissions. Please wait before continuing.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});

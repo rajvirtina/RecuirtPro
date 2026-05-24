@@ -106,6 +106,9 @@ function initQueues() {
 // Initialize on load
 initQueues();
 
+/** Expose Redis availability for the health endpoint */
+export const isRedisAvailable = () => redisAvailable;
+
 // =============================================
 // Helper: Enqueue email (falls back to direct send if Redis unavailable)
 // =============================================
@@ -118,19 +121,26 @@ export const enqueueEmail = async (options: {
   html?: string;
 }) => {
   if (redisAvailable && emailQueue) {
-    return emailQueue.add(options, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      removeOnComplete: 100,
-      removeOnFail: 500,
-    });
+    try {
+      return await emailQueue.add(options, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+      });
+    } catch (queueErr: any) {
+      // Redis went away between ready-check and add() — fall through to direct send
+      logger.warn(`[Email] Queue enqueue failed (${queueErr.message}) — falling back to direct send`);
+      redisAvailable = false;
+    }
   }
-  // Fallback: send directly
+  // Fallback: send directly (no Redis, or queue.add() threw)
   try {
     await sendEmail(options as any);
     logger.info(`[Email] Sent directly (no queue): ${options.subject} → ${options.to}`);
   } catch (err: any) {
     logger.error(`[Email] Direct send failed: ${err.message}`);
+    throw err; // re-throw so callers can handle if they need to
   }
 };
 

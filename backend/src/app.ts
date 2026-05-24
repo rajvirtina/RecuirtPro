@@ -36,6 +36,7 @@ import companySettingsRoutes from './routes/companySettings';
 import jobTemplateRoutes from './routes/jobTemplates';
 import scheduleRoutes from './routes/schedule';
 import pipelineRoutes from './routes/pipeline';
+import healthRoutes from './routes/health';
 // import userRoutes from './routes/user';
 // ... other routes
 
@@ -125,6 +126,9 @@ app.use(mongoSanitize());
 app.use(xssSanitize);
 app.use(compression());
 
+// Health check — mounted BEFORE the rate limiter so probe traffic is never throttled
+app.use('/api', healthRoutes);
+
 // Rate limiting
 app.use('/api', limiter);
 
@@ -138,15 +142,6 @@ if (config.env !== 'test') {
 if (config.env !== 'production') {
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
-
-// Health check
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Server is running',
-    timestamp: new Date().toISOString(),
-  });
-});
 
 // API Routes
 app.use('/api/v1/auth', authRoutes);

@@ -410,74 +410,254 @@ export const downloadOfferPDF = async (req: AuthRequest, res: Response): Promise
 
     doc.pipe(res);
 
+    const currency = offer.salary?.currency || 'INR';
+    const fmt = (n: number | undefined) =>
+      n != null ? n.toLocaleString('en-IN') : 'N/A';
+    const inDate = (d: Date | undefined) =>
+      d ? new Date(d).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }) : 'TBD';
+
     // ── Header ────────────────────────────────────────────────────────────────
     doc
       .fontSize(22).font('Helvetica-Bold').text(company?.name || 'Company', { align: 'center' })
       .moveDown(0.3)
-      .fontSize(14).font('Helvetica').text('Offer of Employment', { align: 'center' })
+      .fontSize(14).font('Helvetica').text('Appointment / Offer Letter', { align: 'center' })
+      .moveDown(0.2)
+      .fontSize(10).fillColor('#666666').text('PRIVATE & CONFIDENTIAL', { align: 'center' })
+      .fillColor('#000000')
       .moveDown(1);
 
-    // Date
-    doc.fontSize(11).text(`Date: ${new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}`).moveDown(0.5);
+    // ── Date + Ref ────────────────────────────────────────────────────────────
+    doc.fontSize(11)
+      .text(`Date: ${inDate(new Date())}`, { continued: true })
+      .text(`                  Ref: ${(offer as any)._id?.toString().slice(-8).toUpperCase() || ''}`, { align: 'right' })
+      .moveDown(0.8);
 
-    // Salutation
-    doc.text(`Dear ${candidate?.firstName} ${candidate?.lastName},`).moveDown(0.5);
+    // ── Salutation ────────────────────────────────────────────────────────────
+    doc
+      .font('Helvetica-Bold').text(`${candidate?.firstName} ${candidate?.lastName}`)
+      .font('Helvetica').text(candidate?.email || '')
+      .moveDown(0.8);
+
     doc.text(
-      `We are pleased to offer you the position of ${offer.designation}` +
-      `${offer.department ? ` in the ${offer.department} department` : ''} at ${company?.name || 'our company'}.`
+      `Dear ${candidate?.firstName},`
+    ).moveDown(0.4);
+    doc.text(
+      `We are pleased to extend an offer of employment for the position of ` +
+      `${offer.designation}${offer.department ? `, ${offer.department} Department` : ''} ` +
+      `at ${company?.name || 'our organisation'}. The terms and conditions of your employment are set out below.`
     ).moveDown(1);
 
-    // ── Position Details ──────────────────────────────────────────────────────
-    doc.fontSize(13).font('Helvetica-Bold').text('Position Details').moveDown(0.4);
+    // ── 1. Position Details ───────────────────────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('1.  Position Details').moveDown(0.4);
     doc.fontSize(11).font('Helvetica');
 
-    const rows: [string, string][] = [
-      ['Designation',  offer.designation],
-      ['Department',   offer.department || 'N/A'],
-      ['Location',     (offer as any).location || 'N/A'],
-      ['Work Mode',    (offer as any).workMode || 'N/A'],
-      ['Joining Date', offer.joiningDate ? new Date(offer.joiningDate).toLocaleDateString('en-IN') : 'TBD'],
+    const posRows: [string, string][] = [
+      ['Designation',       offer.designation],
+      ['Department',        offer.department || 'N/A'],
+      ['Reporting To',      offer.reportingTo || 'To be communicated'],
+      ['Location',          offer.location   || 'N/A'],
+      ['Work Mode',         (offer.workMode   || 'onsite').replace(/^\w/, c => c.toUpperCase())],
+      ['Date of Joining',   inDate(offer.joiningDate)],
     ];
-    for (const [label, value] of rows) {
-      doc.text(`${label}:  ${value}`).moveDown(0.2);
+    for (const [label, value] of posRows) {
+      doc
+        .font('Helvetica-Bold').text(`${label}:  `, { continued: true })
+        .font('Helvetica').text(value)
+        .moveDown(0.2);
     }
     doc.moveDown(0.6);
 
-    // ── Compensation ──────────────────────────────────────────────────────────
-    doc.fontSize(13).font('Helvetica-Bold').text('Compensation').moveDown(0.4);
+    // ── 2. CTC Breakdown ─────────────────────────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('2.  Compensation (Cost to Company)').moveDown(0.4);
     doc.fontSize(11).font('Helvetica');
-    if (offer.salary) {
-      doc.text(`Salary: ${offer.salary.currency} ${offer.salary.amount?.toLocaleString()} (${offer.salary.frequency})`).moveDown(0.2);
+
+    if (offer.salary?.amount) {
+      const annualCtc  = offer.salary.frequency === 'monthly'
+        ? offer.salary.amount * 12
+        : offer.salary.amount;
+
+      const grossMonthly = Math.round(annualCtc / 12);
+
+      // Standard Indian breakup approximation (customise per company policy)
+      const basic        = Math.round(grossMonthly * 0.40);  // 40% of gross
+      const hra          = Math.round(grossMonthly * 0.20);  // 20% (metro)
+      const transport    = 1600;                              // ₹1,600 statutory limit
+      const special      = grossMonthly - basic - hra - transport;
+
+      const pfEmployee   = Math.round(basic * 0.12);         // 12% of basic (capped ₹15k basic)
+      const pfEmployer   = Math.round(basic * 0.12);         // matched by employer
+      const professionalTax = 200;                           // ₹200/month (most states)
+
+      // Deductions
+      const netMonthly   = grossMonthly - pfEmployee - professionalTax;
+
+      // Table header
+      const tLeft  = 80;
+      const tRight = 450;
+      const tY     = doc.y;
+
+      const headerBg = '#1a56db';
+      doc.rect(tLeft, tY, tRight - tLeft, 18).fill(headerBg);
+      doc
+        .fillColor('#ffffff').font('Helvetica-Bold').fontSize(10)
+        .text('Salary Component', tLeft + 4, tY + 4, { width: 200 })
+        .text('Monthly (₹)', tLeft + 210, tY + 4, { width: 100, align: 'right' })
+        .text('Annual (₹)',   tLeft + 316, tY + 4, { width: 120, align: 'right' });
+
+      doc.fillColor('#000000').font('Helvetica').fontSize(10);
+
+      const tableRows: [string, number][] = [
+        ['Basic Salary',              basic],
+        ['House Rent Allowance (HRA)', hra],
+        ['Transport Allowance',        transport],
+        ['Special Allowance',          special],
+      ];
+
+      let rowY = tY + 20;
+      let alternate = false;
+      for (const [label, monthly] of tableRows) {
+        if (alternate) doc.rect(tLeft, rowY, tRight - tLeft, 16).fill('#f0f4ff');
+        doc
+          .fillColor('#000000')
+          .text(label,             tLeft + 4, rowY + 3, { width: 200 })
+          .text(fmt(monthly),      tLeft + 210, rowY + 3, { width: 100, align: 'right' })
+          .text(fmt(monthly * 12), tLeft + 316, rowY + 3, { width: 120, align: 'right' });
+        rowY += 18;
+        alternate = !alternate;
+      }
+
+      // Gross row
+      doc.rect(tLeft, rowY, tRight - tLeft, 18).fill('#e8f0fe');
+      doc
+        .fillColor('#000000').font('Helvetica-Bold')
+        .text('Gross Monthly CTC',  tLeft + 4,   rowY + 4, { width: 200 })
+        .text(fmt(grossMonthly),    tLeft + 210, rowY + 4, { width: 100, align: 'right' })
+        .text(fmt(annualCtc),       tLeft + 316, rowY + 4, { width: 120, align: 'right' });
+      rowY += 20;
+
+      // PF rows
+      doc.font('Helvetica').fillColor('#555555');
+      doc.text(`  Employer PF Contribution (12% of Basic):`,    tLeft + 4, rowY + 2).moveDown(0);
+      doc.text(fmt(pfEmployer), tLeft + 210, rowY + 2, { width: 100, align: 'right' });
+      doc.text(fmt(pfEmployer * 12), tLeft + 316, rowY + 2, { width: 120, align: 'right' });
+      rowY += 18;
+      doc.text(`  Employee PF Deduction (12% of Basic):`,       tLeft + 4, rowY + 2);
+      doc.text(fmt(pfEmployee), tLeft + 210, rowY + 2, { width: 100, align: 'right' });
+      doc.text(fmt(pfEmployee * 12), tLeft + 316, rowY + 2, { width: 120, align: 'right' });
+      rowY += 18;
+      doc.text(`  Professional Tax Deduction:`,                  tLeft + 4, rowY + 2);
+      doc.text(fmt(professionalTax), tLeft + 210, rowY + 2, { width: 100, align: 'right' });
+      doc.text(fmt(professionalTax * 12), tLeft + 316, rowY + 2, { width: 120, align: 'right' });
+      rowY += 18;
+
+      // Net take-home
+      doc.rect(tLeft, rowY, tRight - tLeft, 20).fill('#dcf1dc');
+      doc
+        .fillColor('#000000').font('Helvetica-Bold').fontSize(11)
+        .text('Approx. Net Monthly Take-Home', tLeft + 4, rowY + 4, { width: 200 })
+        .text(fmt(netMonthly), tLeft + 210, rowY + 4, { width: 100, align: 'right' });
+
+      doc.moveDown(0.3);
+      doc.y = rowY + 30;
+      doc
+        .fontSize(9).fillColor('#888888').font('Helvetica')
+        .text(
+          'Note: The above breakup is indicative. Actual take-home may vary subject to applicable tax slabs, ' +
+          'investment declarations under Section 80C, and other statutory obligations.',
+          { align: 'justify' }
+        )
+        .fillColor('#000000').fontSize(11);
     }
+
     if ((offer as any).bonus?.amount) {
-      doc.text(`Bonus: ${offer.salary.currency} ${(offer as any).bonus.amount?.toLocaleString()} (${(offer as any).bonus.type})`).moveDown(0.2);
-    }
-    if (offer.probationPeriod) {
-      doc.text(`Probation Period: ${offer.probationPeriod} month(s)`).moveDown(0.2);
+      doc.moveDown(0.4).font('Helvetica')
+        .text(`Performance Bonus: ${currency} ${fmt((offer as any).bonus.amount)} (${(offer as any).bonus.type})`);
     }
     doc.moveDown(0.6);
 
-    // ── Benefits ──────────────────────────────────────────────────────────────
+    // ── 3. Employment Terms ───────────────────────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('3.  Employment Terms').moveDown(0.4);
+    doc.fontSize(11).font('Helvetica');
+
+    if (offer.probationPeriod) {
+      doc.text(`Probation Period:  ${offer.probationPeriod} month(s)`).moveDown(0.2);
+    }
+    if (offer.noticePeriod != null) {
+      const np = offer.noticePeriod >= 30
+        ? `${Math.round(offer.noticePeriod / 30)} month(s)`
+        : `${offer.noticePeriod} day(s)`;
+      doc.text(`Notice Period (post-confirmation):  ${np}`).moveDown(0.2);
+    }
+    if ((offer as any).expiresAt) {
+      doc.text(`Offer Valid Until:  ${inDate((offer as any).expiresAt)}`).moveDown(0.2);
+    }
+    doc.moveDown(0.6);
+
+    // ── 4. Benefits ───────────────────────────────────────────────────────────
     if (Array.isArray(offer.benefits) && offer.benefits.length > 0) {
-      doc.fontSize(13).font('Helvetica-Bold').text('Benefits').moveDown(0.4);
+      doc.fontSize(13).font('Helvetica-Bold').text('4.  Benefits').moveDown(0.4);
       doc.fontSize(11).font('Helvetica');
       for (const b of offer.benefits) {
-        doc.text(`  • ${b}`).moveDown(0.1);
+        doc.text(`  •  ${b}`).moveDown(0.1);
       }
       doc.moveDown(0.6);
     }
 
-    // ── Additional Terms ──────────────────────────────────────────────────────
+    // ── 5. Additional Terms / Special Conditions ──────────────────────────────
     if ((offer as any).additionalTerms) {
-      doc.fontSize(13).font('Helvetica-Bold').text('Additional Terms').moveDown(0.4);
-      doc.fontSize(11).font('Helvetica').text((offer as any).additionalTerms).moveDown(0.6);
+      doc.fontSize(13).font('Helvetica-Bold').text('5.  Additional Terms').moveDown(0.4);
+      doc.fontSize(11).font('Helvetica').text((offer as any).additionalTerms, { align: 'justify' }).moveDown(0.6);
     }
 
-    // ── Sign-off ──────────────────────────────────────────────────────────────
-    doc.text('Please confirm your acceptance within 7 days of receiving this offer.').moveDown(0.4);
-    doc.text('We look forward to welcoming you to our team!').moveDown(1.5);
-    doc.font('Helvetica-Bold').text('Warm regards,').moveDown(0.2);
-    doc.text(company?.name || 'HR Team');
+    // ── 6. Confidentiality & Non-Solicitation ─────────────────────────────────
+    doc.fontSize(13).font('Helvetica-Bold').text('6.  Confidentiality & Non-Solicitation').moveDown(0.4);
+    doc.fontSize(11).font('Helvetica').text(
+      'During and for a period of 12 months following the termination of your employment, you agree not to ' +
+      'solicit or recruit any employee of the Company or its affiliates. You shall maintain strict ' +
+      'confidentiality of all proprietary and business-sensitive information obtained in the course of your ' +
+      'employment. A detailed Non-Disclosure and Confidentiality Agreement will be provided at on-boarding.',
+      { align: 'justify' }
+    ).moveDown(0.8);
+
+    // ── Acceptance ────────────────────────────────────────────────────────────
+    doc.fontSize(11)
+      .font('Helvetica-Bold').text('Acceptance of Offer')
+      .font('Helvetica').moveDown(0.3)
+      .text(
+        `Please sign and return a copy of this letter by ${(offer as any).expiresAt ? inDate((offer as any).expiresAt) : '7 days of the date above'} ` +
+        `to indicate your acceptance of the terms herein. Failure to do so within the stipulated time will ` +
+        `render this offer null and void.`,
+        { align: 'justify' }
+      ).moveDown(1.5);
+
+    // ── Signature block ───────────────────────────────────────────────────────
+    const sigY = doc.y;
+    const pageWidth = doc.page.width - 120;
+
+    // Two columns — Authorised signatory | Candidate acceptance
+    doc
+      .font('Helvetica-Bold').fontSize(11)
+      .text('For ' + (company?.name || 'the Company'),  80,  sigY, { width: pageWidth / 2 - 10 })
+      .text('Accepted by Candidate',                     80 + pageWidth / 2, sigY, { width: pageWidth / 2 });
+
+    const lineY = sigY + 60;
+    doc
+      .moveTo(80, lineY).lineTo(80 + pageWidth / 2 - 30, lineY).stroke()
+      .moveTo(80 + pageWidth / 2, lineY).lineTo(80 + pageWidth - 20, lineY).stroke();
+
+    doc
+      .font('Helvetica').fontSize(10)
+      .text('Authorised Signatory / HR',  80,  lineY + 4, { width: pageWidth / 2 - 10 })
+      .text('Signature & Date',           80 + pageWidth / 2, lineY + 4, { width: pageWidth / 2 });
+
+    doc.moveDown(2);
+    doc
+      .font('Helvetica').fontSize(9).fillColor('#888888')
+      .text(
+        `This offer letter was generated on ${inDate(new Date())} and is subject to satisfactory completion of ` +
+        `background verification, reference checks, and submission of all required documents prior to joining.`,
+        { align: 'center' }
+      );
 
     doc.end();
 

@@ -12,6 +12,7 @@ import {
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
+import { aiAnswerLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -82,6 +83,7 @@ router.post(
  */
 router.post(
   '/session/:sessionId/answer',
+  aiAnswerLimiter,
   [
     param('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID'),
     body('questionId').notEmpty().withMessage('questionId is required'),
