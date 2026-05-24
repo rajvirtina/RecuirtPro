@@ -13,9 +13,11 @@ node_modules/
 **/.env.local
 **/.env.development
 **/.env.staging
-# backend/.env contains real secrets — must never be committed
+# .env files contain real secrets — must never be committed
 backend/.env
-# NOTE: backend/.env.production is force-tracked for Hostinger deployment
+backend/.env.production
+frontend/.env.production
+# For Hostinger deployment, inject secrets via host env-var panel — do NOT commit .env.production
 
 # Build outputs (frontend/dist and backend/dist are committed for Hostinger deployment)
 build/
