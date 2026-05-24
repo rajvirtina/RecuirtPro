@@ -202,27 +202,30 @@ function fmtHMS(s: number) {
 
 /** Exponential-backoff retry */
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, baseMs = 1000): Promise<T> {
+  let lastErr: unknown;
   for (let i = 0; i < retries; i++) {
     try { return await fn(); }
     catch (err) {
-      if (i === retries - 1) throw err;
-      await new Promise(r => setTimeout(r, baseMs * 2 ** i));
+      lastErr = err;
+      if (i < retries - 1) {
+        await new Promise(r => setTimeout(r, baseMs * 2 ** i));
+      }
     }
   }
-  throw new Error('All retries exhausted');
+  throw lastErr;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function ConnectionDot({ live }: { live: boolean }) {
   return (
-    <span className={`inline-block w-2.5 h-2.5 rounded-full ${live ? 'bg-emerald-400' : 'bg-red-400 animate-pulse'}`} />
+    <span className={`inline-block w-2.5 h-2.5 rounded-full ${live ? 'bg-success-400' : 'bg-error-400 animate-pulse'}`} />
   );
 }
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
   const pct   = Math.round((value / 10) * 100);
-  const color = pct >= 70 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400';
+  const color = pct >= 70 ? 'bg-success-500' : pct >= 50 ? 'bg-warning-400' : 'bg-error-400';
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs text-neutral-500">
@@ -252,9 +255,9 @@ function DotsProgress({ current, total }: { current: number; total: number }) {
             key={i}
             className={[
               'block rounded-full transition-all duration-300',
-              done   ? 'w-2 h-2 bg-indigo-600'                          : '',
-              active ? 'w-3 h-3 bg-indigo-500 ring-2 ring-indigo-200'   : '',
-              !done && !active ? 'w-2 h-2 bg-neutral-300'               : '',
+              done   ? 'w-2 h-2 bg-primary-600'                          : '',
+              active ? 'w-3 h-3 bg-primary-500 ring-2 ring-primary-200'  : '',
+              !done && !active ? 'w-2 h-2 bg-neutral-300'                : '',
             ].join(' ')}
           />
         );
@@ -268,10 +271,10 @@ function DotsProgress({ current, total }: { current: number; total: number }) {
 
 function RecommendationBadge({ rec }: { rec: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    strong_hire: { label: 'Strong Hire',   cls: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
-    hire:        { label: 'Hire',          cls: 'bg-green-100  text-green-700  border-green-300'   },
-    hold:        { label: 'On Hold',       cls: 'bg-amber-100  text-amber-700  border-amber-300'   },
-    reject:      { label: 'Not Selected', cls: 'bg-red-100    text-red-700    border-red-300'     },
+    strong_hire: { label: 'Strong Hire',  cls: 'bg-success-50 text-success-700 border-success-200'  },
+    hire:        { label: 'Hire',         cls: 'bg-success-50 text-success-600 border-success-200'  },
+    hold:        { label: 'On Hold',      cls: 'bg-warning-50 text-warning-700 border-warning-200'  },
+    reject:      { label: 'Not Selected', cls: 'bg-error-50   text-error-700   border-error-200'    },
   };
   const m = map[rec] ?? { label: rec, cls: 'bg-neutral-100 text-neutral-700 border-neutral-300' };
   return (
@@ -573,11 +576,11 @@ export default function AIInterviewRoom() {
       <div className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-neutral-100 animate-pulse" />
 
       <div className="flex flex-col items-center gap-4 mt-14">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-neutral-500 font-medium">Connecting to AI Interviewer…</p>
         <div className="flex gap-1.5">
           {[0, 1, 2].map(i => (
-            <span key={i} className="w-2.5 h-2.5 bg-indigo-400 rounded-full animate-bounce"
+            <span key={i} className="w-2.5 h-2.5 bg-primary-400 rounded-full animate-bounce"
               style={{ animationDelay: `${i * 0.15}s` }} />
           ))}
         </div>
@@ -592,8 +595,8 @@ export default function AIInterviewRoom() {
   if (phase === 'error') return (
     <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center space-y-5">
-        <div className="w-14 h-14 bg-red-50 border border-red-200 rounded-full flex items-center justify-center mx-auto">
-          <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-14 h-14 bg-error-50 border border-error-200 rounded-full flex items-center justify-center mx-auto">
+          <svg className="w-7 h-7 text-error-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
               d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
           </svg>
@@ -605,7 +608,7 @@ export default function AIInterviewRoom() {
         <div className="flex flex-col gap-3">
           <button
             onClick={() => dispatch({ type: 'RETRY' })}
-            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm transition-colors"
+            className="w-full py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-semibold text-sm transition-colors"
           >
             Try Again
           </button>
@@ -656,8 +659,8 @@ export default function AIInterviewRoom() {
       <div className="min-h-screen bg-neutral-50 flex flex-col">
         {/* Minimal top bar */}
         <header className="h-14 bg-white border-b border-neutral-100 flex items-center px-6 gap-3 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-            <span className="text-indigo-600 font-bold text-sm">
+          <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
+            <span className="text-primary-600 font-bold text-sm">
               {(session?.companyName ?? 'C')[0].toUpperCase()}
             </span>
           </div>
@@ -674,8 +677,8 @@ export default function AIInterviewRoom() {
             {/* Overview card */}
             <div className="bg-white rounded-2xl shadow-lg p-7 space-y-5">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-center shrink-0">
-                  <svg className="w-7 h-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-14 h-14 bg-primary-50 border border-primary-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <svg className="w-7 h-7 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
                       d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
@@ -695,7 +698,7 @@ export default function AIInterviewRoom() {
                   { value: `~${Math.ceil((session?.totalQuestions ?? 7) * 2.5)}`, label: 'Minutes' },
                 ].map(({ value, label }) => (
                   <div key={label} className="text-center">
-                    <p className="text-2xl font-bold text-indigo-600">{value}</p>
+                    <p className="text-2xl font-bold text-primary-600">{value}</p>
                     <p className="text-xs text-neutral-400 mt-0.5">{label}</p>
                   </div>
                 ))}
@@ -714,7 +717,7 @@ export default function AIInterviewRoom() {
                   'Once started, keep the interview window active',
                 ].map(tip => (
                   <li key={tip} className="flex items-start gap-2.5 text-sm text-neutral-600">
-                    <svg className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-primary-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                     </svg>
                     {tip}
@@ -725,7 +728,7 @@ export default function AIInterviewRoom() {
 
             <button
               onClick={handleConsent}
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl font-semibold text-base transition-colors shadow-lg shadow-indigo-100"
+              className="w-full py-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white rounded-xl font-semibold text-base transition-colors shadow-lg"
             >
               I Agree — Begin Interview
             </button>
@@ -748,7 +751,7 @@ export default function AIInterviewRoom() {
 
         {/* Role overview */}
         <div>
-          <p className="text-xs font-mono uppercase tracking-widest text-indigo-500 mb-2">
+          <p className="text-xs font-mono uppercase tracking-widest text-primary-500 mb-2">
             {session?.companyName} · {session?.interviewRound}
           </p>
           <h2 className="text-2xl font-bold text-neutral-900">{session?.jobTitle}</h2>
@@ -801,8 +804,8 @@ export default function AIInterviewRoom() {
 
           {/* Thank-you */}
           <div className="bg-white rounded-2xl shadow-lg p-8 text-center space-y-4">
-            <div className="w-16 h-16 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-9 h-9 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-success-50 border border-success-200 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-9 h-9 text-success-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
@@ -833,7 +836,7 @@ export default function AIInterviewRoom() {
                       strokeDasharray={`${(analysis.overallScore / 100) * 201.1} 201.1`}
                       strokeLinecap="round" />
                   </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-indigo-600">
+                  <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-primary-600">
                     {analysis.overallScore}
                   </span>
                 </div>
@@ -858,7 +861,7 @@ export default function AIInterviewRoom() {
                   <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Strengths</p>
                   <ul className="space-y-1.5">
                     {analysis.strengths.map((s, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-emerald-700">
+                      <li key={i} className="flex items-start gap-2 text-sm text-success-700">
                         <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
@@ -875,7 +878,7 @@ export default function AIInterviewRoom() {
                   <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">Areas to Improve</p>
                   <ul className="space-y-1.5">
                     {analysis.improvements.map((s, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-amber-700">
+                      <li key={i} className="flex items-start gap-2 text-sm text-warning-700">
                         <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                             d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -908,8 +911,8 @@ export default function AIInterviewRoom() {
         /* Show per-question scores while loading next question */
         <div className="max-w-sm w-full space-y-5">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-indigo-50 border border-indigo-200 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-primary-50 border border-primary-200 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" />
               </svg>
             </div>
@@ -926,13 +929,13 @@ export default function AIInterviewRoom() {
           </div>
 
           <div className="flex items-center justify-center gap-2 text-sm text-neutral-500">
-            <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-primary-400 border-t-transparent rounded-full animate-spin" />
             Loading next question…
           </div>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-neutral-600 font-medium">
             {phase === 'evaluating' ? 'AI is reviewing your response' : 'Submitting your response'}
             <span className="inline-flex gap-0.5 ml-0.5">
@@ -950,9 +953,11 @@ export default function AIInterviewRoom() {
   //  RENDER — QUESTION (primary interview state)
   // ════════════════════════════════════════════════════════════════════════════
 
-  const hasVoiceSupport = !!(
-    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-  );
+  // Show Voice tab whenever the browser supports MediaRecorder (Chrome, Firefox, Safari 14+).
+  // Checking the constructor in window is the correct feature-detection pattern and avoids
+  // TS2774 ("always true") that fires when you check a function reference like getUserMedia.
+  // VoiceRecorder already handles the getUserMedia permission-denied case internally.
+  const hasVoiceSupport = 'MediaRecorder' in window;
 
   return (
     <ProctoringMonitor sessionId={sessionId!} enabled={session?.proctoringEnabled ?? false}>
@@ -963,8 +968,8 @@ export default function AIInterviewRoom() {
 
         {/* Left: company logo + job title */}
         <div className="flex items-center gap-2.5 min-w-0 w-1/4">
-          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-            <span className="text-indigo-600 font-bold text-sm">
+          <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
+            <span className="text-primary-600 font-bold text-sm">
               {(session?.companyName ?? 'C')[0].toUpperCase()}
             </span>
           </div>
@@ -997,7 +1002,7 @@ export default function AIInterviewRoom() {
       {/* ─── Progress bar ─────────────────────────────────────────────────────── */}
       <div className="h-1 bg-neutral-100">
         <div
-          className="h-1 bg-indigo-500 transition-all duration-700"
+          className="h-1 bg-primary-500 transition-all duration-700"
           style={{ width: `${progressPct}%` }}
         />
       </div>
@@ -1010,11 +1015,11 @@ export default function AIInterviewRoom() {
 
         {/* Previous answer feedback toast (inline, non-blocking) */}
         {lastScores && lastFeedback && (
-          <div className="max-w-2xl w-full bg-indigo-50 border border-indigo-100 rounded-xl px-5 py-3 flex items-start gap-3 text-sm">
-            <svg className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="max-w-2xl w-full bg-primary-50 border border-primary-100 rounded-xl px-5 py-3 flex items-start gap-3 text-sm">
+            <svg className="w-4 h-4 text-primary-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4" />
             </svg>
-            <span className="text-indigo-700 italic">{lastFeedback}</span>
+            <span className="text-primary-700 italic">{lastFeedback}</span>
           </div>
         )}
 
@@ -1047,7 +1052,7 @@ export default function AIInterviewRoom() {
                   className={[
                     'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
                     voiceMode === mode
-                      ? 'bg-indigo-600 text-white shadow-sm'
+                      ? 'bg-primary-600 text-white shadow-sm'
                       : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300',
                   ].join(' ')}
                 >
@@ -1098,7 +1103,7 @@ export default function AIInterviewRoom() {
           <button
             onClick={handleSubmitAnswer}
             disabled={!responseText.trim() || responseText.trim().length < 10}
-            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-colors shadow-sm"
+            className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-semibold text-sm transition-colors shadow-sm"
           >
             Submit Answer →
           </button>
@@ -1115,7 +1120,7 @@ export default function AIInterviewRoom() {
           {/* Report Issue */}
           <button
             onClick={handleFlagIssue}
-            className="p-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-400 hover:text-red-500 transition-colors"
+            className="p-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-neutral-400 hover:text-error-500 transition-colors"
             title="Report a technical issue"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1181,8 +1186,8 @@ export default function AIInterviewRoom() {
       {phase === 'disconnected' && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center space-y-5">
-            <div className="w-14 h-14 bg-amber-50 border border-amber-200 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-7 h-7 text-amber-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-14 h-14 bg-warning-50 border border-warning-200 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-7 h-7 text-warning-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.14 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
               </svg>

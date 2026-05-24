@@ -201,8 +201,8 @@ export default function VoiceRecorder({
   // ── Permission denied fallback ───────────────────────────────────────────────
   if (permissionDenied) {
     return (
-      <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-        <svg className="w-5 h-5 shrink-0 mt-0.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-start gap-3 p-4 bg-warning-50 border border-warning-200 rounded-xl text-sm text-warning-800">
+        <svg className="w-5 h-5 shrink-0 mt-0.5 text-warning-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
             d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
         </svg>
@@ -233,7 +233,7 @@ export default function VoiceRecorder({
               width:  size,
               height: size,
               borderRadius: '50%',
-              border:  '2px solid #6366f1',
+              border:  '2px solid #6366f1', // primary-500
               animation: isRecording
                 ? `voiceRing ${duration} ease-out infinite`
                 : 'none',
@@ -254,8 +254,8 @@ export default function VoiceRecorder({
             'relative z-10 w-20 h-20 rounded-full flex items-center justify-center',
             'transition-all duration-200 shadow-lg focus:outline-none focus-visible:ring-4',
             isRecording
-              ? 'bg-red-500 hover:bg-red-600 focus-visible:ring-red-300 scale-110'
-              : 'bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-300',
+              ? 'bg-error-500 hover:bg-error-600 focus-visible:ring-error-300 scale-110'
+              : 'bg-primary-600 hover:bg-primary-700 focus-visible:ring-primary-300',
             disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
           ].join(' ')}
         >
@@ -276,8 +276,8 @@ export default function VoiceRecorder({
 
       {/* Status label */}
       {isRecording ? (
-        <div className="flex items-center gap-2 text-sm font-medium text-red-600">
-          <span className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+        <div className="flex items-center gap-2 text-sm font-medium text-error-600">
+          <span className="w-2.5 h-2.5 bg-error-500 rounded-full animate-pulse" />
           Recording… {fmtSec(recordingSec)}
         </div>
       ) : (
@@ -293,7 +293,7 @@ export default function VoiceRecorder({
         <div className="w-full max-w-lg bg-neutral-50 border border-neutral-200 rounded-xl p-4 text-sm text-neutral-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
           {transcript}
           {isRecording && (
-            <span className="inline-block w-0.5 h-4 bg-indigo-500 ml-0.5 animate-pulse align-text-bottom" />
+            <span className="inline-block w-0.5 h-4 bg-primary-500 ml-0.5 animate-pulse align-text-bottom" />
           )}
         </div>
       )}

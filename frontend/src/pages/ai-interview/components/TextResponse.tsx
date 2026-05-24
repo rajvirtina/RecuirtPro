@@ -46,9 +46,9 @@ export default function TextResponse({
   const isAtLimit   = remaining <= 0;
 
   const counterColor = isAtLimit
-    ? 'text-red-500 font-semibold'
+    ? 'text-error-500 font-semibold'
     : isNearLimit
-    ? 'text-amber-500'
+    ? 'text-warning-500'
     : 'text-neutral-400';
 
   return (
@@ -68,7 +68,7 @@ export default function TextResponse({
           'w-full min-h-32 border rounded-xl p-4 pb-8',
           'text-sm text-neutral-900 placeholder-neutral-400',
           'resize-none leading-relaxed',
-          'focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent',
+          'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent',
           'transition-colors duration-150',
           disabled
             ? 'bg-neutral-50 border-neutral-200 opacity-60 cursor-not-allowed'
@@ -91,7 +91,7 @@ export default function TextResponse({
         className="absolute bottom-0 left-0 h-0.5 rounded-b-xl transition-all duration-300"
         style={{
           width: `${Math.min(100, (value.length / maxLength) * 100)}%`,
-          backgroundColor: isAtLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : '#6366f1',
+          backgroundColor: isAtLimit ? '#ef4444' : isNearLimit ? '#f59e0b' : '#6366f1', // error-500 / warning-500 / primary-500
         }}
       />
     </div>
