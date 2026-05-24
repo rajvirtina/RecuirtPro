@@ -8,6 +8,7 @@ import { AuthRequest, ApplicationStatus, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId } from '../middleware/auth';
 import { sendEmail } from '../services/emailService';
+import { notificationService } from '../services/notificationService';
 import config from '../config';
 import logger from '../utils/logger';
 
@@ -235,6 +236,20 @@ async function notifyRecruitersOfCompletion(
         })
       )
     );
+
+    // In-app notification to panel members (real-time via Socket.IO)
+    const panelUserIds = (interview.panel as any[])
+      .map((p: any) => p?.userId?.toString?.() || p?.userId)
+      .filter(Boolean);
+    if (panelUserIds.length > 0) {
+      notificationService.notifyAIInterviewCompleted(
+        panelUserIds,
+        candName,
+        session.jobTitle,
+        analysis.recommendation,
+        interviewId.toString()
+      ).catch((e: any) => logger.warn(`AI interview in-app notify failed: ${e.message}`));
+    }
 
     logger.info(`Recruiter notification sent for session interviewId=${interviewId} to ${panelEmails.length} recipient(s)`);
   } catch (err: any) {

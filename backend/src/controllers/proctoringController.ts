@@ -8,6 +8,7 @@ import { AuthRequest, ProctoringEventType, InterviewStatus } from '../types';
 import { sendSuccess, sendError } from '../utils/response';
 import logger from '../utils/logger';
 import { emitViolation, emitInterviewTermination, emitWarning } from '../socket/socketController';
+import { notificationService } from '../services/notificationService';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 
 /**
@@ -436,7 +437,39 @@ export const reportDesktopEvent = async (
       severity,
     });
 
-    // Handle critical violations
+    // Handle critical/high violations — notify HR in-app + real-time
+    if (severity === 'critical' || severity === 'high') {
+      // Gather HR users for this company (fire-and-forget)
+      const notifyHR = async () => {
+        try {
+          const hrUsers = await User.find({
+            companyId: (interview as any).companyId,
+            role: { $in: ['hr', 'employer', 'admin'] },
+            isActive: true,
+          }).select('_id').lean();
+          const hrIds = hrUsers.map((u: any) => u._id.toString());
+          if (hrIds.length === 0) return;
+
+          const candidate = await User.findById(interview.candidateId).select('firstName lastName').lean();
+          const candName = candidate
+            ? `${(candidate as any).firstName} ${(candidate as any).lastName}`.trim()
+            : 'Candidate';
+
+          await notificationService.notifyProctoringViolation(
+            hrIds,
+            candName,
+            eventType,
+            severity as 'high' | 'critical',
+            interviewId.toString()
+          );
+        } catch (e: any) {
+          logger.warn(`Proctoring HR notification failed: ${e.message}`);
+        }
+      };
+      void notifyHR();
+    }
+
+    // Handle critical violations (auto-terminate logic)
     if (severity === 'critical') {
       // Track violations in interview metadata
       const currentViolations = (interview.metadata?.criticalViolations || 0) + 1;

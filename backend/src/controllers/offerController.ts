@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, OfferStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
-import { Offer, Application, Job, AuditLog } from '../models';
+import { Offer, Application, Job, AuditLog, User } from '../models';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 import logger from '../utils/logger';
 import { notificationService } from '../services/notificationService';
@@ -217,6 +217,31 @@ export const updateOfferStatus = async (req: AuthRequest, res: Response): Promis
           priority: 'high',
           data: { offerId: offer._id, type: 'offer_sent' },
         });
+      }
+
+      if (status === OfferStatus.ACCEPTED || status === OfferStatus.REJECTED) {
+        // Notify company HR users — we use the offer's companyId to find them
+        const hrUsers = await User.find({
+          companyId: offer.companyId,
+          role: { $in: ['hr', 'employer', 'admin'] },
+          isActive: true,
+        }).select('_id').lean();
+        const hrIds = hrUsers.map((u: any) => u._id.toString());
+
+        if (hrIds.length > 0) {
+          const candidateDoc = await User.findById(offer.candidateId).select('firstName lastName').lean();
+          const candName = candidateDoc
+            ? `${(candidateDoc as any).firstName} ${(candidateDoc as any).lastName}`.trim()
+            : 'Candidate';
+
+          await notificationService.notifyOfferActioned(
+            hrIds,
+            candName,
+            offer.designation || 'the position',
+            status === OfferStatus.ACCEPTED ? 'accepted' : 'rejected',
+            (offer._id as any).toString()
+          );
+        }
       }
     } catch (e) {
       logger.warn('Failed to send offer notification');

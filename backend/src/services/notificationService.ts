@@ -1,6 +1,7 @@
 import { Notification } from '../models';
 import { NotificationType } from '../types';
 import logger from '../utils/logger';
+import { emitNotificationToUser } from '../socket/socketController';
 
 interface CreateNotificationInput {
   userId: string;
@@ -30,6 +31,20 @@ class NotificationService {
       });
 
       logger.info(`Notification created for user ${input.userId}: ${input.title}`);
+
+      // Real-time push — frontend invalidates its query cache on receipt
+      try {
+        emitNotificationToUser(input.userId, {
+          _id: (notification as any)._id?.toString(),
+          title: input.title,
+          message: input.message,
+          priority: input.priority || 'medium',
+          data: input.data,
+        });
+      } catch {
+        // Socket may not be ready yet (e.g., test env) — swallow silently
+      }
+
       return notification;
     } catch (error) {
       logger.error('Error creating notification:', error);
@@ -54,6 +69,21 @@ class NotificationService {
     try {
       const created = await Notification.insertMany(notifications);
       logger.info(`Bulk notifications created: ${created.length} for ${userIds.length} users`);
+
+      // Real-time push to each recipient
+      try {
+        userIds.forEach((userId) =>
+          emitNotificationToUser(userId, {
+            title: notification.title,
+            message: notification.message,
+            priority: notification.priority || 'medium',
+            data: notification.data,
+          })
+        );
+      } catch {
+        // Swallow — socket may be unready
+      }
+
       return created;
     } catch (error) {
       logger.error('Error creating bulk notifications:', error);
@@ -105,6 +135,64 @@ class NotificationService {
       message: `You have received an offer for ${designation} at ${companyName}. Please review and respond.`,
       priority: 'urgent',
       data: { offerId, type: 'offer_received' },
+    });
+  }
+
+  /** Offer accepted or rejected by candidate → notify HR team */
+  async notifyOfferActioned(
+    hrUserIds: string[],
+    candidateName: string,
+    designation: string,
+    decision: 'accepted' | 'rejected',
+    offerId: string
+  ) {
+    const accepted = decision === 'accepted';
+    await this.createBulkNotifications(hrUserIds, {
+      type: NotificationType.IN_APP,
+      title: accepted ? 'Offer Accepted 🎉' : 'Offer Declined',
+      message: `${candidateName} has ${decision} the offer for ${designation}.`,
+      priority: accepted ? 'high' : 'medium',
+      data: { offerId, type: 'offer_actioned', decision },
+    });
+  }
+
+  /** AI interview session completed → notify HR/panel */
+  async notifyAIInterviewCompleted(
+    hrUserIds: string[],
+    candidateName: string,
+    jobTitle: string,
+    recommendation: string,
+    interviewId: string
+  ) {
+    const recLabel: Record<string, string> = {
+      strong_hire: '✅ Strong Hire',
+      hire:        '✅ Hire',
+      hold:        '⏸ On Hold',
+      reject:      '❌ Not Recommended',
+    };
+    await this.createBulkNotifications(hrUserIds, {
+      type: NotificationType.IN_APP,
+      title: 'AI Interview Completed',
+      message: `${candidateName}'s AI interview for ${jobTitle} is done. Recommendation: ${recLabel[recommendation] ?? recommendation}`,
+      priority: 'high',
+      data: { interviewId, type: 'ai_interview_completed', recommendation },
+    });
+  }
+
+  /** High/critical proctoring violation → notify HR immediately */
+  async notifyProctoringViolation(
+    hrUserIds: string[],
+    candidateName: string,
+    violationType: string,
+    severity: 'high' | 'critical' | 'urgent',
+    interviewId: string
+  ) {
+    await this.createBulkNotifications(hrUserIds, {
+      type: NotificationType.IN_APP,
+      title: `Proctoring Alert — ${severity === 'critical' ? '🚨 Critical' : '⚠️ High'} Severity`,
+      message: `${candidateName}: ${violationType.replace(/_/g, ' ')}`,
+      priority: severity === 'critical' ? 'urgent' : 'high',
+      data: { interviewId, type: 'proctoring_violation', violationType, severity },
     });
   }
 }

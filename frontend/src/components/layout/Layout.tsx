@@ -1,10 +1,11 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../../store/authStore';
 import { Avatar } from '../ui/Avatar';
 import apiClient from '../../services/api';
+import { getSocket, disconnectSocket } from '../../services/socketService';
 
 /* ── Icons ──────────────────────────────────────────────────────────── */
 function DashboardIcon({ className }: { className?: string }) {
@@ -134,6 +135,202 @@ function ChevronLeftIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+function BellIcon({ className }: { className?: string }) {
+  return (
+    <svg className={clsx('w-5 h-5', className)} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+    </svg>
+  );
+}
+
+/* ── Notification helpers ────────────────────────────────────────────── */
+
+function formatRelative(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins  = Math.floor(diff / 60_000);
+  const hours = Math.floor(diff / 3_600_000);
+  const days  = Math.floor(diff / 86_400_000);
+  if (mins  < 1)  return 'Just now';
+  if (mins  < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+function notificationUrl(n: any): string {
+  const d = n.data ?? {};
+  if (d.interviewId) return `/interviews/${d.interviewId}`;
+  if (d.applicationId) return `/applications/${d.applicationId}`;
+  if (d.offerId) return `/offers`;
+  return '/dashboard';
+}
+
+const PRIORITY_DOT: Record<string, string> = {
+  urgent: 'bg-red-500',
+  high:   'bg-amber-500',
+  medium: 'bg-blue-400',
+  low:    'bg-neutral-300',
+};
+
+/* ── NotificationBell component ─────────────────────────────────────── */
+
+function NotificationBell() {
+  const [open, setOpen]         = useState(false);
+  const panelRef                = useRef<HTMLDivElement>(null);
+  const queryClient             = useQueryClient();
+  const navigate                = useNavigate();
+  const user                    = useAuthStore((s) => s.user);
+
+  // ── Fetch unread notifications (polling fallback every 30 s) ────────
+  const { data } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const res = await apiClient.get('/notifications?limit=20');
+      // sendSuccess wraps in { success, data, message }
+      return (res.data as any)?.data ?? res.data;
+    },
+    refetchInterval: 30_000,
+    enabled: !!user,
+  });
+
+  const notifications: any[] = data?.notifications ?? [];
+  const unreadCount: number  = data?.unreadCount ?? 0;
+
+  // ── Real-time: socket 'new-notification' → invalidate cache ─────────
+  useEffect(() => {
+    if (!user) return;
+    const socket = getSocket();
+    const handler = () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    };
+    socket.on('new-notification', handler);
+    return () => { socket.off('new-notification', handler); };
+  }, [user, queryClient]);
+
+  // ── Click-outside to close ───────────────────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const markRead = async (id: string) => {
+    try {
+      await apiClient.put(`/notifications/${id}/read`);
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    } catch { /* non-critical */ }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await apiClient.put('/notifications/read-all');
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    } catch { /* non-critical */ }
+  };
+
+  const handleClick = async (n: any) => {
+    setOpen(false);
+    if (!n.read) await markRead(n._id);
+    navigate(notificationUrl(n));
+  };
+
+  return (
+    <div className="relative" ref={panelRef}>
+      {/* Bell button */}
+      <button
+        onClick={() => setOpen((p) => !p)}
+        aria-label={`${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`}
+        className="relative p-2 rounded-lg hover:bg-neutral-100 transition-colors"
+      >
+        <BellIcon className="text-neutral-500" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-mono leading-none">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Dropdown panel */}
+      {open && (
+        <div className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-neutral-200 z-50 overflow-hidden animate-fade-in">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+            <h3 className="text-sm font-semibold text-neutral-900">
+              Notifications
+              {unreadCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-semibold">
+                  {unreadCount}
+                </span>
+              )}
+            </h3>
+            {unreadCount > 0 && (
+              <button
+                onClick={markAllRead}
+                className="text-xs text-primary-600 hover:text-primary-800 font-medium"
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
+
+          {/* List */}
+          <div className="max-h-80 overflow-y-auto divide-y divide-neutral-50">
+            {notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center gap-2">
+                <BellIcon className="w-8 h-8 text-neutral-200" />
+                <p className="text-sm text-neutral-400">You're all caught up!</p>
+              </div>
+            ) : (
+              notifications.map((n: any) => (
+                <button
+                  key={n._id}
+                  onClick={() => handleClick(n)}
+                  className={clsx(
+                    'w-full text-left px-4 py-3 hover:bg-neutral-50 transition-colors flex items-start gap-3',
+                    !n.read && 'bg-primary-50/40'
+                  )}
+                >
+                  {/* Priority dot */}
+                  <span className={clsx(
+                    'mt-1.5 w-2 h-2 rounded-full shrink-0',
+                    PRIORITY_DOT[n.priority] ?? 'bg-neutral-300'
+                  )} />
+                  <div className="flex-1 min-w-0">
+                    <p className={clsx('text-sm leading-snug', !n.read ? 'font-semibold text-neutral-900' : 'font-medium text-neutral-700')}>
+                      {n.title}
+                    </p>
+                    <p className="text-xs text-neutral-500 mt-0.5 line-clamp-2">{n.message}</p>
+                    <p className="text-[11px] text-neutral-400 mt-1">{formatRelative(n.createdAt)}</p>
+                  </div>
+                  {!n.read && (
+                    <span className="mt-1.5 w-2 h-2 rounded-full bg-primary-500 shrink-0" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* Footer */}
+          {notifications.length > 0 && (
+            <div className="border-t border-neutral-100 px-4 py-2.5">
+              <button
+                onClick={() => { setOpen(false); navigate('/notifications'); }}
+                className="w-full text-center text-xs text-primary-600 hover:text-primary-800 font-medium"
+              >
+                View all notifications →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Nav item type ────────────────────────────────────────────────── */
 interface NavItem {
@@ -244,6 +441,7 @@ export default function Layout() {
   }, [companyData?.branding?.primaryColor]);
 
   const handleLogout = () => {
+    disconnectSocket();
     logout();
     navigate('/login');
   };
@@ -396,6 +594,17 @@ export default function Layout() {
 
       {/* ── Main content ────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0">
+        {/* Desktop topbar — notification bell + current user chip */}
+        <header className="hidden lg:flex sticky top-0 z-20 bg-white border-b border-neutral-200 px-6 h-14 items-center justify-end gap-2">
+          <NotificationBell />
+          <div className="flex items-center gap-2 pl-2 border-l border-neutral-200 ml-1">
+            <Avatar name={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`} size="sm" />
+            <span className="text-sm text-neutral-700 font-medium">
+              {user?.firstName} {user?.lastName}
+            </span>
+          </div>
+        </header>
+
         {/* Mobile topbar */}
         <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-neutral-200 px-4 h-14 flex items-center gap-3">
           <button
@@ -406,7 +615,8 @@ export default function Layout() {
             <MenuIcon />
           </button>
           <span className="font-semibold text-neutral-900">RecuirtPro</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <NotificationBell />
             <Avatar name={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`} size="sm" />
           </div>
         </header>

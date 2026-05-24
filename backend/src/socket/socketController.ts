@@ -47,6 +47,10 @@ export const initializeSocket = (server: HTTPServer) => {
   io.on('connection', (socket) => {
     logger.info(`Socket connected: ${socket.id} (User: ${socket.data.userId})`);
 
+    // Auto-join the user's personal room so targeted events (notifications, etc.)
+    // can be emitted without tracking individual socket IDs.
+    socket.join(`user-${socket.data.userId}`);
+
     // ============ VIDEO CONFERENCING EVENTS ============
     
     // Join video meeting room — with authorization (SEC-13/B-18)
@@ -385,6 +389,27 @@ export const emitInterviewTermination = (interviewId: string, reason: string) =>
   });
 
   logger.info(`Interview termination emitted to room ${interviewId}: ${reason}`);
+};
+
+/**
+ * Push a real-time notification event to a specific user's browser tab(s).
+ * The frontend listens on 'new-notification' and invalidates its query cache.
+ */
+export const emitNotificationToUser = (userId: string, payload: {
+  _id?: string;
+  title: string;
+  message: string;
+  priority?: string;
+  data?: any;
+}) => {
+  if (!io) {
+    logger.warn('Socket.IO not initialized, cannot emit notification');
+    return;
+  }
+  io.to(`user-${userId}`).emit('new-notification', {
+    ...payload,
+    timestamp: Date.now(),
+  });
 };
 
 /**
