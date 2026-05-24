@@ -1,65 +1,49 @@
-import { Component, ReactNode } from 'react';
-
-interface Props {
-  children:  ReactNode;
-  fallback?: ReactNode;
-}
+import React from 'react';
+import { Button } from './ui/Button';
 
 interface State {
+  hasError: boolean;
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
-
-  static getDerivedStateFromError(error: Error): State {
-    return { error };
+export class ErrorBoundary extends React.Component<React.PropsWithChildren, State> {
+  constructor(props: React.PropsWithChildren) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
 
-  componentDidCatch(error: Error, info: { componentStack: string }) {
-    console.error('[ErrorBoundary]', error, info.componentStack);
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error(error, info);
   }
 
   render() {
-    if (this.state.error) {
-      if (this.props.fallback) return this.props.fallback;
-
+    if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-8 bg-neutral-50">
-          <div className="max-w-sm w-full text-center">
-            <div className="w-14 h-14 rounded-2xl bg-error-50 flex items-center justify-center mx-auto mb-5">
-              <svg
-                className="w-7 h-7 text-error-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.75}
-                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
-                />
+        <div className="min-h-screen flex items-center justify-center bg-neutral-50 p-4">
+          <div className="max-w-md w-full bg-error-50 border border-error-200 rounded-xl p-8 text-center shadow-sm">
+            <div className="mx-auto mb-4 w-14 h-14 rounded-full bg-error-100 flex items-center justify-center">
+              <svg className="w-7 h-7 text-error-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
-            <h2 className="text-base font-semibold text-neutral-900 mb-2">
-              Something went wrong
-            </h2>
-            <p className="text-sm text-neutral-500 mb-6 leading-relaxed">
-              {this.state.error.message || 'An unexpected error occurred. Please try reloading.'}
-            </p>
-            <button
-              className="btn btn-secondary btn-md"
-              onClick={() => window.location.reload()}
-            >
+            <h2 className="text-lg font-semibold text-error-700 mb-2">Something went wrong</h2>
+            {this.state.error?.message && (
+              <p className="text-xs text-error-600 mb-6 font-mono bg-error-100 rounded-md px-3 py-2 text-left break-all leading-relaxed">
+                {this.state.error.message}
+              </p>
+            )}
+            <Button variant="secondary" onClick={() => window.location.reload()}>
               Reload page
-            </button>
+            </Button>
           </div>
         </div>
       );
     }
-
     return this.props.children;
   }
 }
