@@ -243,7 +243,24 @@ router.put(
     param('id').isMongoId().withMessage('Valid application ID is required'),
     body('status')
       .notEmpty()
-      .isIn(['shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
+      .isIn(['applied', 'shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
+      .withMessage('Valid status is required'),
+    body('notes').optional().isString().isLength({ max: 1000 }),
+  ],
+  validate,
+  applicationController.updateApplicationStatus
+);
+
+// PATCH alias — used by the Pipeline board drag-and-drop (semantically more correct than PUT)
+router.patch(
+  '/:id/status',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [
+    param('id').isMongoId().withMessage('Valid application ID is required'),
+    body('status')
+      .notEmpty()
+      .isIn(['applied', 'shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
       .withMessage('Valid status is required'),
     body('notes').optional().isString().isLength({ max: 1000 }),
   ],
