@@ -13,6 +13,8 @@ node_modules/
 **/.env.local
 **/.env.development
 **/.env.staging
+# backend/.env contains real secrets — must never be committed
+backend/.env
 # NOTE: backend/.env.production is force-tracked for Hostinger deployment
 
 # Build outputs (frontend/dist and backend/dist are committed for Hostinger deployment)
