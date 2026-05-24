@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { io, Socket } from 'socket.io-client';
+import { toast } from 'sonner';
 
 interface Interview {
   _id: string;
@@ -31,7 +32,12 @@ interface Participant {
   cameraEnabled: boolean;
   micEnabled: boolean;
   screenSharing: boolean;
+  /** ICE connection state — drives the quality badge in the video tile. */
+  iceState?: RTCIceConnectionState;
 }
+
+/** Maximum occupancy: 1 candidate + up to 3 interviewers.  Must match MAX_PANEL_SIZE in socketController.ts. */
+const MAX_PARTICIPANTS = 4;
 
 interface ChatMessage {
   userId: string;
@@ -57,32 +63,46 @@ const SOCKET_URL =
     : 'http://localhost:5001');
 
 /**
- * ICE servers — STUN for local/fast networks, TURN for NAT traversal in production.
- * The openrelay.metered.ca TURN servers are free and sufficient for <100 concurrent users.
- * Replace with your own TURN server credentials for higher scale.
+ * ICE server configuration — STUN + TURN for full firewall traversal.
+ *
+ * Priority:
+ *   1. Your self-hosted coturn (docker-compose.yml) via VITE_TURN_* env vars  ← production
+ *   2. openrelay.metered.ca free public TURN                                   ← dev fallback only
+ *
+ * To use your own TURN server add to frontend/.env:
+ *   VITE_TURN_SERVER_URL=turn:YOUR_VPS_IP:3478
+ *   VITE_TURN_USERNAME=recruitpro
+ *   VITE_TURN_PASSWORD=your-strong-turn-password-here
  */
-const ICE_SERVERS = {
+const _TURN_URL  = import.meta.env.VITE_TURN_SERVER_URL as string | undefined;
+const _TURN_USER = import.meta.env.VITE_TURN_USERNAME   as string | undefined;
+const _TURN_PASS = import.meta.env.VITE_TURN_PASSWORD   as string | undefined;
+const _USE_CUSTOM_TURN = Boolean(_TURN_URL && _TURN_USER && _TURN_PASS);
+
+const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
+    // STUN — fast path for peers on the same network or with open NAT
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.stunprotocol.org:3478' },
-    // TURN servers — required for production WebRTC through NAT/firewall
-    {
-      urls:       'turn:openrelay.metered.ca:80',
-      username:   'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls:       'turn:openrelay.metered.ca:443',
-      username:   'openrelayproject',
-      credential: 'openrelayproject',
-    },
-    {
-      urls:       'turn:openrelay.metered.ca:443?transport=tcp',
-      username:   'openrelayproject',
-      credential: 'openrelayproject',
-    },
+    // TURN — relay path for strict NAT / corporate firewalls
+    ...(_USE_CUSTOM_TURN
+      ? [
+          // Primary: TURN (UDP + TCP)
+          { urls: _TURN_URL!,                              username: _TURN_USER!, credential: _TURN_PASS! },
+          { urls: `${_TURN_URL}?transport=tcp`,            username: _TURN_USER!, credential: _TURN_PASS! },
+          // Secondary: TURNS over TLS (port 5349) — penetrates HTTPS-only proxies
+          { urls: _TURN_URL!.replace(/^turn:/, 'turns:').replace(/:3478$/, ':5349'),
+            username: _TURN_USER!, credential: _TURN_PASS! },
+        ]
+      : [
+          // Dev-only fallback — free shared TURN, unreliable for production
+          { urls: 'turn:openrelay.metered.ca:80',              username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443',             username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ]),
   ],
+  iceCandidatePoolSize: 10,
 };
 
 export default function VideoMeetingRoom() {
@@ -108,6 +128,8 @@ export default function VideoMeetingRoom() {
   const socketRef = useRef<Socket | null>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const hasJoinedRoomRef = useRef(false);
+  /** Mirror of participants state — readable inside event-handler closures. */
+  const participantsRef = useRef<Map<string, Participant>>(new Map());
 
   useEffect(() => {
     if (id) {
@@ -119,12 +141,20 @@ export default function VideoMeetingRoom() {
     };
   }, [id]);
 
-  // Debug: Log participants state changes
+  // Keep participantsRef in sync so event-handler closures can read current state.
   useEffect(() => {
+    participantsRef.current = participants;
     console.log('📊 PARTICIPANTS STATE CHANGED:');
     console.log('Total participants:', participants.size);
     console.log('Participants list:', Array.from(participants.values()).map(p => `${p.userName} (${p.socketId.substring(0, 8)}...)`));
   }, [participants]);
+
+  // Derived panel-size warning (re-computed on every render — no extra state needed).
+  const totalInRoom = participants.size + 1; // +1 = local user
+  const panelWarning: 'approaching' | 'full' | null =
+    totalInRoom >= MAX_PARTICIPANTS       ? 'full'
+    : totalInRoom >= MAX_PARTICIPANTS - 1 ? 'approaching'
+    : null;
 
   const initializeMeeting = async () => {
     try {
@@ -434,6 +464,15 @@ export default function VideoMeetingRoom() {
       setIsRecording(false);
     });
 
+    socket.on('error', ({ message, code }: { message: string; code?: string }) => {
+      console.error('Socket error:', code, message);
+      if (code === 'ROOM_FULL') {
+        setMediaError(message);
+      } else {
+        toast.error(message);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log('Socket disconnected');
     });
@@ -491,8 +530,35 @@ export default function VideoMeetingRoom() {
       }
     };
 
+    // ICE connection state — drives quality badge + audio-only fallback.
     pc.oniceconnectionstatechange = () => {
-      console.log(`❄️ ICE connection state for ${socketId}: ${pc.iceConnectionState}`);
+      const state = pc.iceConnectionState;
+      const peerName = participantsRef.current.get(socketId)?.userName ?? 'participant';
+      console.log(`❄️ ICE connection state for ${socketId} (${peerName}): ${state}`);
+
+      // Push state into participant so RemoteVideo can render a badge.
+      setParticipants((prev) => {
+        const newMap = new Map(prev);
+        const p = newMap.get(socketId);
+        if (p) newMap.set(socketId, { ...p, iceState: state });
+        return newMap;
+      });
+
+      if (state === 'failed') {
+        toast.error(
+          `Video connection with ${peerName} failed — switching to audio-only. Check your network or firewall settings.`,
+          { duration: 8000 }
+        );
+        // Audio-only fallback: disable outbound video on this peer connection.
+        // Audio tracks are unaffected and the connection attempt continues.
+        pc.getSenders()
+          .filter((s) => s.track?.kind === 'video')
+          .forEach((s) => { if (s.track) s.track.enabled = false; });
+      } else if (state === 'disconnected') {
+        toast.warning(`Connection with ${peerName} is unstable — attempting to reconnect…`, { duration: 5000 });
+      } else if (state === 'connected') {
+        console.log(`✅ ICE connected with ${peerName}`);
+      }
     };
 
     // If initiator, create and send offer
@@ -730,6 +796,20 @@ export default function VideoMeetingRoom() {
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
+      {/* Panel size warning banner */}
+      {panelWarning && (
+        <div className={`px-4 py-2 text-sm font-medium text-center flex-shrink-0 ${
+          panelWarning === 'full'
+            ? 'bg-red-600 text-white'
+            : 'bg-amber-500 text-amber-950'
+        }`}>
+          {panelWarning === 'full'
+            ? `⚠️ Meeting is at capacity (${MAX_PARTICIPANTS} participants). No additional participants can join.`
+            : `⚠️ Approaching participant limit (${totalInRoom}/${MAX_PARTICIPANTS}). This call supports up to ${MAX_PARTICIPANTS} people. For larger panels, use a dedicated video tool.`
+          }
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
@@ -1019,15 +1099,39 @@ function RemoteVideo({ participant }: { participant: Participant }) {
         </div>
       )}
       
-      {/* Name and Mic Status Badge */}
-      <div className="absolute bottom-3 left-3 px-3 py-1 bg-black/70 text-white text-sm rounded flex items-center gap-2">
-        <span>{participant.userName}</span>
-        {!participant.micEnabled && (
-          <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-          </svg>
-        )}
+      {/* Name, Mic Status, and ICE quality badge */}
+      <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+        <div className="px-3 py-1 bg-black/70 text-white text-sm rounded flex items-center gap-2">
+          <span>{participant.userName}</span>
+          {!participant.micEnabled && (
+            <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+          )}
+        </div>
+        <IceBadge state={participant.iceState} />
       </div>
     </div>
+  );
+}
+
+/** Small ICE connection quality pill shown on each remote video tile. */
+function IceBadge({ state }: { state?: RTCIceConnectionState }) {
+  if (!state || state === 'new') return null;
+
+  const config: Record<string, { label: string; cls: string }> = {
+    checking:     { label: 'Connecting…', cls: 'bg-amber-500 text-amber-950' },
+    connected:    { label: '● Connected',  cls: 'bg-green-600 text-white' },
+    completed:    { label: '● Connected',  cls: 'bg-green-600 text-white' },
+    disconnected: { label: '⚡ Unstable',  cls: 'bg-orange-500 text-white' },
+    failed:       { label: '✕ Failed',     cls: 'bg-red-600 text-white' },
+    closed:       { label: 'Closed',       cls: 'bg-gray-500 text-white' },
+  };
+
+  const { label, cls } = config[state] ?? { label: state, cls: 'bg-gray-600 text-white' };
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium ${cls}`}>
+      {label}
+    </span>
   );
 }

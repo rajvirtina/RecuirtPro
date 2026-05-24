@@ -12,6 +12,9 @@ import { Interview } from '../models';
 
 let io: Server;
 
+/** Maximum participants in a single meeting room (1 candidate + up to 3 interviewers). */
+const MAX_PANEL_SIZE = 4;
+
 export const initializeSocket = (server: HTTPServer) => {
   io = new Server(server, {
     cors: {
@@ -72,6 +75,18 @@ export const initializeSocket = (server: HTTPServer) => {
         if (!isCandidate && !isPanelMember && !isAdmin && !isCompanyMember) {
           logger.warn(`Socket ${socket.id} unauthorized join-meeting attempt for ${interviewId}`);
           socket.emit('error', { message: 'Not authorized to join this meeting' });
+          return;
+        }
+
+        // Panel size enforcement — P2P mesh degrades past 4; cap hard at MAX_PANEL_SIZE.
+        const existingRoom = io.sockets.adapter.rooms.get(`meeting-${interviewId}`);
+        const existingSize = existingRoom ? existingRoom.size : 0;
+        if (existingSize >= MAX_PANEL_SIZE) {
+          logger.warn(`Meeting ${interviewId} at capacity (${existingSize}/${MAX_PANEL_SIZE}), rejecting ${socket.id}`);
+          socket.emit('error', {
+            message: `This meeting is at capacity (${MAX_PANEL_SIZE} participants max). Please wait for a participant to leave or use a dedicated conferencing tool for larger panels.`,
+            code: 'ROOM_FULL',
+          });
           return;
         }
 
