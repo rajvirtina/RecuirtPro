@@ -524,16 +524,24 @@ export default function ApplicationDetail() {
         overallScore:         d.overallScore,
         appliedAt:            d.createdAt || d.appliedAt,
 
-        // Parsed resume
+        // Parsed resume — core
         parsedSkills:          d.parsedSkills,
         parsedExperienceYears: d.parsedExperienceYears,
         parsedEducation:       d.parsedEducation,
         parsedNoticePeriod:    d.parsedNoticePeriod,
         parsedAt:              d.parsedAt,
+        // Parsed resume — rich (v2)
+        parsedCurrentRole:    d.parsedCurrentRole,
+        parsedCurrentCompany: d.parsedCurrentCompany,
+        parsedWorkHistory:    d.parsedWorkHistory,
 
         // AI ranking
         missingSkills:  d.missingSkills,
         matchingSkills: d.matchingSkills,
+        aiFitSummary:   d.aiFitSummary,
+
+        // AI interview session link (computed by applicationController)
+        aiInterviewSessionId: d.aiInterviewSessionId ?? null,
       });
     } catch (e: any) {
       toast.error(e?.response?.data?.message || 'Failed to load application');
