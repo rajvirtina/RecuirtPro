@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 
-import { useAuthStore }      from '../../store/authStore';
 import apiClient             from '../../services/api';
 import { Avatar }            from '../../components/ui/Avatar';
 import { Badge }             from '../../components/ui/Badge';
@@ -93,30 +92,11 @@ function ReportSkeleton() {
   );
 }
 
-// ─── Score bar ────────────────────────────────────────────────────────────────
-
-function ScoreBar({ label, score, color }: { label: string; score: number; color: string }) {
-  const pct = Math.min(100, Math.max(0, score));
-  const textColor = pct >= 70 ? 'text-success-700' : pct >= 40 ? 'text-warning-700' : 'text-error-700';
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-neutral-700 font-medium">{label}</span>
-        <span className={`font-bold tabular-nums ${textColor}`}>{pct}<span className="font-normal text-neutral-400">/100</span></span>
-      </div>
-      <div className="h-2 bg-neutral-100 rounded-full overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${label}: ${pct} out of 100`}>
-        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
 // ─── Page component ────────────────────────────────────────────────────────────
 
 export default function AIAssessmentReport() {
   const { id } = useParams<{ id: string }>();
   const navigate  = useNavigate();
-  const user      = useAuthStore(s => s.user);
 
   const [report,        setReport]        = useState<AIReport | null>(null);
   const [loading,       setLoading]       = useState(true);
@@ -126,11 +106,32 @@ export default function AIAssessmentReport() {
   const [savingDecision,setSavingDecision]= useState(false);
 
   // Recruiter decision state
-  const [nextStage,      setNextStage]      = useState('');
-  const [recruiterNotes, setRecruiterNotes] = useState('');
-  const [showAdvanceMenu,setShowAdvanceMenu]= useState(false);
+  const [nextStage,       setNextStage]      = useState('');
+  const [recruiterNotes,  setRecruiterNotes] = useState('');
+  const [showAdvanceMenu, setShowAdvanceMenu]= useState(false);
+  const [lastSaved,       setLastSaved]      = useState<Date | null>(null);
+  const [autoSaving,      setAutoSaving]     = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { if (id) fetchReport(); }, [id]);
+
+  // Auto-save recruiter notes 30 s after the user stops typing
+  useEffect(() => {
+    if (!recruiterNotes.trim()) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaving(true);
+      try {
+        await apiClient.post(`/applications/${id}/notes`, { notes: recruiterNotes });
+        setLastSaved(new Date());
+      } catch {
+        // Silent — notes will be saved on explicit "Save Decision" anyway
+      } finally {
+        setAutoSaving(false);
+      }
+    }, 30_000);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [recruiterNotes, id]);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -239,14 +240,6 @@ export default function AIAssessmentReport() {
     problemSolving: report.scores.problemSolving,
     culturalFit:    report.scores.culturalFit,
   };
-
-  const dimensions = [
-    { label: 'Communication',  score: report.scores.communication,  color: 'bg-info-500'     },
-    { label: 'Technical',      score: report.scores.technical,      color: 'bg-primary-500'  },
-    { label: 'Confidence',     score: report.scores.confidence,     color: 'bg-success-500'  },
-    { label: 'Problem Solving',score: report.scores.problemSolving, color: 'bg-warning-500'  },
-    { label: 'Cultural Fit',   score: report.scores.culturalFit,    color: 'bg-purple-500'   },
-  ];
 
   const interviewDate = report.interview.date
     ? format(new Date(report.interview.date), 'dd MMM yyyy, h:mm a')
@@ -423,79 +416,118 @@ export default function AIAssessmentReport() {
         </div>
       </section>
 
-      {/* ═══ SECTION 3: Detailed breakdown ═════════════════════════════════════ */}
+      {/* ═══ SECTION 3: Competency analysis (60 / 40) ══════════════════════════ */}
       <section aria-labelledby="breakdown-heading">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Radar chart */}
-          <div className="card card-md">
-            <h2 id="breakdown-heading" className="text-h3 text-neutral-900 mb-1">Competency Radar</h2>
-            <p className="text-sm text-neutral-500 mb-4">Performance across five key dimensions</p>
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+          {/* LEFT 60% — Radar chart */}
+          <div className="lg:col-span-3 card card-md">
+            <h2 id="breakdown-heading" className="text-h3 text-neutral-900 mb-1">
+              Competency Radar
+            </h2>
+            <p className="text-sm text-neutral-500 mb-4">
+              Candidate vs. role benchmark across five dimensions
+            </p>
             <ScoreRadar scores={radarScores} />
           </div>
 
-          {/* Dimension breakdown with score bars */}
-          <div className="card card-md space-y-5">
-            <h2 className="text-h3 text-neutral-900">Dimension Breakdown</h2>
-            {dimensions.map(dim => (
-              <ScoreBar key={dim.label} label={dim.label} score={dim.score} color={dim.color} />
-            ))}
+          {/* RIGHT 40% — AI Analysis panel */}
+          <div className="lg:col-span-2 bg-neutral-50 rounded-xl border border-neutral-200 p-5 flex flex-col gap-5">
 
-            {/* AI summary */}
+            {/* AI Summary */}
             {report.aiSummary && (
-              <div className="pt-4 border-t border-neutral-100">
-                <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">AI Summary</p>
+              <div>
+                <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2">
+                  AI Summary
+                </p>
                 <p className="text-sm text-neutral-700 leading-relaxed">{report.aiSummary}</p>
               </div>
             )}
 
-            {/* Strengths & improvements */}
-            {(report.strengths.length > 0 || report.improvements.length > 0) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-neutral-100">
-                {report.strengths.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-success-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Strengths
-                    </p>
-                    <ul className="space-y-1">
-                      {report.strengths.slice(0, 3).map((s, i) => (
-                        <li key={i} className="text-xs text-neutral-600 flex items-start gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-success-500 shrink-0 mt-1.5" aria-hidden="true" />
-                          {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {report.improvements.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-warning-700 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Areas to Improve
-                    </p>
-                    <ul className="space-y-1">
-                      {report.improvements.slice(0, 3).map((s, i) => (
-                        <li key={i} className="text-xs text-neutral-600 flex items-start gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-warning-500 shrink-0 mt-1.5" aria-hidden="true" />
-                          {s}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+            {/* Strengths */}
+            {report.strengths.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-success-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Strengths
+                </p>
+                <ul className="space-y-1.5">
+                  {report.strengths.slice(0, 4).map((s, i) => (
+                    <li key={i} className="text-sm text-neutral-600 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-success-500 shrink-0 mt-1.5" aria-hidden="true" />
+                      {s}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
+
+            {/* Development Areas */}
+            {report.improvements.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-warning-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Development Areas
+                </p>
+                <ul className="space-y-1.5">
+                  {report.improvements.slice(0, 4).map((s, i) => (
+                    <li key={i} className="text-sm text-neutral-600 flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-warning-500 shrink-0 mt-1.5" aria-hidden="true" />
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* AI Decision box */}
+            <div className="bg-white rounded-lg border border-neutral-200 p-4 mt-auto">
+              <div className="flex items-start gap-3">
+                {/* Decision icon — coloured by recommendation */}
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${recMeta.headerBg} border ${recMeta.headerBorder}`}>
+                  <svg className={`w-5 h-5 ${recMeta.headerText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {rec === 'strong_hire' || rec === 'hire' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    ) : rec === 'reject' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                        d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    )}
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-neutral-400 uppercase tracking-wider">
+                    AI Decision
+                  </p>
+                  <p className={`text-sm font-bold mt-0.5 ${recMeta.headerText}`}>
+                    {recMeta.label}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Confidence:{' '}
+                    <span className="font-semibold text-neutral-700">
+                      {report.scores.overall}%
+                    </span>
+                    {' '}overall score
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ═══ SECTION 4: Proctoring observations ════════════════════════════════ */}
-      <ViolationTimeline events={report.proctoringEvents} />
+      {/* ═══ SECTION 4: Proctoring observations (only if events exist) ═════════ */}
+      {report.proctoringEvents.length > 0 && (
+        <ViolationTimeline events={report.proctoringEvents} />
+      )}
 
       {/* ═══ SECTION 5: Transcript ══════════════════════════════════════════════ */}
       <TranscriptViewer
@@ -510,19 +542,45 @@ export default function AIAssessmentReport() {
         <h2 id="decision-heading" className="text-h3 text-neutral-900 mb-4">Recruiter Decision</h2>
 
         <div className="space-y-4">
-          {/* Notes */}
+
+          {/* Notes — with auto-save indicator */}
           <div>
-            <label htmlFor="recruiter-notes" className="block text-sm font-medium text-neutral-700 mb-1.5">
-              Recruiter Notes
-              <span className="text-neutral-400 font-normal ml-1">(collaborative — visible to your team)</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="recruiter-notes" className="block text-sm font-medium text-neutral-700">
+                Recruiter Notes
+                <span className="text-neutral-400 font-normal ml-1">(collaborative — visible to your team)</span>
+              </label>
+              {/* Auto-save status */}
+              <span className="text-xs text-neutral-400 flex items-center gap-1 shrink-0">
+                {autoSaving ? (
+                  <>
+                    <svg className="w-3 h-3 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    Saving…
+                  </>
+                ) : lastSaved ? (
+                  <>
+                    <svg className="w-3 h-3 text-success-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Saved {lastSaved.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </>
+                ) : recruiterNotes.trim() ? (
+                  'Auto-saves in 30s'
+                ) : null}
+              </span>
+            </div>
             <textarea
               id="recruiter-notes"
               value={recruiterNotes}
               onChange={e => setRecruiterNotes(e.target.value)}
               placeholder="Add your observations, concerns, or reasons for the decision…"
               rows={4}
-              className="w-full px-4 py-3 text-sm border border-neutral-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-300 placeholder-neutral-400"
+              className="w-full px-4 py-3 text-sm border border-neutral-200 rounded-xl resize-none
+                         focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-300
+                         placeholder-neutral-400"
             />
           </div>
 
@@ -535,7 +593,8 @@ export default function AIAssessmentReport() {
               id="next-stage"
               value={nextStage}
               onChange={e => setNextStage(e.target.value)}
-              className="w-full sm:w-72 px-4 py-2.5 text-sm border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-300 bg-white"
+              className="w-full sm:w-72 px-4 py-2.5 text-sm border border-neutral-200 rounded-xl
+                         focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-300 bg-white"
             >
               <option value="">— No stage change —</option>
               <option value="shortlisted">Shortlist Candidate</option>
@@ -545,6 +604,7 @@ export default function AIAssessmentReport() {
             </select>
           </div>
 
+          {/* Actions */}
           <div className="flex items-center gap-3 pt-2">
             <Button
               variant="primary"
@@ -552,11 +612,11 @@ export default function AIAssessmentReport() {
               onClick={handleSaveDecision}
               disabled={!nextStage && !recruiterNotes.trim()}
             >
-              Save Decision
+              Save &amp; Advance Stage
             </Button>
             {(nextStage || recruiterNotes.trim()) && (
               <button
-                onClick={() => { setNextStage(''); setRecruiterNotes(''); }}
+                onClick={() => { setNextStage(''); setRecruiterNotes(''); setLastSaved(null); }}
                 className="text-sm text-neutral-500 hover:text-neutral-700"
               >
                 Clear

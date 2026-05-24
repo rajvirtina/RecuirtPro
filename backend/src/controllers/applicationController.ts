@@ -216,7 +216,27 @@ export const getApplicationById = async (
       return sendError(res, 'Not authorized to view this application', 403);
     }
 
-    return sendSuccess(res, application, 'Application retrieved successfully');
+    // Compute aiInterviewSessionId — null when no completed AI session exists
+    let aiInterviewSessionId: string | null = null;
+    try {
+      const linkedInterview = await Interview.findOne(
+        { applicationId: application._id }, '_id'
+      ).lean();
+      if (linkedInterview) {
+        const aiSession = await AIInterviewSession.findOne(
+          { interviewId: linkedInterview._id, status: 'completed' }, '_id'
+        ).lean();
+        if (aiSession) aiInterviewSessionId = (aiSession._id as any).toString();
+      }
+    } catch {
+      // Non-fatal: field simply stays null
+    }
+
+    return sendSuccess(
+      res,
+      { ...application.toObject(), aiInterviewSessionId },
+      'Application retrieved successfully'
+    );
   } catch (error: any) {
     logger.error('Error in getApplicationById:', error);
     return sendError(res, error.message || 'Error fetching application', 500);

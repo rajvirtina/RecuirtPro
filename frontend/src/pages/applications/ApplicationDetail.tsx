@@ -44,6 +44,9 @@ interface AppDetail {
   missingSkills?:  string[];
   matchingSkills?: string[];
   aiFitSummary?:   string;
+
+  // AI interview — set when a completed AI session exists for this application
+  aiInterviewSessionId?: string | null;
 }
 
 type ActiveTab = 'overview' | 'resume' | 'notes' | 'timeline' | 'proctoring';
@@ -846,10 +849,19 @@ export default function ApplicationDetail() {
                 <Link to="/interviews" className="btn btn-sm btn-secondary">
                   View Interviews →
                 </Link>
-                <Link to={`/applications/${app._id}/ai-report`} className="btn btn-sm btn-secondary">
-                  AI Report →
-                </Link>
               </>
+            )}
+            {isEmployer && app.aiInterviewSessionId && (
+              <Link
+                to={`/applications/${app._id}/ai-report`}
+                className="btn btn-sm btn-primary inline-flex items-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                View AI Report
+              </Link>
             )}
           </div>
         </div>
