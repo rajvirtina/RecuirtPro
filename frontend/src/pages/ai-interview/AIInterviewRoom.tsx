@@ -28,7 +28,7 @@ import ProctoringConsent         from '../proctoring/ProctoringConsent';
 // ─── API client ───────────────────────────────────────────────────────────────
 
 const api = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL as string) || 'http://localhost:5000/api/v1',
+  baseURL: (import.meta.env.VITE_API_URL as string) || 'http://localhost:5001/api/v1',
   headers: { 'Content-Type': 'application/json' },
 });
 

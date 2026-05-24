@@ -45,7 +45,7 @@ npm run install:all
 #### Backend (.env in backend folder)
 ```env
 NODE_ENV=development
-PORT=5000
+PORT=5001
 MONGODB_URI=mongodb://localhost:27017/recruitpro
 JWT_SECRET=your-secret-key-change-in-production
 JWT_EXPIRE=7d
@@ -97,8 +97,8 @@ LLM_API_KEY=your-secure-secret-key-here
 
 #### Frontend (.env in frontend folder)
 ```env
-VITE_API_URL=http://localhost:5000/api
-VITE_WS_URL=ws://localhost:5000
+VITE_API_URL=http://localhost:5001/api
+VITE_WS_URL=ws://localhost:5001
 VITE_ENABLE_PROCTORING=true
 ```
 
@@ -107,7 +107,7 @@ VITE_ENABLE_PROCTORING=true
 OPENAI_API_KEY=sk-your-openai-api-key-here
 OPENAI_MODEL=gpt-4o-mini
 API_SECRET_KEY=your-secure-secret-key-here
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:5000
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:5001
 SERVICE_PORT=8001
 ```
 
@@ -126,14 +126,14 @@ mongod --dbpath ./data
 npm run dev
 
 # Or run separately
-npm run dev:backend  # Backend on http://localhost:5000
+npm run dev:backend  # Backend on http://localhost:5001
 npm run dev:frontend # Frontend on http://localhost:3000
 ```
 
 ### 6. Access the application
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:5000/api
-- API Documentation: http://localhost:5000/api-docs
+- Backend API: http://localhost:5001/api
+- API Documentation: http://localhost:5001/api-docs
 
 ## Project Structure
 ```

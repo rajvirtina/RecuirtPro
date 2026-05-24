@@ -124,7 +124,7 @@ nano .env
 #### Backend `.env`
 ```env
 NODE_ENV=production
-PORT=5000
+PORT=5001
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/recruitpro
 JWT_SECRET=<64-character-random-string>
 JWT_REFRESH_SECRET=<64-character-random-string>
@@ -195,7 +195,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/api.recruitpro.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:5000;
+        proxy_pass http://localhost:5001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

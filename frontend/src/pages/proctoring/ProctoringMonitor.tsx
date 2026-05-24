@@ -28,7 +28,7 @@ import axios from 'axios';
 import { toast } from 'sonner';
 
 const PROCTORING_ENABLED = import.meta.env.VITE_ENABLE_PROCTORING === 'true';
-const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:5000/api/v1';
+const API_BASE = (import.meta.env.VITE_API_URL as string) || 'http://localhost:5001/api/v1';
 
 // Minimum ms between identical violations (deduplication)
 const DEDUPE_MS = 30_000;

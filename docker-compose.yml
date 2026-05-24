@@ -93,7 +93,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       API_SECRET_KEY: ${LLM_API_SECRET_KEY:-default-secret-key}
-      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost:5000
+      ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost:5001
       SERVICE_PORT: 8001
       LOG_LEVEL: INFO
     networks:
