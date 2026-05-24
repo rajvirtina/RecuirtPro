@@ -10,6 +10,7 @@ interface IPanelMember {
   name: string;
   email: string;
   role?: string;
+  feedbackToken?: string;
 }
 
 export interface IInterviewDocument extends Document {
@@ -84,6 +85,7 @@ const panelMemberSchema = new Schema<IPanelMember>(
       required: true,
     },
     role: String,
+    feedbackToken: { type: String },
   },
   { _id: false }
 );

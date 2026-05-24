@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, param, query } from 'express-validator';
 import * as interviewController from '../controllers/interviewController';
 import { generateSelfScheduleLink } from '../controllers/scheduleController';
-import { protect, authorize } from '../middleware/auth';
+import { protect, optionalProtect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
 
@@ -189,7 +189,7 @@ router.post(
  */
 router.post(
   '/:id/feedback',
-  protect,
+  optionalProtect,
   [
     param('id').isMongoId().withMessage('Valid interview ID is required'),
     body('rating')
@@ -227,10 +227,31 @@ router.post(
  */
 router.get(
   '/:id/feedback-info',
-  protect,
+  optionalProtect,
   [param('id').isMongoId().withMessage('Valid interview ID is required')],
   validate,
   interviewController.getInterviewFeedbackInfo
+);
+
+/**
+ * @swagger
+ * /api/v1/interviews/{id}/notify:
+ *   post:
+ *     summary: Notify candidate and panel members; generate per-panelist feedback tokens
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications sent
+ */
+router.post(
+  '/:id/notify',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Valid interview ID is required')],
+  validate,
+  interviewController.notifyInterviewParties
 );
 
 /**

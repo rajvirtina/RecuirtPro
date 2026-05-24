@@ -168,6 +168,27 @@ export const optionalAuth = async (
 };
 
 /**
+ * Optional-protect for feedback/scorecard routes.
+ * - If a `?token=` query param is present, let the request through without JWT —
+ *   the controller is responsible for validating the token against interview.panel[].feedbackToken.
+ * - Otherwise, behaves exactly like `protect`.
+ */
+export const optionalProtect = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void | Response> => {
+  const feedbackToken = req.query.token as string | undefined;
+  if (feedbackToken) {
+    // Feedback-token path: let the controller validate it
+    (req as any).feedbackToken = feedbackToken;
+    return next();
+  }
+  // Fall back to full JWT auth
+  return protect(req, res, next);
+};
+
+/**
  * BUG-009: CSRF protection middleware.
  * Validates that state-changing requests from browser include X-CSRF-Token
  * matching the csrf-token cookie (double-submit cookie pattern).
