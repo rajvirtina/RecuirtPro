@@ -302,6 +302,11 @@ export default function AIInterviewRoom() {
   const [audioBase64, setAudioBase64]   = useState('');
   const [voiceMode, setVoiceMode]       = useState(false);
 
+  // ── Speech API support ───────────────────────────────────────────────────────
+  // Initialise optimistically (true) to avoid a flash before the detection effect
+  // runs.  The effect corrects this on unsupported browsers (Firefox, older Safari).
+  const [speechSupported, setSpeechSupported] = useState(true);
+
   // ── Briefing countdown ───────────────────────────────────────────────────────
   const [briefingCount, setBriefingCount]       = useState(10);
   const pendingStartRef = useRef<{ question: Question; questionNumber: number; totalQuestions: number } | null>(null);
@@ -375,6 +380,25 @@ export default function AIInterviewRoom() {
 
     return () => clearInterval(tick);
   }, [state.phase]);
+
+  // Speech API detection — runs once on mount.
+  // Web Speech API is available in Chrome / Edge but not in Firefox or Safari < 14.7.
+  // When absent we auto-switch to text mode and show a one-time info toast.
+  useEffect(() => {
+    const supported = !!(
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition
+    );
+    setSpeechSupported(supported);
+    if (!supported) {
+      setVoiceMode(false);
+      toast.info('Voice input is not available in this browser — using text mode.', {
+        description: 'For voice input, use Google Chrome or Microsoft Edge.',
+        duration: 6000,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — run once on mount only
 
   // ─── API calls ───────────────────────────────────────────────────────────────
 
@@ -934,16 +958,28 @@ export default function AIInterviewRoom() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-neutral-600 font-medium">
-            {phase === 'evaluating' ? 'AI is reviewing your response' : 'Submitting your response'}
-            <span className="inline-flex gap-0.5 ml-0.5">
-              {[0,1,2].map(i => (
-                <span key={i} className="animate-bounce text-neutral-400" style={{ animationDelay: `${i * 0.2}s` }}>.</span>
-              ))}
-            </span>
-          </p>
+        /* "Thinking" state — shown during submit (LLM call in flight) and
+           during the Q1 evaluating pause (no previous scores to display yet). */
+        <div className="text-center py-10 space-y-5">
+          <div className="flex justify-center gap-3">
+            {[0, 1, 2].map(i => (
+              <div
+                key={i}
+                className="w-3.5 h-3.5 rounded-full bg-primary-400 animate-bounce"
+                style={{ animationDelay: `${i * 0.15}s` }}
+              />
+            ))}
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-base font-semibold text-neutral-700">
+              {phase === 'evaluating' ? 'Analysing your response…' : 'Submitting your answer…'}
+            </p>
+            <p className="text-sm text-neutral-400">
+              {phase === 'evaluating'
+                ? 'Our AI is carefully reviewing what you said'
+                : 'Sending your response to the AI interviewer'}
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -952,12 +988,6 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
   //  RENDER — QUESTION (primary interview state)
   // ════════════════════════════════════════════════════════════════════════════
-
-  // Show Voice tab whenever the browser supports MediaRecorder (Chrome, Firefox, Safari 14+).
-  // Checking the constructor in window is the correct feature-detection pattern and avoids
-  // TS2774 ("always true") that fires when you check a function reference like getUserMedia.
-  // VoiceRecorder already handles the getUserMedia permission-denied case internally.
-  const hasVoiceSupport = 'MediaRecorder' in window;
 
   return (
     <ProctoringMonitor sessionId={sessionId!} enabled={session?.proctoringEnabled ?? false}>
@@ -1036,41 +1066,52 @@ export default function AIInterviewRoom() {
         {/* Response area */}
         <div className="max-w-2xl w-full space-y-3">
 
-          {/* Mode toggle */}
-          {hasVoiceSupport && (
-            <div className="flex items-center gap-2">
-              {[
-                { mode: true,  icon: '🎙', label: 'Voice' },
-                { mode: false, icon: '⌨', label: 'Text'  },
-              ].map(({ mode, icon, label }) => (
-                <button
-                  key={label}
-                  onClick={() => {
-                    setVoiceMode(mode);
-                    if (!mode) { /* keep transcript in responseText */ }
-                  }}
-                  className={[
-                    'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
-                    voiceMode === mode
-                      ? 'bg-primary-600 text-white shadow-sm'
-                      : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300',
-                  ].join(' ')}
-                >
-                  {icon} {label}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Mode toggle — always shown.
+               Voice button is disabled (greyed out + tooltip) on browsers that
+               don't support the Web Speech API (Firefox, older Safari). */}
+          <div className="flex items-center gap-2">
+            {/* Voice */}
+            <button
+              onClick={() => speechSupported && setVoiceMode(true)}
+              disabled={!speechSupported}
+              title={!speechSupported ? 'Voice input requires Google Chrome or Microsoft Edge' : undefined}
+              aria-disabled={!speechSupported}
+              className={[
+                'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
+                voiceMode && speechSupported
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300',
+                !speechSupported ? 'opacity-40 cursor-not-allowed' : '',
+              ].filter(Boolean).join(' ')}
+            >
+              🎙 Voice{!speechSupported && (
+                <span className="text-xs ml-1 font-normal">(unavailable)</span>
+              )}
+            </button>
+
+            {/* Text */}
+            <button
+              onClick={() => setVoiceMode(false)}
+              className={[
+                'px-4 py-1.5 rounded-full text-sm font-medium transition-colors',
+                !voiceMode || !speechSupported
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'bg-white border border-neutral-200 text-neutral-600 hover:border-neutral-300',
+              ].join(' ')}
+            >
+              ⌨ Text
+            </button>
+          </div>
 
           {/* Input — voice or text */}
           <div className="bg-white rounded-2xl shadow-sm border border-neutral-100 overflow-hidden">
-            {voiceMode && hasVoiceSupport ? (
+            {voiceMode && speechSupported ? (
               <VoiceRecorder
                 transcript={responseText}
                 onTranscript={setResponseText}
                 onAudioBase64={setAudioBase64}
                 onPermissionDenied={() => {
-                  toast.warning('Microphone access denied — using text mode');
+                  toast.warning('Microphone access denied — switching to text mode');
                   setVoiceMode(false);
                 }}
               />
@@ -1087,7 +1128,7 @@ export default function AIInterviewRoom() {
 
           {!responseText.trim() && (
             <p className="text-xs text-neutral-400 text-center">
-              {voiceMode && hasVoiceSupport
+              {voiceMode && speechSupported
                 ? 'Your spoken words will appear above — then click Submit'
                 : 'Minimum 10 characters required to submit'}
             </p>
