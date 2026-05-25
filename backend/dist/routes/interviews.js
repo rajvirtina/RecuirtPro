@@ -176,7 +176,7 @@ router.post('/:id/start', auth_1.protect, [(0, express_validator_1.param)('id').
  *       200:
  *         description: Feedback submitted successfully
  */
-router.post('/:id/feedback', auth_1.protect, [
+router.post('/:id/feedback', auth_1.optionalProtect, [
     (0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required'),
     (0, express_validator_1.body)('rating')
         .notEmpty().withMessage('Rating (1-5) is required')
@@ -207,7 +207,20 @@ router.post('/:id/feedback', auth_1.protect, [
  *       200:
  *         description: Interview info retrieved
  */
-router.get('/:id/feedback-info', auth_1.protect, [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required')], validator_1.validate, interviewController.getInterviewFeedbackInfo);
+router.get('/:id/feedback-info', auth_1.optionalProtect, [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required')], validator_1.validate, interviewController.getInterviewFeedbackInfo);
+/**
+ * @swagger
+ * /api/v1/interviews/{id}/notify:
+ *   post:
+ *     summary: Notify candidate and panel members; generate per-panelist feedback tokens
+ *     tags: [Interviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Notifications sent
+ */
+router.post('/:id/notify', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [(0, express_validator_1.param)('id').isMongoId().withMessage('Valid interview ID is required')], validator_1.validate, interviewController.notifyInterviewParties);
 /**
  * @swagger
  * /api/v1/interviews/{id}:

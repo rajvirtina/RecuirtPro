@@ -40,6 +40,7 @@ const companySettings_1 = __importDefault(require("./routes/companySettings"));
 const jobTemplates_1 = __importDefault(require("./routes/jobTemplates"));
 const schedule_1 = __importDefault(require("./routes/schedule"));
 const pipeline_1 = __importDefault(require("./routes/pipeline"));
+const health_1 = __importDefault(require("./routes/health"));
 // import userRoutes from './routes/user';
 // ... other routes
 const app = (0, express_1.default)();
@@ -120,6 +121,8 @@ app.use((0, cors_1.default)({
 app.use((0, express_mongo_sanitize_1.default)());
 app.use(middleware_1.xssSanitize);
 app.use((0, compression_1.default)());
+// Health check — mounted BEFORE the rate limiter so probe traffic is never throttled
+app.use('/api', health_1.default);
 // Rate limiting
 app.use('/api', middleware_1.limiter);
 // Morgan HTTP logger
@@ -131,14 +134,6 @@ if (config_1.default.env !== 'test') {
 if (config_1.default.env !== 'production') {
     app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swaggerSpec));
 }
-// Health check
-app.get('/health', (_req, res) => {
-    res.status(200).json({
-        success: true,
-        message: 'Server is running',
-        timestamp: new Date().toISOString(),
-    });
-});
 // API Routes
 app.use('/api/v1/auth', auth_1.default);
 app.use('/api/v1/jobs', jobs_1.default);

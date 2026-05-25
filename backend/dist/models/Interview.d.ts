@@ -5,6 +5,7 @@ interface IPanelMember {
     name: string;
     email: string;
     role?: string;
+    feedbackToken?: string;
 }
 export interface IInterviewDocument extends Document {
     applicationId: mongoose.Types.ObjectId;
@@ -42,6 +43,7 @@ export interface IInterviewDocument extends Document {
     finalDecision?: 'selected' | 'rejected' | 'on_hold';
     recordingUrl?: string;
     proctoringEnabled: boolean;
+    proctoringLevel: 'none' | 'basic' | 'enhanced';
     proctoringConsent?: boolean;
     proctoringConsentAt?: Date;
     metadata?: {

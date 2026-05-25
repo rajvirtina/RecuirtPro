@@ -12,6 +12,7 @@ const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
 const socketController_1 = require("../socket/socketController");
+const notificationService_1 = require("../services/notificationService");
 const auth_1 = require("../middleware/auth");
 /**
  * @desc    Verify system readiness for proctored interview
@@ -341,7 +342,32 @@ const reportDesktopEvent = async (req, res) => {
             eventType,
             severity,
         });
-        // Handle critical violations
+        // Handle critical/high violations — notify HR in-app + real-time
+        if (severity === 'critical' || severity === 'high') {
+            // Gather HR users for this company (fire-and-forget)
+            const notifyHR = async () => {
+                try {
+                    const hrUsers = await models_2.User.find({
+                        companyId: interview.companyId,
+                        role: { $in: ['hr', 'employer', 'admin'] },
+                        isActive: true,
+                    }).select('_id').lean();
+                    const hrIds = hrUsers.map((u) => u._id.toString());
+                    if (hrIds.length === 0)
+                        return;
+                    const candidate = await models_2.User.findById(interview.candidateId).select('firstName lastName').lean();
+                    const candName = candidate
+                        ? `${candidate.firstName} ${candidate.lastName}`.trim()
+                        : 'Candidate';
+                    await notificationService_1.notificationService.notifyProctoringViolation(hrIds, candName, eventType, severity, interviewId.toString());
+                }
+                catch (e) {
+                    logger_1.default.warn(`Proctoring HR notification failed: ${e.message}`);
+                }
+            };
+            void notifyHR();
+        }
+        // Handle critical violations (auto-terminate logic)
         if (severity === 'critical') {
             // Track violations in interview metadata
             const currentViolations = (interview.metadata?.criticalViolations || 0) + 1;

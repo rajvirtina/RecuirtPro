@@ -131,14 +131,26 @@ const applicationSchema = new mongoose_1.Schema({
     parsedSkills: { type: [String], default: [] },
     parsedExperienceYears: { type: Number, min: 0, max: 100 },
     parsedEducation: {
-        type: [{ degree: String, institution: String }],
+        type: [{ degree: String, institution: String, year: Number }],
         default: [],
     },
     parsedNoticePeriod: String,
     parsedAt: Date,
+    parsedCurrentRole: String,
+    parsedCurrentCompany: String,
+    parsedWorkHistory: {
+        type: [{
+                company: String,
+                role: String,
+                durationMonths: { type: Number, min: 0 },
+                highlights: [String],
+            }],
+        default: [],
+    },
     // AI ranking results
     missingSkills: { type: [String], default: [] },
     matchingSkills: { type: [String], default: [] },
+    aiFitSummary: String,
 }, {
     timestamps: true,
 });

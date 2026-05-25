@@ -26,5 +26,18 @@ router.post('/jobs/:jobId/parse-all-resumes', auth_1.protect, (0, auth_1.authori
  * @access HR / Admin / Employer
  */
 router.post('/jobs/:jobId/rank-candidates', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmployer), [(0, express_validator_1.param)('jobId').isMongoId().withMessage('Valid job ID is required')], validator_1.validate, resumeParserController_1.rankCandidates);
+/**
+ * @route  POST /api/v1/applications/bulk-parse
+ * @desc   Sequentially parse resumes for a given list of application IDs (max 50)
+ * @access HR / Admin / Employer
+ */
+router.post('/applications/bulk-parse', auth_1.protect, (0, auth_1.authorize)(...hrAdminEmployer), [
+    (0, express_validator_1.body)('applicationIds')
+        .isArray({ min: 1, max: 50 })
+        .withMessage('applicationIds must be an array of 1–50 IDs'),
+    (0, express_validator_1.body)('applicationIds.*')
+        .isMongoId()
+        .withMessage('Each applicationId must be a valid Mongo ID'),
+], validator_1.validate, resumeParserController_1.bulkParse);
 exports.default = router;
 //# sourceMappingURL=resumeParserRoutes.js.map

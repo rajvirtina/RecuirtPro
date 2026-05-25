@@ -1,6 +1,6 @@
 /**
  * LLM Service Client — calls the Python LLM microservice for AI features.
- * Endpoints: /api/schedule, /api/feedback, /api/candidate-message
+ * Endpoints: /api/schedule-interview, /api/analyze-feedback, /api/candidate-message
  */
 declare class LLMServiceClient {
     private client;

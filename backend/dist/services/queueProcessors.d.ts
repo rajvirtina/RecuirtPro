@@ -1,4 +1,6 @@
 import Bull from 'bull';
+/** Expose Redis availability for the health endpoint */
+export declare const isRedisAvailable: () => boolean;
 export declare const enqueueEmail: (options: {
     to: string;
     subject: string;

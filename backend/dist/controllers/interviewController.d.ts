@@ -39,7 +39,7 @@ export declare const cancelInterview: (req: AuthRequest, res: Response) => Promi
 /**
  * @desc    Submit interview feedback and next round decision
  * @route   POST /api/v1/interviews/:id/feedback
- * @access  Private (Panel members, Employer/HR/Admin)
+ * @access  Private (Panel members, Employer/HR/Admin) OR via feedback token (?token=xxx)
  */
 export declare const submitInterviewFeedback: (req: AuthRequest, res: Response) => Promise<void | Response>;
 /**
@@ -51,7 +51,13 @@ export declare const startInterview: (req: AuthRequest, res: Response) => Promis
 /**
  * @desc    Get interview info for external scorecard form
  * @route   GET /api/v1/interviews/:id/feedback-info
- * @access  Private (Panel member / HR / Admin / Employer)
+ * @access  Private (Panel member / HR / Admin / Employer) OR via feedback token (?token=xxx)
  */
 export declare const getInterviewFeedbackInfo: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc    Notify interview parties (candidate + panel members) and generate feedback tokens
+ * @route   POST /api/v1/interviews/:id/notify
+ * @access  Private (Employer/HR/Admin)
+ */
+export declare const notifyInterviewParties: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=interviewController.d.ts.map

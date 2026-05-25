@@ -7,11 +7,16 @@ exports.config = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 // Load .env — try multiple paths to handle different Hostinger deploy structures
+// Priority: most specific first, then general, then persistent home-directory location
 const envPaths = [
     path_1.default.resolve(__dirname, '../../.env'), // backend/dist/config → backend/.env
     path_1.default.resolve(__dirname, '../../../backend/.env'), // backend/dist/config → backend/.env (alt)
     path_1.default.resolve(process.cwd(), '.env'), // cwd-relative
     path_1.default.resolve(process.cwd(), 'backend/.env'),
+    // Hostinger persistent locations (survive redeploys)
+    path_1.default.resolve(process.env.HOME || '/root', 'recruitpro.env'),
+    path_1.default.resolve(process.env.HOME || '/root', '.recruitpro.env'),
+    '/home/recruitpro.env',
 ];
 for (const p of envPaths) {
     dotenv_1.default.config({ path: p });
@@ -23,6 +28,9 @@ if (process.env.NODE_ENV === 'production') {
         path_1.default.resolve(__dirname, '../../../backend/.env.production'),
         path_1.default.resolve(process.cwd(), '.env.production'),
         path_1.default.resolve(process.cwd(), 'backend/.env.production'),
+        // Hostinger persistent production env
+        path_1.default.resolve(process.env.HOME || '/root', 'recruitpro.env'),
+        path_1.default.resolve(process.env.HOME || '/root', '.recruitpro.env'),
     ];
     for (const p of prodPaths) {
         dotenv_1.default.config({ path: p, override: true });

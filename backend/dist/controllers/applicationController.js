@@ -177,7 +177,20 @@ const getApplicationById = async (req, res) => {
         if (!isOwner && !isAuthorizedCompanyMember && !isSuperAdminUser) {
             return (0, response_1.sendError)(res, 'Not authorized to view this application', 403);
         }
-        return (0, response_1.sendSuccess)(res, application, 'Application retrieved successfully');
+        // Compute aiInterviewSessionId — null when no completed AI session exists
+        let aiInterviewSessionId = null;
+        try {
+            const linkedInterview = await models_1.Interview.findOne({ applicationId: application._id }, '_id').lean();
+            if (linkedInterview) {
+                const aiSession = await AIInterviewSession_1.AIInterviewSession.findOne({ interviewId: linkedInterview._id, status: 'completed' }, '_id').lean();
+                if (aiSession)
+                    aiInterviewSessionId = aiSession._id.toString();
+            }
+        }
+        catch {
+            // Non-fatal: field simply stays null
+        }
+        return (0, response_1.sendSuccess)(res, { ...application.toObject(), aiInterviewSessionId }, 'Application retrieved successfully');
     }
     catch (error) {
         logger_1.default.error('Error in getApplicationById:', error);

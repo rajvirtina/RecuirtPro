@@ -51,6 +51,7 @@ const panelMemberSchema = new mongoose_1.Schema({
         required: true,
     },
     role: String,
+    feedbackToken: { type: String },
 }, { _id: false });
 const interviewSchema = new mongoose_1.Schema({
     applicationId: {
@@ -167,6 +168,11 @@ const interviewSchema = new mongoose_1.Schema({
     proctoringEnabled: {
         type: Boolean,
         default: false,
+    },
+    proctoringLevel: {
+        type: String,
+        enum: ['none', 'basic', 'enhanced'],
+        default: 'basic',
     },
     proctoringConsent: Boolean,
     proctoringConsentAt: Date,

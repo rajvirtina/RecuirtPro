@@ -15,6 +15,17 @@ export declare const emitViolation: (interviewId: string, violation: any) => voi
  */
 export declare const emitInterviewTermination: (interviewId: string, reason: string) => void;
 /**
+ * Push a real-time notification event to a specific user's browser tab(s).
+ * The frontend listens on 'new-notification' and invalidates its query cache.
+ */
+export declare const emitNotificationToUser: (userId: string, payload: {
+    _id?: string;
+    title: string;
+    message: string;
+    priority?: string;
+    data?: any;
+}) => void;
+/**
  * Send warning to desktop app
  */
 export declare const emitWarning: (interviewId: string, message: string, warningsRemaining: number) => void;

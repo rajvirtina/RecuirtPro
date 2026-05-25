@@ -3,11 +3,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getQuestionStats = exports.autoGenerateQuestions = exports.deleteQuestion = exports.updateQuestion = exports.getQuestionById = exports.getQuestions = exports.createQuestion = void 0;
+exports.getQuestionStats = exports.batchCreateQuestions = exports.generateFromJob = exports.autoGenerateQuestions = exports.deleteQuestion = exports.updateQuestion = exports.getQuestionById = exports.getQuestions = exports.createQuestion = void 0;
+const axios_1 = __importDefault(require("axios"));
 const models_1 = require("../models");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
 const auth_1 = require("../middleware/auth");
+const config_1 = __importDefault(require("../config"));
+// Lightweight axios instance for LLM calls within this controller
+const llmHttp = axios_1.default.create({
+    baseURL: config_1.default.llm?.serviceUrl || 'http://localhost:8001',
+    timeout: 45000,
+    headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': config_1.default.llm?.apiSecretKey || '',
+    },
+});
 /**
  * @desc    Create a new question
  * @route   POST /api/v1/questions
@@ -232,6 +243,109 @@ const autoGenerateQuestions = async (req, res) => {
     }
 };
 exports.autoGenerateQuestions = autoGenerateQuestions;
+/**
+ * @desc    Generate questions from a job description via LLM (preview only — not saved)
+ *          HR reviews the results and POSTs selected questions to POST /questions to save them.
+ * @route   POST /api/v1/questions/generate
+ * @access  Private (Employer/HR/Admin)
+ */
+const generateFromJob = async (req, res) => {
+    try {
+        const { jobId, count = 10 } = req.body;
+        if (!jobId) {
+            return (0, response_1.sendError)(res, 'jobId is required', 400);
+        }
+        const countNum = Math.min(Math.max(parseInt(String(count), 10) || 10, 5), 20);
+        const job = await models_1.Job.findById(jobId).lean();
+        if (!job) {
+            return (0, response_1.sendError)(res, 'Job not found', 404);
+        }
+        // Tenant isolation
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        if (tenantId && job.companyId?.toString() !== tenantId) {
+            return (0, response_1.sendError)(res, 'Not authorised to generate questions for this job', 403);
+        }
+        // Call LLM service
+        let generated = [];
+        let llmAvailable = false;
+        try {
+            const llmRes = await llmHttp.post('/api/generate-questions', {
+                job_title: job.title,
+                job_description: job.description || job.title,
+                required_skills: job.skills || [],
+                interview_round: 'L1',
+                difficulty: 'senior',
+                num_questions: countNum,
+            });
+            generated = llmRes.data?.questions || [];
+            llmAvailable = generated.length > 0;
+        }
+        catch (llmErr) {
+            logger_1.default.warn(`LLM generate-from-job failed: ${llmErr.message}`);
+        }
+        // Normalise into preview shape (not yet saved — no _id, no companyId)
+        const preview = generated
+            .map((q, i) => ({
+            _tempId: i,
+            question: q.text || q.question || '',
+            questionType: q.type || 'technical',
+            difficulty: 'senior',
+            skills: Array.isArray(q.skills) ? q.skills : (job.skills || []).slice(0, 3),
+            expectedAnswer: q.expected_answer || '',
+            estimatedDuration: 5,
+        }))
+            .filter((q) => q.question.trim().length > 0);
+        logger_1.default.info(`generateFromJob: ${preview.length} questions generated for job ${jobId}`);
+        return (0, response_1.sendSuccess)(res, {
+            jobTitle: job.title,
+            jobSkills: job.skills || [],
+            questions: preview,
+            generatedCount: preview.length,
+            llmAvailable,
+        }, `${preview.length} questions generated`);
+    }
+    catch (error) {
+        logger_1.default.error('Error in generateFromJob:', error);
+        return (0, response_1.sendError)(res, error.message || 'Error generating questions', 500);
+    }
+};
+exports.generateFromJob = generateFromJob;
+/**
+ * @desc    Batch-save accepted questions to the question bank
+ *          Called by the frontend after HR reviews and accepts generated questions.
+ * @route   POST /api/v1/questions/batch
+ * @access  Private (Employer/HR/Admin)
+ */
+const batchCreateQuestions = async (req, res) => {
+    try {
+        const { questions } = req.body;
+        if (!Array.isArray(questions) || questions.length === 0) {
+            return (0, response_1.sendError)(res, 'questions array is required', 400);
+        }
+        const companyId = req.user?.companyId;
+        const createdById = req.user?._id;
+        const docs = questions.map((q) => ({
+            companyId,
+            question: q.question || q.text,
+            questionType: q.questionType || q.type || 'technical',
+            difficulty: q.difficulty || 'senior',
+            skills: Array.isArray(q.skills) ? q.skills : [],
+            expectedAnswer: q.expectedAnswer || '',
+            estimatedDuration: q.estimatedDuration || 5,
+            isActive: true,
+            createdBy: createdById,
+            usageCount: 0,
+        }));
+        const saved = await models_1.Question.insertMany(docs, { ordered: false });
+        logger_1.default.info(`batchCreateQuestions: ${saved.length} questions saved for company ${companyId}`);
+        return (0, response_1.sendSuccess)(res, { savedCount: saved.length }, `${saved.length} questions saved to bank`, 201);
+    }
+    catch (error) {
+        logger_1.default.error('Error in batchCreateQuestions:', error);
+        return (0, response_1.sendError)(res, error.message || 'Error saving questions', 500);
+    }
+};
+exports.batchCreateQuestions = batchCreateQuestions;
 /**
  * @desc    Get question statistics
  * @route   GET /api/v1/questions/stats

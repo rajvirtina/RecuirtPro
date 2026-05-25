@@ -232,7 +232,16 @@ router.put('/:id/status', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole
     (0, express_validator_1.param)('id').isMongoId().withMessage('Valid application ID is required'),
     (0, express_validator_1.body)('status')
         .notEmpty()
-        .isIn(['shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
+        .isIn(['applied', 'shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
+        .withMessage('Valid status is required'),
+    (0, express_validator_1.body)('notes').optional().isString().isLength({ max: 1000 }),
+], validator_1.validate, applicationController.updateApplicationStatus);
+// PATCH alias — used by the Pipeline board drag-and-drop (semantically more correct than PUT)
+router.patch('/:id/status', auth_1.protect, (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), [
+    (0, express_validator_1.param)('id').isMongoId().withMessage('Valid application ID is required'),
+    (0, express_validator_1.body)('status')
+        .notEmpty()
+        .isIn(['applied', 'shortlisted', 'interview_scheduled', 'in_progress', 'selected', 'hired', 'offer_released', 'rejected', 'on_hold'])
         .withMessage('Valid status is required'),
     (0, express_validator_1.body)('notes').optional().isString().isLength({ max: 1000 }),
 ], validator_1.validate, applicationController.updateApplicationStatus);

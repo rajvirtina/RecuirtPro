@@ -3,14 +3,17 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getSessionForReview = exports.completeSession = exports.submitAnswer = exports.startSession = exports.getSession = exports.createSession = void 0;
+exports.flagSession = exports.getSessionForReview = exports.completeSession = exports.submitAnswer = exports.startSession = exports.getSession = exports.createSession = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const axios_1 = __importDefault(require("axios"));
+const mongoose_1 = __importDefault(require("mongoose"));
 const AIInterviewSession_1 = require("../models/AIInterviewSession");
 const models_1 = require("../models");
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const auth_1 = require("../middleware/auth");
+const emailService_1 = require("../services/emailService");
+const notificationService_1 = require("../services/notificationService");
 const config_1 = __importDefault(require("../config"));
 const logger_1 = __importDefault(require("../utils/logger"));
 // ─── LLM service axios client (no JWT, uses X-API-Key) ───────────────────────
@@ -22,6 +25,101 @@ const llm = axios_1.default.create({
         'X-API-Key': config_1.default.llm.apiSecretKey,
     },
 });
+// ─── Question bank helpers ────────────────────────────────────────────────────
+/** Map Question.questionType → IAIQuestion.type */
+const QTYPE_MAP = {
+    technical: 'technical',
+    behavioral: 'behavioral',
+    situational: 'situational',
+    coding: 'technical',
+    system_design: 'technical',
+    hr: 'hr',
+};
+/** Map session difficulty string → Question schema enum values */
+function mapDifficultyToEnum(difficulty) {
+    const m = {
+        junior: 'junior',
+        mid: 'senior',
+        senior: 'senior',
+        expert: 'expert',
+        lead: 'expert',
+    };
+    return m[difficulty.toLowerCase()] ?? 'senior';
+}
+/**
+ * Bank-first question selection:
+ *   1. Pull best-rated / least-used questions from the company bank (+ global).
+ *   2. LLM fills remaining slots, targeting uncovered skills.
+ *   3. Increment usageCount on every consumed bank question.
+ *
+ * Always reserves at least 2 slots for LLM so each interview has fresh content.
+ */
+async function selectQuestionsForSession(companyId, jobSkills, sessionDifficulty, jobTitle, jobDescription, interviewRound, targetCount) {
+    const difficulty = mapDifficultyToEnum(sessionDifficulty);
+    // ── Step 1: query bank ────────────────────────────────────────────────────
+    const bankFilter = {
+        isActive: true,
+        difficulty,
+        $or: [
+            { companyId: new mongoose_1.default.Types.ObjectId(companyId) },
+            { companyId: null },
+            { companyId: { $exists: false } },
+        ],
+    };
+    if (jobSkills.length > 0)
+        bankFilter.skills = { $in: jobSkills };
+    const bankDocs = await models_1.Question.find(bankFilter)
+        .sort({ averageRating: -1, usageCount: 1 })
+        .limit(targetCount * 2)
+        .lean();
+    // Reserve at least 2 slots for LLM fresh content
+    const maxFromBank = Math.max(0, targetCount - 2);
+    const selected = bankDocs.slice(0, Math.min(maxFromBank, bankDocs.length));
+    // ── Step 2: determine LLM gap ────────────────────────────────────────────
+    const remaining = targetCount - selected.length;
+    const coveredSkills = selected.flatMap((q) => q.skills ?? []);
+    const uncoveredSkills = jobSkills.filter((s) => !coveredSkills.includes(s));
+    const excludeTexts = selected.map((q) => q.question);
+    // ── Step 3: LLM gap-fill ─────────────────────────────────────────────────
+    let aiGenerated = [];
+    if (remaining > 0) {
+        try {
+            const llmRes = await llm.post('/api/generate-questions', {
+                job_title: jobTitle,
+                job_description: jobDescription || jobTitle,
+                required_skills: uncoveredSkills.length > 0 ? uncoveredSkills : jobSkills,
+                interview_round: interviewRound,
+                difficulty: sessionDifficulty,
+                num_questions: remaining,
+                exclude_questions: excludeTexts,
+            });
+            const raw = llmRes.data?.questions || [];
+            aiGenerated = raw.map((q, i) => ({
+                id: q.id || `ai_${selected.length + i + 1}`,
+                text: q.text || 'Tell me about a relevant project you have worked on.',
+                type: (QTYPE_MAP[q.type] ?? q.type ?? 'behavioral'),
+                expectedDurationSeconds: Number(q.expected_duration_seconds) || 150,
+                orderIndex: selected.length + i + 1,
+            }));
+        }
+        catch (llmErr) {
+            logger_1.default.warn(`LLM gap-fill failed in selectQuestionsForSession: ${llmErr.message}`);
+        }
+    }
+    // ── Step 4: increment usageCount (fire-and-forget) ───────────────────────
+    if (selected.length > 0) {
+        models_1.Question.updateMany({ _id: { $in: selected.map((q) => q._id) } }, { $inc: { usageCount: 1 } }).catch((err) => logger_1.default.warn(`usageCount increment failed: ${err.message}`));
+    }
+    // ── Step 5: convert bank docs → IAIQuestion and merge ────────────────────
+    const bankAsAI = selected.map((q, i) => ({
+        id: `bank_${q._id}`,
+        text: q.question,
+        type: QTYPE_MAP[q.questionType] ?? 'technical',
+        expectedDurationSeconds: (q.estimatedDuration ?? 5) * 60,
+        orderIndex: i + 1,
+    }));
+    return [...bankAsAI, ...aiGenerated];
+}
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function generateSessionId() {
     return crypto_1.default.randomBytes(32).toString('hex');
@@ -49,6 +147,69 @@ function deriveRecommendation(passRate, meanOverall) {
     if (meanOverall >= 4 && passRate >= 0.4)
         return 'hold';
     return 'reject';
+}
+/**
+ * Fire-and-forget: email the interview panel when an AI session completes.
+ * Failures are swallowed so they never surface to the candidate's response.
+ */
+async function notifyRecruitersOfCompletion(interviewId, session, analysis) {
+    try {
+        const interview = await models_1.Interview.findById(interviewId)
+            .populate('candidateId', 'firstName lastName email')
+            .populate('panel', 'email firstName')
+            .lean();
+        if (!interview)
+            return;
+        const candidate = interview.candidateId;
+        const candName = candidate ? `${candidate.firstName} ${candidate.lastName}`.trim() : 'Candidate';
+        // Gather recipient emails: panel members first, fall back to createdBy if panel is empty
+        const panelEmails = interview.panel
+            .map((p) => p?.email)
+            .filter((e) => !!e);
+        if (panelEmails.length === 0)
+            return; // no one to notify
+        const recLabel = {
+            strong_hire: '✅ Strong Hire',
+            hire: '✅ Hire',
+            hold: '⏸ On Hold',
+            reject: '❌ Not Recommended',
+        };
+        const reviewUrl = `${config_1.default.frontendUrl}/interviews/${interviewId}`;
+        const emailHtml = `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#374151;">
+        <h2 style="color:#111827;margin-bottom:4px;">AI Interview Complete</h2>
+        <p style="color:#6b7280;margin-top:0;">${session.jobTitle}</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />
+        <p><strong>Candidate:</strong> ${candName}</p>
+        <p><strong>Overall Score:</strong> ${analysis.overallScore}%</p>
+        <p><strong>Questions:</strong> ${analysis.questionsAnswered} answered · ${analysis.questionsPassed} passed</p>
+        <p><strong>Recommendation:</strong> ${recLabel[analysis.recommendation] ?? analysis.recommendation}</p>
+        <p style="margin-top:8px;color:#6b7280;font-style:italic;">${analysis.summary}</p>
+        <a href="${reviewUrl}"
+           style="display:inline-block;margin-top:16px;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">
+          View Full Report
+        </a>
+        <p style="margin-top:24px;font-size:12px;color:#9ca3af;">
+          This notification was sent automatically by RecruitPro AI Interview.
+        </p>
+      </div>`;
+        await Promise.allSettled(panelEmails.map(email => (0, emailService_1.sendEmail)({
+            to: email,
+            subject: `AI Interview Complete — ${candName} · ${session.jobTitle}`,
+            html: emailHtml,
+        })));
+        // In-app notification to panel members (real-time via Socket.IO)
+        const panelUserIds = interview.panel
+            .map((p) => p?.userId?.toString?.() || p?.userId)
+            .filter(Boolean);
+        if (panelUserIds.length > 0) {
+            notificationService_1.notificationService.notifyAIInterviewCompleted(panelUserIds, candName, session.jobTitle, analysis.recommendation, interviewId.toString()).catch((e) => logger_1.default.warn(`AI interview in-app notify failed: ${e.message}`));
+        }
+        logger_1.default.info(`Recruiter notification sent for session interviewId=${interviewId} to ${panelEmails.length} recipient(s)`);
+    }
+    catch (err) {
+        logger_1.default.warn(`notifyRecruitersOfCompletion failed (non-fatal): ${err.message}`);
+    }
 }
 /** Build a final analysis object from stored responses. */
 function buildAnalysis(responses, totalQuestions) {
@@ -217,28 +378,16 @@ const startSession = async (req, res) => {
             }, 'Session resumed');
             return;
         }
-        // Generate questions via LLM service
+        // Bank-first question selection: curated bank + LLM gap-fill
         let questions = [];
         try {
-            const llmRes = await llm.post('/api/generate-questions', {
-                job_title: session.jobTitle,
-                job_description: session.jobDescription || session.jobTitle,
-                required_skills: session.requiredSkills,
-                interview_round: session.interviewRound,
-                difficulty: session.difficulty,
-                num_questions: session.totalQuestions,
-            });
-            const raw = llmRes.data?.questions || [];
-            questions = raw.map((q, i) => ({
-                id: q.id || `q${i + 1}`,
-                text: q.text || 'Tell me about yourself.',
-                type: q.type || 'behavioral',
-                expectedDurationSeconds: Number(q.expected_duration_seconds) || 150,
-                orderIndex: Number(q.order_index) || i + 1,
-            }));
+            questions = await selectQuestionsForSession(session.companyId.toString(), session.requiredSkills, session.difficulty, session.jobTitle, session.jobDescription, session.interviewRound, session.totalQuestions);
         }
-        catch (llmErr) {
-            logger_1.default.warn(`LLM question generation failed, using fallback: ${llmErr.message}`);
+        catch (selErr) {
+            logger_1.default.warn(`selectQuestionsForSession failed, using fallback: ${selErr.message}`);
+        }
+        // Final safety net — should only trigger if both bank and LLM are down
+        if (questions.length === 0) {
             questions = buildFallbackQuestions(session.jobTitle, session.totalQuestions);
         }
         // Persist and transition state
@@ -372,6 +521,10 @@ const submitAnswer = async (req, res) => {
             await models_1.Application.findByIdAndUpdate(await models_1.Interview.findById(session.interviewId).select('applicationId').lean().then(i => i?.applicationId), { status: types_1.ApplicationStatus.IN_PROGRESS });
         }
         await AIInterviewSession_1.AIInterviewSession.updateOne({ sessionId }, update);
+        // Notify panel asynchronously — do NOT await so candidate gets an instant response
+        if (isComplete && analysis) {
+            void notifyRecruitersOfCompletion(session.interviewId, session, analysis);
+        }
         const nextQuestion = isComplete ? null : session.questions[nextIndex];
         (0, response_1.sendSuccess)(res, {
             score: {
@@ -452,6 +605,30 @@ const getSessionForReview = async (req, res) => {
     }
 };
 exports.getSessionForReview = getSessionForReview;
+/**
+ * @desc  Candidate flags a technical/content issue — logs it without touching session status
+ * @route POST /api/v1/ai-interviews/session/:sessionId/flag
+ * @auth  Public (session ID is the credential)
+ */
+const flagSession = async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const { reason } = req.body;
+        const session = await resolveSession(sessionId);
+        if (!session) {
+            (0, response_1.sendError)(res, 'Session not found or expired', 404);
+            return;
+        }
+        // Log prominently so ops/support can act without terminating the session
+        logger_1.default.warn(`[AI Interview FLAG] session=${sessionId} candidate=${session.candidateId} job="${session.jobTitle}" reason="${reason?.slice(0, 300)}"`);
+        (0, response_1.sendSuccess)(res, {}, 'Issue reported');
+    }
+    catch (error) {
+        logger_1.default.error('flagSession error:', error);
+        (0, response_1.sendError)(res, 'Failed to report issue', 500);
+    }
+};
+exports.flagSession = flagSession;
 // ─── Internal: fallback question bank ────────────────────────────────────────
 function buildFallbackQuestions(jobTitle, count) {
     const pool = [

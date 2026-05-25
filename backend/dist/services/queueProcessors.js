@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.closeQueues = exports.enqueueCrossPortalPosting = exports.enqueueEmail = void 0;
+exports.closeQueues = exports.enqueueCrossPortalPosting = exports.enqueueEmail = exports.isRedisAvailable = void 0;
 const bull_1 = __importDefault(require("bull"));
 const config_1 = require("../config");
 const logger_1 = __importDefault(require("../utils/logger"));
@@ -103,25 +103,36 @@ function initQueues() {
 }
 // Initialize on load
 initQueues();
+/** Expose Redis availability for the health endpoint */
+const isRedisAvailable = () => redisAvailable;
+exports.isRedisAvailable = isRedisAvailable;
 // =============================================
 // Helper: Enqueue email (falls back to direct send if Redis unavailable)
 // =============================================
 const enqueueEmail = async (options) => {
     if (redisAvailable && emailQueue) {
-        return emailQueue.add(options, {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 5000 },
-            removeOnComplete: 100,
-            removeOnFail: 500,
-        });
+        try {
+            return await emailQueue.add(options, {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 5000 },
+                removeOnComplete: 100,
+                removeOnFail: 500,
+            });
+        }
+        catch (queueErr) {
+            // Redis went away between ready-check and add() — fall through to direct send
+            logger_1.default.warn(`[Email] Queue enqueue failed (${queueErr.message}) — falling back to direct send`);
+            redisAvailable = false;
+        }
     }
-    // Fallback: send directly
+    // Fallback: send directly (no Redis, or queue.add() threw)
     try {
         await (0, emailService_1.sendEmail)(options);
         logger_1.default.info(`[Email] Sent directly (no queue): ${options.subject} → ${options.to}`);
     }
     catch (err) {
         logger_1.default.error(`[Email] Direct send failed: ${err.message}`);
+        throw err; // re-throw so callers can handle if they need to
     }
 };
 exports.enqueueEmail = enqueueEmail;

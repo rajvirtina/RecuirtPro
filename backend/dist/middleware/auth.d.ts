@@ -25,6 +25,13 @@ export declare const authorize: (...roles: UserRole[]) => (req: Request, res: Re
  */
 export declare const optionalAuth: (req: Request, res: Response, next: NextFunction) => Promise<void>;
 /**
+ * Optional-protect for feedback/scorecard routes.
+ * - If a `?token=` query param is present, let the request through without JWT —
+ *   the controller is responsible for validating the token against interview.panel[].feedbackToken.
+ * - Otherwise, behaves exactly like `protect`.
+ */
+export declare const optionalProtect: (req: Request, res: Response, next: NextFunction) => Promise<void | Response>;
+/**
  * BUG-009: CSRF protection middleware.
  * Validates that state-changing requests from browser include X-CSRF-Token
  * matching the csrf-token cookie (double-submit cookie pattern).

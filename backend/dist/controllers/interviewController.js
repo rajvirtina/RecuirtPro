@@ -3,13 +3,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getInterviewFeedbackInfo = exports.startInterview = exports.submitInterviewFeedback = exports.cancelInterview = exports.updateInterviewStatus = exports.updateInterview = exports.getInterviewById = exports.getInterviews = exports.scheduleInterview = void 0;
+exports.notifyInterviewParties = exports.getInterviewFeedbackInfo = exports.startInterview = exports.submitInterviewFeedback = exports.cancelInterview = exports.updateInterviewStatus = exports.updateInterview = exports.getInterviewById = exports.getInterviews = exports.scheduleInterview = void 0;
+const crypto_1 = __importDefault(require("crypto"));
 const models_1 = require("../models");
 const ActivityEvent_1 = require("../models/ActivityEvent");
 const types_1 = require("../types");
 const response_1 = require("../utils/response");
 const logger_1 = __importDefault(require("../utils/logger"));
 const auth_1 = require("../middleware/auth");
+const emailService_1 = require("../services/emailService");
 /**
  * @desc    Schedule an interview
  * @route   POST /api/v1/interviews
@@ -359,12 +361,13 @@ exports.cancelInterview = cancelInterview;
 /**
  * @desc    Submit interview feedback and next round decision
  * @route   POST /api/v1/interviews/:id/feedback
- * @access  Private (Panel members, Employer/HR/Admin)
+ * @access  Private (Panel members, Employer/HR/Admin) OR via feedback token (?token=xxx)
  */
 const submitInterviewFeedback = async (req, res) => {
     try {
         const { id } = req.params;
         const { rating, comments, recommendation, finalDecision, scores } = req.body;
+        const feedbackToken = req.feedbackToken;
         // Validation is handled by the route validator; guard here as a safety net
         if (!rating || !comments || !recommendation || !finalDecision) {
             return (0, response_1.sendError)(res, 'Rating, comments, recommendation, and final decision are required', 400);
@@ -373,26 +376,36 @@ const submitInterviewFeedback = async (req, res) => {
         if (!interview) {
             return (0, response_1.sendError)(res, 'Interview not found', 404);
         }
-        // Authorization check — company isolation (SEC-15)
-        const isPanelMember = interview.panel.some((member) => member.userId.toString() === req.user?._id);
-        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
-        let isCompanyMember = false;
-        if (tenantId && interview.companyId) {
-            isCompanyMember = interview.companyId.toString() === tenantId;
+        let resolvedInterviewerId;
+        if (feedbackToken) {
+            // Token-based access — validate against panel feedbackToken
+            const panelMember = interview.panel.find((m) => m.feedbackToken === feedbackToken);
+            if (!panelMember) {
+                return (0, response_1.sendError)(res, 'Invalid or expired feedback token', 401);
+            }
+            resolvedInterviewerId = panelMember.userId?.toString();
         }
-        // Interviewers may only submit feedback for interviews they are assigned to
-        if (req.user?.role === 'interviewer' && !isPanelMember) {
-            return (0, response_1.sendError)(res, 'Interviewers may only submit feedback for assigned interviews', 403);
-        }
-        const isAuthorized = (0, auth_1.isSuperAdmin)(req.user) ||
-            isPanelMember ||
-            isCompanyMember;
-        if (!isAuthorized) {
-            return (0, response_1.sendError)(res, 'Not authorized to submit feedback for this interview', 403);
+        else {
+            // JWT-based access — standard authorization
+            const isPanelMember = interview.panel.some((member) => member.userId.toString() === req.user?._id);
+            const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+            let isCompanyMember = false;
+            if (tenantId && interview.companyId) {
+                isCompanyMember = interview.companyId.toString() === tenantId;
+            }
+            // Interviewers may only submit feedback for interviews they are assigned to
+            if (req.user?.role === 'interviewer' && !isPanelMember) {
+                return (0, response_1.sendError)(res, 'Interviewers may only submit feedback for assigned interviews', 403);
+            }
+            const isAuthorized = (0, auth_1.isSuperAdmin)(req.user) || isPanelMember || isCompanyMember;
+            if (!isAuthorized) {
+                return (0, response_1.sendError)(res, 'Not authorized to submit feedback for this interview', 403);
+            }
+            resolvedInterviewerId = req.user?._id;
         }
         // Add feedback (include structured scores if provided by the scorecard form)
         interview.feedback.push({
-            interviewerId: req.user?._id,
+            interviewerId: resolvedInterviewerId,
             rating,
             comments,
             recommendation,
@@ -407,7 +420,7 @@ const submitInterviewFeedback = async (req, res) => {
             interview.overallRating = totalRating / interview.feedback.length;
         }
         await interview.save();
-        logger_1.default.info(`Feedback submitted for interview ${id} by ${req.user?._id}`);
+        logger_1.default.info(`Feedback submitted for interview ${id} by ${resolvedInterviewerId || 'token-user'}`);
         return (0, response_1.sendSuccess)(res, interview, 'Feedback submitted successfully');
     }
     catch (error) {
@@ -473,11 +486,12 @@ exports.startInterview = startInterview;
 /**
  * @desc    Get interview info for external scorecard form
  * @route   GET /api/v1/interviews/:id/feedback-info
- * @access  Private (Panel member / HR / Admin / Employer)
+ * @access  Private (Panel member / HR / Admin / Employer) OR via feedback token (?token=xxx)
  */
 const getInterviewFeedbackInfo = async (req, res) => {
     try {
         const { id } = req.params;
+        const feedbackToken = req.feedbackToken;
         const interview = await models_1.Interview.findById(id)
             .populate('jobId', 'title location')
             .populate('candidateId', 'firstName lastName email')
@@ -485,14 +499,30 @@ const getInterviewFeedbackInfo = async (req, res) => {
         if (!interview) {
             return (0, response_1.sendError)(res, 'Interview not found', 404);
         }
-        // Authorization: company members, panel members, or super admin
-        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
-        const isPanelMember = interview.panel.some((m) => (m.userId?.toString?.() ?? m.userId) === req.user?._id?.toString());
-        const isCompanyMember = tenantId
-            ? interview.companyId?.toString() === tenantId
-            : false;
-        if (!(0, auth_1.isSuperAdmin)(req.user) && !isPanelMember && !isCompanyMember) {
-            return (0, response_1.sendError)(res, 'Not authorized to view this interview scorecard', 403);
+        let resolvedInterviewerName = 'Interviewer';
+        let resolvedInterviewerId;
+        if (feedbackToken) {
+            // Token-based access — validate against panel feedbackToken
+            const panelMember = interview.panel.find((m) => m.feedbackToken === feedbackToken);
+            if (!panelMember) {
+                return (0, response_1.sendError)(res, 'Invalid or expired feedback token', 401);
+            }
+            resolvedInterviewerName = panelMember.name || 'Interviewer';
+            resolvedInterviewerId = panelMember.userId?.toString();
+        }
+        else {
+            // JWT-based access — standard authorization
+            const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+            const isPanelMember = interview.panel.some((m) => (m.userId?.toString?.() ?? m.userId) === req.user?._id?.toString());
+            const isCompanyMember = tenantId
+                ? interview.companyId?.toString() === tenantId
+                : false;
+            if (!(0, auth_1.isSuperAdmin)(req.user) && !isPanelMember && !isCompanyMember) {
+                return (0, response_1.sendError)(res, 'Not authorized to view this interview scorecard', 403);
+            }
+            resolvedInterviewerName =
+                `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Interviewer';
+            resolvedInterviewerId = req.user?._id?.toString();
         }
         const job = interview.jobId;
         const candidate = interview.candidateId;
@@ -502,10 +532,10 @@ const getInterviewFeedbackInfo = async (req, res) => {
                 ? `${candidate.firstName} ${candidate.lastName}`
                 : 'Candidate',
             interviewType: interview.round || 'Interview',
-            interviewerName: `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Interviewer',
+            interviewerName: resolvedInterviewerName,
             status: interview.status,
             scheduledTime: interview.scheduledTime,
-            existingFeedback: interview.feedback.find((fb) => fb.interviewerId?.toString() === req.user?._id?.toString()) ?? null,
+            existingFeedback: interview.feedback.find((fb) => fb.interviewerId?.toString() === resolvedInterviewerId) ?? null,
         }, 'Interview info retrieved');
     }
     catch (error) {
@@ -514,4 +544,121 @@ const getInterviewFeedbackInfo = async (req, res) => {
     }
 };
 exports.getInterviewFeedbackInfo = getInterviewFeedbackInfo;
+/**
+ * @desc    Notify interview parties (candidate + panel members) and generate feedback tokens
+ * @route   POST /api/v1/interviews/:id/notify
+ * @access  Private (Employer/HR/Admin)
+ */
+const notifyInterviewParties = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const interview = await models_1.Interview.findById(id)
+            .populate('jobId', 'title')
+            .populate('candidateId', 'firstName lastName email')
+            .populate('panel.userId', 'firstName lastName email');
+        if (!interview) {
+            return (0, response_1.sendError)(res, 'Interview not found', 404);
+        }
+        // Tenant isolation
+        const tenantId = (0, auth_1.getTenantCompanyId)(req.user);
+        if (tenantId && interview.companyId?.toString() !== tenantId) {
+            return (0, response_1.sendError)(res, 'Not authorized', 403);
+        }
+        const frontendUrl = process.env.FRONTEND_URL || 'https://hiring.ambiquest.com';
+        const job = interview.jobId;
+        const candidate = interview.candidateId;
+        const scheduledDate = new Date(interview.scheduledTime);
+        const dateStr = scheduledDate.toLocaleDateString('en-US', {
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        });
+        const timeStr = scheduledDate.toLocaleTimeString('en-US', {
+            hour: '2-digit', minute: '2-digit',
+        });
+        // Generate feedback tokens for each panel member (idempotent — don't overwrite existing)
+        for (const member of interview.panel) {
+            if (!member.feedbackToken) {
+                member.feedbackToken = crypto_1.default.randomBytes(24).toString('hex');
+            }
+        }
+        await interview.save();
+        const errors = [];
+        // ── Candidate notification ─────────────────────────────────────────────────
+        if (candidate?.email) {
+            try {
+                await (0, emailService_1.sendEmail)({
+                    to: candidate.email,
+                    subject: `Interview Scheduled: ${job?.title || 'Position'}`,
+                    template: 'interviewScheduled',
+                    data: {
+                        candidateName: `${candidate.firstName} ${candidate.lastName}`,
+                        jobTitle: job?.title || 'the position',
+                        interviewDate: dateStr,
+                        interviewTime: timeStr,
+                        interviewType: interview.round || 'Interview',
+                        interviewLink: interview.meetingLink || `${frontendUrl}/proctoring-check/${interview._id}`,
+                    },
+                });
+            }
+            catch (e) {
+                logger_1.default.warn(`Failed to notify candidate ${candidate.email}:`, e.message);
+                errors.push(`candidate: ${e.message}`);
+            }
+        }
+        // ── Panel member notifications ─────────────────────────────────────────────
+        for (const member of interview.panel) {
+            const panelEmail = member.userId?.email || member.email;
+            const panelName = member.userId?.firstName
+                ? `${member.userId.firstName} ${member.userId.lastName}`
+                : member.name || 'Interviewer';
+            if (!panelEmail)
+                continue;
+            const scorecardUrl = `${frontendUrl}/interviews/${interview._id}/feedback?token=${member.feedbackToken}`;
+            const candidateName = candidate
+                ? `${candidate.firstName} ${candidate.lastName}`
+                : 'Candidate';
+            try {
+                await (0, emailService_1.sendEmail)({
+                    to: panelEmail,
+                    subject: `Panel Interview Invite: ${job?.title || 'Position'} — ${candidateName}`,
+                    html: `
+            <!DOCTYPE html>
+            <html>
+              <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
+                <h2 style="color: #4f46e5;">You've been added to an interview panel</h2>
+                <p>Hi ${panelName},</p>
+                <p>You've been assigned as a panelist for the <strong>${job?.title || 'open'}</strong> position interview with <strong>${candidateName}</strong>.</p>
+                <table style="background:#f5f5f5; border-radius:8px; padding:16px; width:100%; border-collapse:collapse; margin:16px 0;">
+                  <tr><td style="padding:4px 0;"><strong>Date:</strong></td><td>${dateStr}</td></tr>
+                  <tr><td style="padding:4px 0;"><strong>Time:</strong></td><td>${timeStr}</td></tr>
+                  <tr><td style="padding:4px 0;"><strong>Round:</strong></td><td>${interview.round || 'Interview'}</td></tr>
+                  ${interview.meetingLink ? `<tr><td style="padding:4px 0;"><strong>Meeting:</strong></td><td><a href="${interview.meetingLink}">${interview.meetingLink}</a></td></tr>` : ''}
+                </table>
+                <p>After the interview, please submit your scorecard using the link below:</p>
+                <div style="text-align:center; margin:24px 0;">
+                  <a href="${scorecardUrl}" style="background:#4f46e5; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-weight:600;">
+                    Submit Scorecard
+                  </a>
+                </div>
+                <p style="color:#6b7280; font-size:12px;">This link is unique to you. Do not share it with others.</p>
+              </body>
+            </html>
+          `,
+                });
+            }
+            catch (e) {
+                logger_1.default.warn(`Failed to notify panel member ${panelEmail}:`, e.message);
+                errors.push(`panel ${panelEmail}: ${e.message}`);
+            }
+        }
+        logger_1.default.info(`Notifications sent for interview ${id}. Errors: ${errors.length}`);
+        return (0, response_1.sendSuccess)(res, { notified: true, errors: errors.length ? errors : undefined }, errors.length
+            ? `Notifications sent with ${errors.length} warning(s)`
+            : 'All parties notified successfully');
+    }
+    catch (error) {
+        logger_1.default.error('Error in notifyInterviewParties:', error);
+        return (0, response_1.sendError)(res, error.message || 'Error sending notifications', 500);
+    }
+};
+exports.notifyInterviewParties = notifyInterviewParties;
 //# sourceMappingURL=interviewController.js.map

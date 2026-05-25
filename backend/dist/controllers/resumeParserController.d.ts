@@ -18,4 +18,10 @@ export declare const parseAllResumes: (req: AuthRequest, res: Response) => Promi
  * @access HR / Admin / Employer
  */
 export declare const rankCandidates: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc   Bulk-parse resumes for a given list of application IDs (sequential, rate-limit safe)
+ * @route  POST /api/v1/applications/bulk-parse
+ * @access HR / Admin / Employer
+ */
+export declare const bulkParse: (req: AuthRequest, res: Response) => Promise<void | Response>;
 //# sourceMappingURL=resumeParserController.d.ts.map

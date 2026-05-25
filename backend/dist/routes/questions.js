@@ -10,6 +10,9 @@ const types_1 = require("../types");
 const router = express_1.default.Router();
 // All routes require authentication
 router.use(auth_1.protect);
+// ── LLM-powered generation (must be before /:id so Express doesn't match "generate" as an id) ──
+router.post('/generate', (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), questionController_1.generateFromJob);
+router.post('/batch', (0, auth_1.authorize)(types_1.UserRole.EMPLOYER, types_1.UserRole.HR, types_1.UserRole.ADMIN), questionController_1.batchCreateQuestions);
 /**
  * Question CRUD routes
  */

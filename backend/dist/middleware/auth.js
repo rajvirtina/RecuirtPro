@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.csrfProtect = exports.optionalAuth = exports.authorize = exports.protect = exports.requireTenant = exports.getTenantCompanyId = exports.isSuperAdmin = void 0;
+exports.csrfProtect = exports.optionalProtect = exports.optionalAuth = exports.authorize = exports.protect = exports.requireTenant = exports.getTenantCompanyId = exports.isSuperAdmin = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const models_1 = require("../models");
 const config_1 = __importDefault(require("../config"));
@@ -143,6 +143,23 @@ const optionalAuth = async (req, res, next) => {
     }
 };
 exports.optionalAuth = optionalAuth;
+/**
+ * Optional-protect for feedback/scorecard routes.
+ * - If a `?token=` query param is present, let the request through without JWT —
+ *   the controller is responsible for validating the token against interview.panel[].feedbackToken.
+ * - Otherwise, behaves exactly like `protect`.
+ */
+const optionalProtect = async (req, res, next) => {
+    const feedbackToken = req.query.token;
+    if (feedbackToken) {
+        // Feedback-token path: let the controller validate it
+        req.feedbackToken = feedbackToken;
+        return next();
+    }
+    // Fall back to full JWT auth
+    return (0, exports.protect)(req, res, next);
+};
+exports.optionalProtect = optionalProtect;
 /**
  * BUG-009: CSRF protection middleware.
  * Validates that state-changing requests from browser include X-CSRF-Token

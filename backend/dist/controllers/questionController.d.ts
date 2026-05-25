@@ -37,6 +37,20 @@ export declare const deleteQuestion: (req: AuthRequest, res: Response) => Promis
  */
 export declare const autoGenerateQuestions: (req: AuthRequest, res: Response) => Promise<void | Response>;
 /**
+ * @desc    Generate questions from a job description via LLM (preview only — not saved)
+ *          HR reviews the results and POSTs selected questions to POST /questions to save them.
+ * @route   POST /api/v1/questions/generate
+ * @access  Private (Employer/HR/Admin)
+ */
+export declare const generateFromJob: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
+ * @desc    Batch-save accepted questions to the question bank
+ *          Called by the frontend after HR reviews and accepts generated questions.
+ * @route   POST /api/v1/questions/batch
+ * @access  Private (Employer/HR/Admin)
+ */
+export declare const batchCreateQuestions: (req: AuthRequest, res: Response) => Promise<void | Response>;
+/**
  * @desc    Get question statistics
  * @route   GET /api/v1/questions/stats
  * @access  Private

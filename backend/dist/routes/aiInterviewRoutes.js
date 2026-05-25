@@ -6,6 +6,7 @@ const aiInterviewController_1 = require("../controllers/aiInterviewController");
 const auth_1 = require("../middleware/auth");
 const validator_1 = require("../middleware/validator");
 const types_1 = require("../types");
+const rateLimiter_1 = require("../middleware/rateLimiter");
 const router = (0, express_1.Router)();
 // ─── Protected (HR/Admin): manage sessions ────────────────────────────────────
 /**
@@ -42,7 +43,7 @@ router.post('/session/:sessionId/start', [
  * @route  POST /api/v1/ai-interviews/session/:sessionId/answer
  * @desc   Submit candidate response; evaluates and returns next question
  */
-router.post('/session/:sessionId/answer', [
+router.post('/session/:sessionId/answer', rateLimiter_1.aiAnswerLimiter, [
     (0, express_validator_1.param)('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID'),
     (0, express_validator_1.body)('questionId').notEmpty().withMessage('questionId is required'),
     (0, express_validator_1.body)('responseText').notEmpty().trim().isLength({ min: 1, max: 3000 }).withMessage('responseText is required (max 3000 chars)'),
@@ -53,5 +54,13 @@ router.post('/session/:sessionId/answer', [
  * @desc   Explicitly close a session (early exit / connection drop)
  */
 router.post('/session/:sessionId/complete', [(0, express_validator_1.param)('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID')], validator_1.validate, aiInterviewController_1.completeSession);
+/**
+ * @route  POST /api/v1/ai-interviews/session/:sessionId/flag
+ * @desc   Candidate reports a technical/content issue — logs it, does NOT end the session
+ */
+router.post('/session/:sessionId/flag', [
+    (0, express_validator_1.param)('sessionId').isLength({ min: 64, max: 64 }).withMessage('Invalid session ID'),
+    (0, express_validator_1.body)('reason').trim().notEmpty().isLength({ max: 500 }).withMessage('reason is required (max 500 chars)'),
+], validator_1.validate, aiInterviewController_1.flagSession);
 exports.default = router;
 //# sourceMappingURL=aiInterviewRoutes.js.map

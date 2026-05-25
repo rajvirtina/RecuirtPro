@@ -32,4 +32,10 @@ export declare const completeSession: (req: Request, res: Response) => Promise<v
  * @auth  JWT required
  */
 export declare const getSessionForReview: (req: AuthRequest, res: Response) => Promise<void>;
+/**
+ * @desc  Candidate flags a technical/content issue — logs it without touching session status
+ * @route POST /api/v1/ai-interviews/session/:sessionId/flag
+ * @auth  Public (session ID is the credential)
+ */
+export declare const flagSession: (req: Request, res: Response) => Promise<void>;
 //# sourceMappingURL=aiInterviewController.d.ts.map

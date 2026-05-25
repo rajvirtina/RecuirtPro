@@ -7,13 +7,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.emitWarning = exports.emitInterviewTermination = exports.emitViolation = exports.getSocketIO = exports.initializeSocket = void 0;
+exports.emitWarning = exports.emitNotificationToUser = exports.emitInterviewTermination = exports.emitViolation = exports.getSocketIO = exports.initializeSocket = void 0;
 const socket_io_1 = require("socket.io");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const logger_1 = __importDefault(require("../utils/logger"));
 const config_1 = require("../config");
 const models_1 = require("../models");
 let io;
+/** Maximum participants in a single meeting room (1 candidate + up to 3 interviewers). */
+const MAX_PANEL_SIZE = 4;
 const initializeSocket = (server) => {
     io = new socket_io_1.Server(server, {
         cors: {
@@ -42,6 +44,9 @@ const initializeSocket = (server) => {
     });
     io.on('connection', (socket) => {
         logger_1.default.info(`Socket connected: ${socket.id} (User: ${socket.data.userId})`);
+        // Auto-join the user's personal room so targeted events (notifications, etc.)
+        // can be emitted without tracking individual socket IDs.
+        socket.join(`user-${socket.data.userId}`);
         // ============ VIDEO CONFERENCING EVENTS ============
         // Join video meeting room — with authorization (SEC-13/B-18)
         socket.on('join-meeting', async ({ interviewId, userName, userRole }) => {
@@ -64,6 +69,17 @@ const initializeSocket = (server) => {
                 if (!isCandidate && !isPanelMember && !isAdmin && !isCompanyMember) {
                     logger_1.default.warn(`Socket ${socket.id} unauthorized join-meeting attempt for ${interviewId}`);
                     socket.emit('error', { message: 'Not authorized to join this meeting' });
+                    return;
+                }
+                // Panel size enforcement — P2P mesh degrades past 4; cap hard at MAX_PANEL_SIZE.
+                const existingRoom = io.sockets.adapter.rooms.get(`meeting-${interviewId}`);
+                const existingSize = existingRoom ? existingRoom.size : 0;
+                if (existingSize >= MAX_PANEL_SIZE) {
+                    logger_1.default.warn(`Meeting ${interviewId} at capacity (${existingSize}/${MAX_PANEL_SIZE}), rejecting ${socket.id}`);
+                    socket.emit('error', {
+                        message: `This meeting is at capacity (${MAX_PANEL_SIZE} participants max). Please wait for a participant to leave or use a dedicated conferencing tool for larger panels.`,
+                        code: 'ROOM_FULL',
+                    });
                     return;
                 }
                 socket.join(`meeting-${interviewId}`);
@@ -327,6 +343,21 @@ const emitInterviewTermination = (interviewId, reason) => {
     logger_1.default.info(`Interview termination emitted to room ${interviewId}: ${reason}`);
 };
 exports.emitInterviewTermination = emitInterviewTermination;
+/**
+ * Push a real-time notification event to a specific user's browser tab(s).
+ * The frontend listens on 'new-notification' and invalidates its query cache.
+ */
+const emitNotificationToUser = (userId, payload) => {
+    if (!io) {
+        logger_1.default.warn('Socket.IO not initialized, cannot emit notification');
+        return;
+    }
+    io.to(`user-${userId}`).emit('new-notification', {
+        ...payload,
+        timestamp: Date.now(),
+    });
+};
+exports.emitNotificationToUser = emitNotificationToUser;
 /**
  * Send warning to desktop app
  */

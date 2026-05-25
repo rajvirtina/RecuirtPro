@@ -4,11 +4,11 @@
   "description": "Recruitment Process Automation Platform",
   "private": true,
   "scripts": {
-    "postinstall": "cd backend && npm install && npm run build",
-    "build": "cd backend && npm install && npm run build",
-    "start": "cd backend && node dist/server.js",
+    "postinstall": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build && cd .. && node scripts/copy-frontend.js",
+    "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build && cd .. && node scripts/copy-frontend.js",
+    "start": "node scripts/setup-env.js && cd backend && node dist/server.js",
     "dev": "cd backend && npm run dev",
-    "build:full": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "build:full": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build && cd .. && node scripts/copy-frontend.js",
     "install:all": "cd backend && npm install && cd ../frontend && npm install"
   },
   "engines": {
