@@ -21,22 +21,33 @@ const envPaths = [
 for (const p of envPaths) {
     dotenv_1.default.config({ path: p });
 }
+// ALWAYS try to load .env.production — on Hostinger shared hosting (no SSH),
+// .env is gitignored and won't exist, but .env.production is committed and deployed.
+// This ensures production values are loaded even if NODE_ENV isn't pre-set by the host.
+const prodPaths = [
+    path_1.default.resolve(__dirname, '../../.env.production'),
+    path_1.default.resolve(__dirname, '../../../backend/.env.production'),
+    path_1.default.resolve(process.cwd(), '.env.production'),
+    path_1.default.resolve(process.cwd(), 'backend/.env.production'),
+    // Hostinger persistent production env
+    path_1.default.resolve(process.env.HOME || '/root', 'recruitpro.env'),
+    path_1.default.resolve(process.env.HOME || '/root', '.recruitpro.env'),
+];
 if (process.env.NODE_ENV === 'production') {
+    // In production: override all values from .env.production
     const hostPort = process.env.PORT; // preserve Hostinger-injected port
-    const prodPaths = [
-        path_1.default.resolve(__dirname, '../../.env.production'),
-        path_1.default.resolve(__dirname, '../../../backend/.env.production'),
-        path_1.default.resolve(process.cwd(), '.env.production'),
-        path_1.default.resolve(process.cwd(), 'backend/.env.production'),
-        // Hostinger persistent production env
-        path_1.default.resolve(process.env.HOME || '/root', 'recruitpro.env'),
-        path_1.default.resolve(process.env.HOME || '/root', '.recruitpro.env'),
-    ];
     for (const p of prodPaths) {
         dotenv_1.default.config({ path: p, override: true });
     }
     if (hostPort)
         process.env.PORT = hostPort; // restore Hostinger's port
+}
+else if (!process.env.MONGODB_URI) {
+    // Fallback: if no .env loaded anything useful, try .env.production without override
+    // This handles Hostinger where .env doesn't exist but .env.production does
+    for (const p of prodPaths) {
+        dotenv_1.default.config({ path: p });
+    }
 }
 // SEC-06: Reject default secrets in production
 const DANGEROUS_DEFAULTS = [

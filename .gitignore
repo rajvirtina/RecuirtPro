@@ -15,9 +15,10 @@ node_modules/
 **/.env.staging
 # .env files contain real secrets — must never be committed
 backend/.env
-backend/.env.production
+# backend/.env.production — ALLOWED for Hostinger Git deploy (no SSH available)
 # frontend/.env.production contains only public URLs (no secrets) — allow it for Hostinger build
 !frontend/.env.production
+!backend/.env.production
 
 # Build outputs (frontend/dist and backend/dist are committed for Hostinger deployment)
 build/
