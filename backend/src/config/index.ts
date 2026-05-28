@@ -71,11 +71,11 @@ if (process.env.NODE_ENV === 'production') {
 
 export const config = {
   env: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '5000', 10),
-  
+  port: parseInt(process.env.PORT || '5001', 10),
+
   // Server — B-11 fix: default to same port as the main PORT value
   server: {
-    url: process.env.SERVER_URL || `http://localhost:${process.env.PORT || '5000'}`,
+    url: process.env.SERVER_URL || `http://localhost:${process.env.PORT || '5001'}`,
   },
   
   // Database
