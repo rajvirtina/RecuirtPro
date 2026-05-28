@@ -103,6 +103,8 @@ const ICE_SERVERS: RTCConfiguration = {
         ]),
   ],
   iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
 };
 
 export default function VideoMeetingRoom() {
@@ -351,10 +353,20 @@ export default function VideoMeetingRoom() {
     socket.on('user-joined', ({ socketId, userName, userRole }) => {
       console.log('=== USER JOINED EVENT ===');
       console.log(`User: ${userName}, socketId: ${socketId}, mySocketId: ${socket.id}`);
-      
+
       // Critical: Don't add ourselves to the participants list
       if (socketId === socket.id) {
         console.warn('⚠️ Received user-joined for SELF, ignoring');
+        return;
+      }
+
+      // Client-side cap: participants Map is remote-only, so size >= MAX_PARTICIPANTS-1
+      // means local + remotes already fills the room.  Server enforces the same limit;
+      // this guard prevents a stale/racing event from adding a ghost tile.
+      if (participantsRef.current.size >= MAX_PARTICIPANTS - 1) {
+        console.warn(`⚠️ Panel full (${MAX_PARTICIPANTS} max). Ignoring late user-joined for ${userName}.`);
+        toast.error(`Maximum ${MAX_PARTICIPANTS} participants for video interviews. Contact support for larger panels.`);
+        socket.emit('leave-meeting', { interviewId: id, userName });
         return;
       }
       

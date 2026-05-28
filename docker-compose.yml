@@ -82,7 +82,7 @@ services:
       start_period: 20s
 
   # TURN server — required for WebRTC behind corporate firewalls/strict NAT.
-  # Set SERVER_IP, TURN_USER, TURN_PASSWORD in the host environment or a .env file.
+  # Set SERVER_IP, TURN_USERNAME, TURN_PASSWORD in the host environment or a .env file.
   # Ports: 3478 = STUN/TURN (UDP+TCP), 5349 = TURNS/TLS (UDP+TCP),
   #        49152-65535 = relay media range.
   coturn:
@@ -90,8 +90,6 @@ services:
     container_name: recruitpro-coturn
     restart: unless-stopped
     network_mode: host            # TURN requires the real external IP; host networking is simplest
-    volumes:
-      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     environment:
       DETECT_EXTERNAL_IP: "yes"
       EXTERNAL_IP: "${SERVER_IP}"
@@ -102,7 +100,7 @@ services:
       --min-port=49152
       --max-port=65535
       --realm=${TURN_REALM:-recruitpro.local}
-      --user=${TURN_USER:-recruitpro}:${TURN_PASSWORD:?TURN_PASSWORD must be set}
+      --user=${TURN_USERNAME:-recruitpro}:${TURN_PASSWORD:?TURN_PASSWORD must be set}
       --lt-cred-mech
       --no-multicast-peers
       --denied-peer-ip=10.0.0.0-10.255.255.255
