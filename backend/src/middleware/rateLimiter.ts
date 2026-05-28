@@ -36,6 +36,20 @@ export const uploadLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for LLM-backed resume parsing endpoints.
+ * 20 requests per 15 minutes per company — prevents runaway LLM cost from bulk triggers.
+ */
+export const resumeParseLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  keyGenerator: (req) => `parse:${(req as any).user?.companyId || req.ip}`,
+  message: { success: false, message: 'Resume parse rate limit reached. Please wait 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
+/**
  * Rate limiter for AI interview answer submissions.
  * 50 answers per session per hour (a 12-question session has ~12 submissions;
  * this allows retries and retakes while blocking scripted abuse).

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.aiAnswerLimiter = exports.uploadLimiter = exports.authLimiter = exports.limiter = void 0;
+exports.aiAnswerLimiter = exports.resumeParseLimiter = exports.uploadLimiter = exports.authLimiter = exports.limiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const config_1 = __importDefault(require("../config"));
 /**
@@ -36,6 +36,19 @@ exports.uploadLimiter = (0, express_rate_limit_1.default)({
     message: 'Too many uploads, please try again later.',
     standardHeaders: true,
     legacyHeaders: false,
+});
+/**
+ * Rate limiter for LLM-backed resume parsing endpoints.
+ * 20 requests per 15 minutes per company — prevents runaway LLM cost from bulk triggers.
+ */
+exports.resumeParseLimiter = (0, express_rate_limit_1.default)({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20,
+    keyGenerator: (req) => `parse:${req.user?.companyId || req.ip}`,
+    message: { success: false, message: 'Resume parse rate limit reached. Please wait 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === 'test',
 });
 /**
  * Rate limiter for AI interview answer submissions.

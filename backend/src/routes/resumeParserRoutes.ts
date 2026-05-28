@@ -4,6 +4,7 @@ import { parseResume, parseAllResumes, rankCandidates, bulkParse } from '../cont
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
+import { resumeParseLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router.post(
   '/applications/:id/parse-resume',
   protect,
   authorize(...hrAdminEmployer),
+  resumeParseLimiter,
   [param('id').isMongoId().withMessage('Valid application ID is required')],
   validate,
   parseResume
@@ -32,6 +34,7 @@ router.post(
   '/jobs/:jobId/parse-all-resumes',
   protect,
   authorize(...hrAdminEmployer),
+  resumeParseLimiter,
   [param('jobId').isMongoId().withMessage('Valid job ID is required')],
   validate,
   parseAllResumes
@@ -60,6 +63,7 @@ router.post(
   '/applications/bulk-parse',
   protect,
   authorize(...hrAdminEmployer),
+  resumeParseLimiter,
   [
     body('applicationIds')
       .isArray({ min: 1, max: 50 })
