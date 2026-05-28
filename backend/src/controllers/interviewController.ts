@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 import { Interview, Application, Job, User, InterviewTemplate, Question, ProctoringEvent } from '../models';
 import { ActivityEvent } from '../models/ActivityEvent';
 import { AuthRequest, InterviewStatus, ApplicationStatus } from '../types';
@@ -7,6 +9,8 @@ import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '
 import logger from '../utils/logger';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
 import { sendEmail } from '../services/emailService';
+import { config } from '../config';
+import { enqueueInterviewReminder } from '../services/queueProcessors';
 
 /**
  * @desc    Schedule an interview
@@ -109,6 +113,21 @@ export const scheduleInterview = async (
     });
 
     logger.info(`Interview scheduled: ${interview._id} for application: ${applicationId}`);
+
+    // Enqueue 1-hour-before reminder (non-blocking — Redis may not be available)
+    if (scheduledTime) {
+      const candidateUser = await User.findById(candidateId).select('firstName email phone').lean();
+      const jobDoc = await Job.findById(jobId).select('title').lean();
+      if (candidateUser && jobDoc) {
+        void enqueueInterviewReminder({
+          _id:          interview._id.toString(),
+          scheduledTime: new Date(scheduledTime),
+          candidateId:  { phone: (candidateUser as any).phone, email: (candidateUser as any).email, firstName: (candidateUser as any).firstName },
+          jobId:        { title: (jobDoc as any).title },
+          meetingLink:  meetingLink,
+        });
+      }
+    }
 
     return sendSuccess(res, interview, 'Interview scheduled successfully', 201);
   } catch (error: any) {
@@ -855,5 +874,70 @@ export const notifyInterviewParties = async (
   } catch (error: any) {
     logger.error('Error in notifyInterviewParties:', error);
     return sendError(res, error.message || 'Error sending notifications', 500);
+  }
+};
+
+/**
+ * @desc    Upload a recording for a completed interview
+ * @route   POST /api/v1/interviews/:id/recording
+ * @access  Private (Employer/HR/Admin)
+ */
+export const uploadRecording = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) {
+      return sendError(res, 'Recording file is required', 400);
+    }
+
+    const interview = await Interview.findById(id);
+    if (!interview) {
+      return sendError(res, 'Interview not found', 404);
+    }
+
+    const tenantId = getTenantCompanyId(req.user);
+    if (!isSuperAdmin(req.user) && tenantId && interview.companyId?.toString() !== tenantId) {
+      return sendError(res, 'Not authorized', 403);
+    }
+
+    let recordingUrl: string;
+    const bucket = (config.aws as any)?.bucket || process.env.AWS_S3_BUCKET;
+
+    if (bucket) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const AWS = require('aws-sdk') as typeof import('aws-sdk');
+      const s3 = new AWS.S3({
+        accessKeyId:     (config.aws as any).accessKeyId,
+        secretAccessKey: (config.aws as any).secretAccessKey,
+        region:          (config.aws as any).region,
+      });
+      const key = `recordings/${id}/${Date.now()}.webm`;
+      await s3.putObject({
+        Bucket: bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: 'video/webm',
+      }).promise();
+      recordingUrl = `https://${bucket}.s3.${(config.aws as any).region}.amazonaws.com/${key}`;
+    } else {
+      // Local filesystem fallback when S3 is not configured
+      const uploadsDir = path.join(__dirname, '../../uploads/recordings', id);
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      const filename = `${Date.now()}.webm`;
+      fs.writeFileSync(path.join(uploadsDir, filename), file.buffer);
+      recordingUrl = `/uploads/recordings/${id}/${filename}`;
+    }
+
+    interview.recordingUrl = recordingUrl;
+    await interview.save();
+
+    logger.info(`[Recording] Saved for interview ${id}: ${recordingUrl}`);
+    return sendSuccess(res, { recordingUrl }, 'Recording saved successfully');
+  } catch (error: any) {
+    logger.error('Error in uploadRecording:', error);
+    return sendError(res, error.message || 'Error saving recording', 500);
   }
 };

@@ -138,6 +138,7 @@ export default function VideoMeetingRoom() {
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -148,6 +149,12 @@ export default function VideoMeetingRoom() {
   const hasJoinedRoomRef = useRef(false);
   /** Mirror of participants state — readable inside event-handler closures. */
   const participantsRef = useRef<Map<string, Participant>>(new Map());
+  /** MediaRecorder for local recording (interviewer side only). */
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  /** Updated each render — lets stale socket closures always call fresh recording logic. */
+  const startRecordingRef = useRef<() => void>(() => {});
+  const stopRecordingRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (id) {
@@ -167,6 +174,54 @@ export default function VideoMeetingRoom() {
     localVideoRef.current.srcObject = localStream;
     localVideoRef.current.play().catch(() => {/* autoplay policy — harmless */});
   }, [localStream, loading]);  // re-run when loading flips to false (video element mounts)
+
+  // Keep recording function refs fresh — socket handlers capture the ref, not the closure value.
+  startRecordingRef.current = () => {
+    const videoTracks: MediaStreamTrack[] = [];
+    const audioTracks: MediaStreamTrack[] = [];
+    localStreamRef.current?.getVideoTracks().forEach(t => videoTracks.push(t));
+    localStreamRef.current?.getAudioTracks().forEach(t => audioTracks.push(t));
+    participantsRef.current.forEach(p => {
+      p.stream?.getVideoTracks().forEach(t => videoTracks.push(t));
+      p.stream?.getAudioTracks().forEach(t => audioTracks.push(t));
+    });
+    if (!videoTracks.length && !audioTracks.length) return;
+
+    const composite = new MediaStream([...videoTracks, ...audioTracks]);
+    const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus'))
+      ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+
+    const recorder = new MediaRecorder(composite, { mimeType });
+    chunksRef.current = [];
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      if (!blob.size) return;
+      setIsUploadingRecording(true);
+      try {
+        const fd = new FormData();
+        fd.append('recording', blob, `recording-${id}-${Date.now()}.webm`);
+        await apiClient.post(`/interviews/${id}/recording`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        toast.success('Recording saved successfully');
+      } catch {
+        toast.error('Failed to save recording — please contact support');
+      } finally {
+        setIsUploadingRecording(false);
+        chunksRef.current = [];
+      }
+    };
+    recorder.start(1000);
+    recorderRef.current = recorder;
+  };
+
+  stopRecordingRef.current = () => {
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+      recorderRef.current = null;
+    }
+  };
 
   // Keep participantsRef in sync so event-handler closures can read current state.
   useEffect(() => {
@@ -492,10 +547,12 @@ export default function VideoMeetingRoom() {
 
     socket.on('recording-started', () => {
       setIsRecording(true);
+      startRecordingRef.current();
     });
 
     socket.on('recording-stopped', () => {
       setIsRecording(false);
+      stopRecordingRef.current();
     });
 
     socket.on('error', ({ message, code }: { message: string; code?: string }) => {
@@ -744,6 +801,9 @@ export default function VideoMeetingRoom() {
   };
 
   const cleanup = () => {
+    // Stop active recording before leaving (uploads the blob if recording was in progress)
+    stopRecordingRef.current();
+
     // Stop all tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -845,6 +905,15 @@ export default function VideoMeetingRoom() {
               <span className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full text-xs font-medium">
                 <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
                 Recording
+              </span>
+            )}
+            {isUploadingRecording && (
+              <span className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-medium">
+                <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                Saving recording…
               </span>
             )}
           </div>

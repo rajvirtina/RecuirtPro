@@ -18,6 +18,7 @@ interface InterviewDetail {
   duration: number;
   status: string;
   meetingLink?: string;
+  recordingUrl?: string;
   proctoringEnabled?: boolean;
   round?: string;
   panel?: any[];
@@ -456,6 +457,24 @@ export default function InterviewDetail() {
             )}
           </div>
         </div>
+
+        {/* Recording Playback */}
+        {interview.recordingUrl && (
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-sm font-medium text-gray-700 mb-3">Interview Recording</h2>
+            <video
+              src={interview.recordingUrl}
+              controls
+              className="w-full rounded-lg border border-gray-200 bg-black max-h-96"
+              preload="metadata"
+            >
+              Your browser does not support video playback.
+            </video>
+            <p className="mt-2 text-xs text-gray-400">
+              Recording is from the interviewer's perspective. Download is available via browser controls.
+            </p>
+          </div>
+        )}
 
         {/* Meeting Link */}
         {interview.meetingLink && (

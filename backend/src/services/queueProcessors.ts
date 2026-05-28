@@ -1,7 +1,8 @@
 import Bull from 'bull';
 import { config } from '../config';
 import logger from '../utils/logger';
-import { isEmailQueueUp, closeEmailQueue } from '../services/emailService';
+import { isEmailQueueUp, closeEmailQueue, sendEmail } from '../services/emailService';
+import { sendSms } from './smsService';
 
 // ── Redis connection config ───────────────────────────────────────────────────
 
@@ -27,10 +28,11 @@ function isRedisConfigured() {
 
 // ── Queue instances ───────────────────────────────────────────────────────────
 
-let crossPortalQueue:     Bull.Queue | null = null;
-let offerExpiryQueue:     Bull.Queue | null = null;
-let jobExpiryQueue:       Bull.Queue | null = null;
+let crossPortalQueue:      Bull.Queue | null = null;
+let offerExpiryQueue:      Bull.Queue | null = null;
+let jobExpiryQueue:        Bull.Queue | null = null;
 let retentionCleanupQueue: Bull.Queue | null = null;
+let reminderQueue:         Bull.Queue | null = null;
 
 function initQueues() {
   if (!isRedisConfigured()) {
@@ -139,6 +141,29 @@ function initQueues() {
       }
     });
 
+    // ── Interview reminder — fires 1 hour before scheduled time ─────────
+    reminderQueue = new Bull('interview-reminders', { redis: redisConfig });
+    reminderQueue.on('error', (err) => logger.error('[ReminderQueue] Error:', err.message));
+    reminderQueue.process(async (job) => {
+      const { candidatePhone, candidateEmail, candidateName, jobTitle, scheduledTime, meetingLink } = job.data;
+      const timeStr = new Date(scheduledTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+      void sendSms(
+        candidatePhone,
+        `Reminder: Your interview for ${jobTitle} starts in 1 hour at ${timeStr}.${meetingLink ? ` Join: ${meetingLink}` : ''}`
+      );
+
+      void sendEmail({
+        to: candidateEmail,
+        subject: `Interview Reminder — ${jobTitle} in 1 hour`,
+        template: 'interviewScheduled',
+        data: { candidateName, jobTitle, scheduledTime: timeStr, meetingLink: meetingLink || null },
+      }).catch(() => {});
+    });
+    reminderQueue.on('failed', (job, err) =>
+      logger.error(`[ReminderQueue] Job ${job.id} failed:`, err.message)
+    );
+
     logger.info('[Queues] All queues initialized successfully');
   } catch (err: any) {
     logger.error('[Queues] Failed to initialize queues:', err.message);
@@ -151,6 +176,38 @@ initQueues();
 
 /** Reflects email queue Redis status (email queue is owned by emailService) */
 export const isRedisAvailable = () => isEmailQueueUp();
+
+/**
+ * Enqueue a 1-hour-before reminder for an interview.
+ * Called from interviewController after Interview.create().
+ */
+export const enqueueInterviewReminder = async (interview: {
+  _id: string;
+  scheduledTime: Date;
+  candidateId: { phone?: string; email: string; firstName: string };
+  jobId: { title: string };
+  meetingLink?: string;
+}): Promise<void> => {
+  if (!reminderQueue) return;
+
+  const fireAt = new Date(interview.scheduledTime).getTime() - 60 * 60 * 1000;
+  const delay = Math.max(0, fireAt - Date.now());
+  if (delay < 60_000) return; // less than 1 minute away — skip
+
+  await reminderQueue.add(
+    {
+      interviewId:    interview._id,
+      candidatePhone: interview.candidateId.phone,
+      candidateEmail: interview.candidateId.email,
+      candidateName:  interview.candidateId.firstName,
+      jobTitle:       interview.jobId.title,
+      scheduledTime:  interview.scheduledTime,
+      meetingLink:    interview.meetingLink,
+    },
+    { delay, attempts: 2, removeOnComplete: 100 }
+  );
+  logger.info(`[ReminderQueue] Reminder enqueued for interview ${interview._id} (fires in ${Math.round(delay / 60000)} min)`);
+};
 
 export const enqueueCrossPortalPosting = async (options: {
   jobId: string;
@@ -172,7 +229,7 @@ export const enqueueCrossPortalPosting = async (options: {
 
 export const closeQueues = async () => {
   await closeEmailQueue();
-  const closes = [crossPortalQueue, offerExpiryQueue, jobExpiryQueue, retentionCleanupQueue]
+  const closes = [crossPortalQueue, offerExpiryQueue, jobExpiryQueue, retentionCleanupQueue, reminderQueue]
     .filter(Boolean)
     .map((q) => q!.close());
   await Promise.allSettled(closes);

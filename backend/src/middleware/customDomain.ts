@@ -6,6 +6,8 @@ import logger from '../utils/logger';
 const PLATFORM_HOSTS = new Set([
   'localhost',
   '127.0.0.1',
+  'hiring.ambiquest.com',
+  'api.ambiquest.com',
   'recruitpro.com',
   'www.recruitpro.com',
   'app.recruitpro.com',

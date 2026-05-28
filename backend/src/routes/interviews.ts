@@ -1,10 +1,20 @@
 import { Router } from 'express';
 import { body, param, query } from 'express-validator';
+import multer from 'multer';
 import * as interviewController from '../controllers/interviewController';
 import { generateSelfScheduleLink } from '../controllers/scheduleController';
 import { protect, optionalProtect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
+
+const recordingUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) cb(null, true);
+    else cb(new Error('Only video files are allowed'));
+  },
+});
 
 const router = Router();
 
@@ -292,6 +302,16 @@ router.delete(
  *       200:
  *         description: Self-schedule link generated
  */
+router.post(
+  '/:id/recording',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Valid interview ID is required')],
+  validate,
+  recordingUpload.single('recording'),
+  interviewController.uploadRecording
+);
+
 router.post(
   '/:id/self-schedule-link',
   protect,

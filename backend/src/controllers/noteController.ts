@@ -1,11 +1,12 @@
 import { Response } from 'express';
 import { Note } from '../models/Note';
 import { ActivityEvent } from '../models/ActivityEvent';
-import { Application } from '../models';
+import { Application, User } from '../models';
 import { AuthRequest, UserRole } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 import { getTenantCompanyId } from '../middleware/auth';
+import { notificationService } from '../services/notificationService';
 
 /**
  * @desc    Get notes for an application
@@ -72,6 +73,33 @@ export const createNote = async (req: AuthRequest, res: Response) => {
       type: 'note_added',
       metadata: { noteId: note._id },
     });
+
+    // Fire @mention notifications for any mentioned users
+    if (mentions && mentions.length > 0 && companyId) {
+      try {
+        const mentionedUsers = await User.find({
+          _id: { $in: mentions },
+          companyId,
+          deletedAt: null,
+        }).select('_id').lean();
+
+        if (mentionedUsers.length > 0) {
+          const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+          await notificationService.createBulkNotifications(
+            mentionedUsers.map((u: any) => u._id.toString()),
+            {
+              type: 'in_app' as any,
+              title: `${authorName} mentioned you`,
+              message: `You were mentioned in a note on application #${id.slice(-6).toUpperCase()}: "${preview}"`,
+              priority: 'medium',
+              data: { applicationId: id, noteId: (note as any)._id.toString(), type: 'mention' },
+            }
+          );
+        }
+      } catch (mentionErr: any) {
+        logger.warn('[createNote] @mention notification failed (non-fatal):', mentionErr.message);
+      }
+    }
 
     return sendSuccess(res, note, 'Note created successfully', 201);
   } catch (error: any) {

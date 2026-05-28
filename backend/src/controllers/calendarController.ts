@@ -44,7 +44,7 @@ export const initiateOAuth = async (
           `client_id=${config.microsoft.clientId}&` +
           `redirect_uri=${redirectUri}&` +
           `response_type=code&` +
-          `scope=https://graph.microsoft.com/Calendars.ReadWrite offline_access&` +
+          `scope=https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/OnlineMeetings.ReadWrite offline_access&` +
           `state=${state}`;
         break;
 
@@ -245,15 +245,19 @@ export const createCalendarEvent = async (
 
     // Create event based on provider
     let eventId: string;
+    let teamsJoinUrl: string | undefined;
 
     switch (integration.provider) {
       case CalendarProvider.GOOGLE:
         eventId = await createGoogleCalendarEvent(interview, integration);
         break;
 
-      case CalendarProvider.MICROSOFT:
-        eventId = await createMicrosoftCalendarEvent(interview, integration);
+      case CalendarProvider.MICROSOFT: {
+        const result = await createMicrosoftCalendarEvent(interview, integration);
+        eventId = result.eventId;
+        teamsJoinUrl = result.joinUrl;
         break;
+      }
 
       case CalendarProvider.ZOHO:
         eventId = await createZohoCalendarEvent(interview, integration);
@@ -263,14 +267,21 @@ export const createCalendarEvent = async (
         return sendError(res, 'Unsupported calendar provider', 400);
     }
 
-    // Update interview with calendar info
+    // Update interview with calendar info (and Teams join URL if generated)
     interview.calendarEventId = eventId;
     interview.calendarProvider = integration.provider;
+    if (teamsJoinUrl) {
+      interview.meetingLink = teamsJoinUrl;
+    }
     await interview.save();
 
     logger.info(`Calendar event created for interview ${interviewId}`);
 
-    return sendSuccess(res, { eventId }, 'Calendar event created successfully');
+    return sendSuccess(
+      res,
+      { eventId, ...(teamsJoinUrl ? { meetingLink: teamsJoinUrl } : {}) },
+      teamsJoinUrl ? 'Calendar event created with Teams meeting link' : 'Calendar event created successfully'
+    );
   } catch (error: any) {
     logger.error('Error in createCalendarEvent:', error);
     return sendError(res, error.message || 'Error creating calendar event', 500);
@@ -536,7 +547,7 @@ async function createGoogleCalendarEvent(interview: any, integration: any): Prom
   return response.data.id;
 }
 
-async function createMicrosoftCalendarEvent(interview: any, integration: any): Promise<string> {
+async function createMicrosoftCalendarEvent(interview: any, integration: any): Promise<{ eventId: string; joinUrl?: string }> {
   // SEC-11: Decrypt access token for API call
   const accessToken = integration.getDecryptedAccessToken?.() || integration.accessToken;
   const event = {
@@ -565,6 +576,9 @@ async function createMicrosoftCalendarEvent(interview: any, integration: any): P
         type: 'optional',
       })),
     ],
+    // Auto-generate a Teams meeting (requires OnlineMeetings.ReadWrite scope + Teams license)
+    isOnlineMeeting: true,
+    onlineMeetingProvider: 'teamsForBusiness',
   };
 
   const response = await axios.post(
@@ -573,7 +587,11 @@ async function createMicrosoftCalendarEvent(interview: any, integration: any): P
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
-  return response.data.id;
+  const joinUrl: string | undefined =
+    response.data?.onlineMeeting?.joinUrl ||
+    response.data?.onlineMeetingInfo?.joinUrl;
+
+  return { eventId: response.data.id, joinUrl };
 }
 
 async function createZohoCalendarEvent(interview: any, integration: any): Promise<string> {
