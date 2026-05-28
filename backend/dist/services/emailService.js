@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendRejectionEmail = exports.sendOfferLetterEmail = exports.sendApplicationReceivedEmail = exports.sendShortlistedEmail = exports.sendApplicationStatusEmail = exports.sendInterviewReminderEmail = exports.sendInterviewScheduledEmail = exports.sendPasswordChangedEmail = exports.sendPasswordResetEmail = exports.sendVerificationEmail = exports.sendEmail = void 0;
+exports.sendRejectionEmail = exports.sendOfferLetterEmail = exports.sendApplicationReceivedEmail = exports.sendShortlistedEmail = exports.sendApplicationStatusEmail = exports.sendInterviewReminderEmail = exports.sendInterviewScheduledEmail = exports.sendPasswordChangedEmail = exports.sendPasswordResetEmail = exports.sendVerificationEmail = exports.sendEmail = exports.closeEmailQueue = exports.initEmailService = exports.isEmailQueueUp = void 0;
+const bull_1 = __importDefault(require("bull"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const config_1 = require("../config");
 const logger_1 = __importDefault(require("../utils/logger"));
 const emailTemplates_1 = require("../utils/emailTemplates");
-// Create reusable transporter
+// ─── SMTP transporter ────────────────────────────────────────────────────────
 const createTransporter = () => {
     return nodemailer_1.default.createTransport({
         host: config_1.config.email.host,
@@ -20,61 +21,129 @@ const createTransporter = () => {
         },
     });
 };
-/**
- * Send email using configured SMTP
- */
-const sendEmail = async (options) => {
+// ─── Queue state ─────────────────────────────────────────────────────────────
+let emailQueue = null;
+let queueAvailable = false;
+const isEmailQueueUp = () => queueAvailable;
+exports.isEmailQueueUp = isEmailQueueUp;
+// ─── Startup: connect to Redis and register worker ───────────────────────────
+async function initEmailService() {
+    const redisHost = config_1.config.redis?.host;
+    if (!redisHost || redisHost === 'localhost') {
+        logger_1.default.warn('[Email] Redis not configured — emails will be sent synchronously');
+        return;
+    }
     try {
-        // In development mode with SKIP_EMAIL, just log instead of sending
-        if (process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true') {
-            logger_1.default.warn(`\n${'='.repeat(80)}`);
-            logger_1.default.warn(`[DEV MODE - EMAIL SKIPPED]`);
-            logger_1.default.warn(`To: ${options.to}`);
-            logger_1.default.warn(`Subject: ${options.subject}`);
-            // Highlight invitation URL if present
-            if (options.data?.invitationUrl) {
-                logger_1.default.warn(`\n🔗 INVITATION URL:`);
-                logger_1.default.warn(`${options.data.invitationUrl}`);
-                logger_1.default.warn(`\n📋 Copy this URL and send it to the user to complete registration.`);
-            }
-            logger_1.default.info(`Full Data:`, JSON.stringify(options.data, null, 2));
-            logger_1.default.warn(`${'='.repeat(80)}\n`);
-            return; // Skip sending email in dev mode
-        }
-        // Validate configuration
-        if (!config_1.config.email.host || !config_1.config.email.user || !config_1.config.email.password) {
-            const configError = new Error(`Email configuration incomplete. Required: SMTP_HOST="${config_1.config.email.host}", ` +
-                `SMTP_USER="${config_1.config.email.user ? '***' : 'MISSING'}", ` +
-                `SMTP_PASSWORD="${config_1.config.email.password ? '***' : 'MISSING'}"`);
-            logger_1.default.error('Email configuration validation failed:', configError);
-            throw configError;
-        }
-        const transporter = createTransporter();
-        let html;
-        // Use provided HTML or generate from template
-        if (options.html) {
-            html = options.html;
-        }
-        else if (options.template) {
-            // Get template function
-            const templateFn = emailTemplates_1.emailTemplates[options.template];
-            if (!templateFn) {
-                throw new Error(`Email template '${options.template}' not found`);
-            }
-            // Generate HTML from template
-            html = templateFn(options.data || {});
-        }
-        else {
-            throw new Error('Either html or template must be provided');
-        }
-        // Send email
-        const info = await transporter.sendMail({
-            from: `${config_1.config.email.fromName} <${config_1.config.email.from}>`,
-            to: options.to,
-            subject: options.subject,
-            html,
+        const redisOpts = {
+            host: config_1.config.redis.host,
+            port: config_1.config.redis.port,
+            password: config_1.config.redis.password || undefined,
+            maxRetriesPerRequest: 3,
+            retryStrategy: (times) => {
+                if (times > 3) {
+                    logger_1.default.error('[EmailQueue] Redis connection failed after 3 retries — disabling queue');
+                    queueAvailable = false;
+                    return null;
+                }
+                return Math.min(times * 1000, 5000);
+            },
+        };
+        if (config_1.config.redis.tls)
+            redisOpts.tls = {};
+        emailQueue = new bull_1.default('email', { redis: redisOpts });
+        emailQueue.on('error', (err) => {
+            logger_1.default.error('[EmailQueue] Redis error:', err.message);
+            queueAvailable = false;
         });
-        logger_1.default.info(`Email sent successfully to ${options.to}: ${info.messageId}`);
+        // Worker: must call _sendDirect (not sendEmail) to avoid re-queuing
+        emailQueue.process(async (job) => {
+            logger_1.default.info(`[EmailQueue] Processing job ${job.id}: ${job.data.subject} → ${job.data.to}`);
+            await _sendDirect(job.data);
+        });
+        emailQueue.on('failed', (job, err) => {
+            logger_1.default.error(`[EmailQueue] Job ${job.id} permanently failed after ${job.attemptsMade} attempts: ${err.message}`);
+        });
+        // Verify Redis is actually reachable
+        await emailQueue.client.ping();
+        queueAvailable = true;
+        logger_1.default.info('[Email] Queue (Redis) connected — async email enabled');
+    }
+    catch (err) {
+        queueAvailable = false;
+        emailQueue = null;
+        logger_1.default.warn(`[Email] Redis unavailable — emails will be sent synchronously: ${err.message}`);
+    }
+}
+exports.initEmailService = initEmailService;
+async function closeEmailQueue() {
+    if (emailQueue) {
+        await emailQueue.close();
+        logger_1.default.info('[EmailQueue] Closed gracefully');
+    }
+}
+exports.closeEmailQueue = closeEmailQueue;
+// ─── Internal: raw SMTP send (also used by the queue worker) ─────────────────
+async function _sendDirect(options) {
+    if (process.env.NODE_ENV === 'development' && process.env.SKIP_EMAIL === 'true') {
+        logger_1.default.warn(`\n${'='.repeat(80)}`);
+        logger_1.default.warn(`[DEV MODE - EMAIL SKIPPED]`);
+        logger_1.default.warn(`To: ${options.to}`);
+        logger_1.default.warn(`Subject: ${options.subject}`);
+        if (options.data?.invitationUrl) {
+            logger_1.default.warn(`\n🔗 INVITATION URL:`);
+            logger_1.default.warn(`${options.data.invitationUrl}`);
+            logger_1.default.warn(`\n📋 Copy this URL and send it to the user to complete registration.`);
+        }
+        logger_1.default.info(`Full Data:`, JSON.stringify(options.data, null, 2));
+        logger_1.default.warn(`${'='.repeat(80)}\n`);
+        return;
+    }
+    if (!config_1.config.email.host || !config_1.config.email.user || !config_1.config.email.password) {
+        throw new Error(`Email configuration incomplete. Required: SMTP_HOST="${config_1.config.email.host}", ` +
+            `SMTP_USER="${config_1.config.email.user ? '***' : 'MISSING'}", ` +
+            `SMTP_PASSWORD="${config_1.config.email.password ? '***' : 'MISSING'}"`);
+    }
+    const transporter = createTransporter();
+    let html;
+    if (options.html) {
+        html = options.html;
+    }
+    else if (options.template) {
+        const templateFn = emailTemplates_1.emailTemplates[options.template];
+        if (!templateFn)
+            throw new Error(`Email template '${options.template}' not found`);
+        html = templateFn(options.data || {});
+    }
+    else {
+        throw new Error('Either html or template must be provided');
+    }
+    const info = await transporter.sendMail({
+        from: `${config_1.config.email.fromName} <${config_1.config.email.from}>`,
+        to: options.to,
+        subject: options.subject,
+        html,
+    });
+    logger_1.default.info(`Email sent successfully to ${options.to}: ${info.messageId}`);
+}
+// ─── Public API ───────────────────────────────────────────────────────────────
+const sendEmail = async (options) => {
+    if (queueAvailable && emailQueue) {
+        try {
+            await emailQueue.add(options, {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 2000 },
+                removeOnComplete: 100,
+                removeOnFail: 50,
+            });
+            return;
+        }
+        catch (err) {
+            logger_1.default.warn(`[Email] Queue add failed — falling back to sync: ${err.message}`);
+            queueAvailable = false;
+        }
+    }
+    try {
+        await _sendDirect(options);
     }
     catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -83,9 +152,7 @@ const sendEmail = async (options) => {
     }
 };
 exports.sendEmail = sendEmail;
-/**
- * Send verification email
- */
+// ─── Convenience wrappers ─────────────────────────────────────────────────────
 const sendVerificationEmail = async (email, name, verificationUrl) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -95,9 +162,6 @@ const sendVerificationEmail = async (email, name, verificationUrl) => {
     });
 };
 exports.sendVerificationEmail = sendVerificationEmail;
-/**
- * Send password reset email
- */
 const sendPasswordResetEmail = async (email, name, resetUrl) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -107,9 +171,6 @@ const sendPasswordResetEmail = async (email, name, resetUrl) => {
     });
 };
 exports.sendPasswordResetEmail = sendPasswordResetEmail;
-/**
- * Send password changed confirmation email
- */
 const sendPasswordChangedEmail = async (email, name) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -119,9 +180,6 @@ const sendPasswordChangedEmail = async (email, name) => {
     });
 };
 exports.sendPasswordChangedEmail = sendPasswordChangedEmail;
-/**
- * Send interview scheduled email
- */
 const sendInterviewScheduledEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -131,9 +189,6 @@ const sendInterviewScheduledEmail = async (email, data) => {
     });
 };
 exports.sendInterviewScheduledEmail = sendInterviewScheduledEmail;
-/**
- * Send interview reminder email
- */
 const sendInterviewReminderEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -143,9 +198,6 @@ const sendInterviewReminderEmail = async (email, data) => {
     });
 };
 exports.sendInterviewReminderEmail = sendInterviewReminderEmail;
-/**
- * Send application status update email
- */
 const sendApplicationStatusEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -155,9 +207,6 @@ const sendApplicationStatusEmail = async (email, data) => {
     });
 };
 exports.sendApplicationStatusEmail = sendApplicationStatusEmail;
-/**
- * Send shortlisted candidate email
- */
 const sendShortlistedEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -167,9 +216,6 @@ const sendShortlistedEmail = async (email, data) => {
     });
 };
 exports.sendShortlistedEmail = sendShortlistedEmail;
-/**
- * Send job application received email
- */
 const sendApplicationReceivedEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -179,9 +225,6 @@ const sendApplicationReceivedEmail = async (email, data) => {
     });
 };
 exports.sendApplicationReceivedEmail = sendApplicationReceivedEmail;
-/**
- * Send offer letter email
- */
 const sendOfferLetterEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,
@@ -191,9 +234,6 @@ const sendOfferLetterEmail = async (email, data) => {
     });
 };
 exports.sendOfferLetterEmail = sendOfferLetterEmail;
-/**
- * Send rejection email
- */
 const sendRejectionEmail = async (email, data) => {
     await (0, exports.sendEmail)({
         to: email,

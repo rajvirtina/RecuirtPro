@@ -10,6 +10,7 @@ const logger_1 = __importDefault(require("./utils/logger"));
 const http_1 = require("http");
 const socketController_1 = require("./socket/socketController");
 const queueProcessors_1 = require("./services/queueProcessors");
+const emailService_1 = require("./services/emailService");
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
     console.error(`UNCAUGHT EXCEPTION! Shutting down...`);
@@ -37,8 +38,10 @@ const startServer = async () => {
         // Initialize Socket.IO
         (0, socketController_1.initializeSocket)(httpServer);
         logger_1.default.info('Socket.IO initialized successfully');
+        // Initialize email service (Redis queue + SMTP fallback)
+        await (0, emailService_1.initEmailService)();
         // Initialize Bull queue processors
-        logger_1.default.info('Bull queue processors initialized (email, cross-portal)');
+        logger_1.default.info('Bull queue processors initialized (cross-portal)');
         // Then start the server
         server = httpServer.listen(config_1.default.port, () => {
             logger_1.default.info(`Server running in ${config_1.default.env} mode on port ${config_1.default.port}`);

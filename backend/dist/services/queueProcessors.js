@@ -3,22 +3,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.closeQueues = exports.enqueueCrossPortalPosting = exports.enqueueEmail = exports.isRedisAvailable = void 0;
+exports.closeQueues = exports.enqueueCrossPortalPosting = exports.isRedisAvailable = void 0;
 const bull_1 = __importDefault(require("bull"));
 const config_1 = require("../config");
 const logger_1 = __importDefault(require("../utils/logger"));
 const emailService_1 = require("../services/emailService");
 // =============================================
-// Redis availability check
+// Cross-portal job posting queue
 // =============================================
-let redisAvailable = false;
-let emailQueue = null;
 let crossPortalQueue = null;
 function initQueues() {
     const redisHost = config_1.config.redis.host;
     if (!redisHost || redisHost === 'localhost' || redisHost.trim() === '') {
-        // Skip Redis if not configured or localhost (not available on shared hosting)
-        console.log('[Queues] Redis not configured — emails will be sent synchronously');
+        console.log('[Queues] Redis not configured — cross-portal posting disabled');
         return;
     }
     try {
@@ -29,9 +26,8 @@ function initQueues() {
             maxRetriesPerRequest: 3,
             retryStrategy: (times) => {
                 if (times > 3) {
-                    console.error('[Queues] Redis connection failed after 3 retries — disabling queues');
-                    redisAvailable = false;
-                    return null; // stop retrying
+                    console.error('[Queues] Redis connection failed after 3 retries — disabling cross-portal queue');
+                    return null;
                 }
                 return Math.min(times * 1000, 5000);
             },
@@ -39,34 +35,9 @@ function initQueues() {
         if (config_1.config.redis.tls) {
             redisConfig.tls = {};
         }
-        emailQueue = new bull_1.default('email', { redis: redisConfig });
         crossPortalQueue = new bull_1.default('cross-portal-posting', { redis: redisConfig });
-        emailQueue.on('error', (err) => {
-            console.error('[EmailQueue] Redis error:', err.message);
-            redisAvailable = false;
-        });
         crossPortalQueue.on('error', (err) => {
             console.error('[CrossPortalQueue] Redis error:', err.message);
-        });
-        emailQueue.on('ready', () => {
-            redisAvailable = true;
-            console.log('[Queues] Redis connected — queue mode active');
-        });
-        // Email processor
-        emailQueue.process(async (job) => {
-            const { to, subject, template, data, html } = job.data;
-            logger_1.default.info(`[EmailQueue] Processing job ${job.id}: ${subject} → ${to}`);
-            try {
-                await (0, emailService_1.sendEmail)({ to, subject, template, data, html });
-                logger_1.default.info(`[EmailQueue] Job ${job.id} completed successfully`);
-            }
-            catch (error) {
-                logger_1.default.error(`[EmailQueue] Job ${job.id} failed:`, error);
-                throw error;
-            }
-        });
-        emailQueue.on('failed', (job, err) => {
-            logger_1.default.error(`[EmailQueue] Job ${job.id} permanently failed after ${job.attemptsMade} attempts:`, err.message);
         });
         // Cross-portal processor
         crossPortalQueue.process(async (job) => {
@@ -94,50 +65,21 @@ function initQueues() {
         crossPortalQueue.on('failed', (job, err) => {
             logger_1.default.error(`[CrossPortalQueue] Job ${job.id} failed:`, err.message);
         });
-        redisAvailable = true; // optimistic — will be set false on error
     }
     catch (err) {
-        console.error('[Queues] Failed to initialize Redis queues:', err.message);
-        redisAvailable = false;
+        console.error('[Queues] Failed to initialize cross-portal queue:', err.message);
     }
 }
 // Initialize on load
 initQueues();
-/** Expose Redis availability for the health endpoint */
-const isRedisAvailable = () => redisAvailable;
+/** Reflects email queue Redis status (email queue is owned by emailService) */
+const isRedisAvailable = () => (0, emailService_1.isEmailQueueUp)();
 exports.isRedisAvailable = isRedisAvailable;
 // =============================================
-// Helper: Enqueue email (falls back to direct send if Redis unavailable)
+// Cross-portal posting helper
 // =============================================
-const enqueueEmail = async (options) => {
-    if (redisAvailable && emailQueue) {
-        try {
-            return await emailQueue.add(options, {
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 5000 },
-                removeOnComplete: 100,
-                removeOnFail: 500,
-            });
-        }
-        catch (queueErr) {
-            // Redis went away between ready-check and add() — fall through to direct send
-            logger_1.default.warn(`[Email] Queue enqueue failed (${queueErr.message}) — falling back to direct send`);
-            redisAvailable = false;
-        }
-    }
-    // Fallback: send directly (no Redis, or queue.add() threw)
-    try {
-        await (0, emailService_1.sendEmail)(options);
-        logger_1.default.info(`[Email] Sent directly (no queue): ${options.subject} → ${options.to}`);
-    }
-    catch (err) {
-        logger_1.default.error(`[Email] Direct send failed: ${err.message}`);
-        throw err; // re-throw so callers can handle if they need to
-    }
-};
-exports.enqueueEmail = enqueueEmail;
 const enqueueCrossPortalPosting = async (options) => {
-    if (redisAvailable && crossPortalQueue) {
+    if (crossPortalQueue) {
         return crossPortalQueue.add(options, {
             attempts: 2,
             backoff: { type: 'exponential', delay: 10000 },
@@ -152,8 +94,7 @@ exports.enqueueCrossPortalPosting = enqueueCrossPortalPosting;
 // Graceful Shutdown
 // =============================================
 const closeQueues = async () => {
-    if (emailQueue)
-        await emailQueue.close();
+    await (0, emailService_1.closeEmailQueue)();
     if (crossPortalQueue)
         await crossPortalQueue.close();
     logger_1.default.info('[Queues] All queues closed gracefully');

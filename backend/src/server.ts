@@ -5,6 +5,7 @@ import logger from './utils/logger';
 import { createServer } from 'http';
 import { initializeSocket } from './socket/socketController';
 import { closeQueues } from './services/queueProcessors';
+import { initEmailService } from './services/emailService';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error: Error) => {
@@ -39,8 +40,11 @@ const startServer = async () => {
     initializeSocket(httpServer);
     logger.info('Socket.IO initialized successfully');
     
+    // Initialize email service (Redis queue + SMTP fallback)
+    await initEmailService();
+
     // Initialize Bull queue processors
-    logger.info('Bull queue processors initialized (email, cross-portal)');
+    logger.info('Bull queue processors initialized (cross-portal)');
     
     // Then start the server
     server = httpServer.listen(config.port, () => {
