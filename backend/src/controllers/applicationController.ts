@@ -7,6 +7,7 @@ import { AuthRequest, JobStatus, ApplicationStatus } from '../types';
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from '../utils/response';
 import logger from '../utils/logger';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
+import { emitApplicantCount } from '../socket/socketController';
 
 /**
  * @desc    Submit a job application
@@ -84,7 +85,19 @@ export const submitApplication = async (
     }
 
     // DC-001: Increment application count atomically (stays in sync)
-    await Job.findByIdAndUpdate(jobId, { $inc: { applicationCount: 1 } });
+    const updatedJob = await Job.findByIdAndUpdate(
+      jobId,
+      { $inc: { applicationCount: 1 } },
+      { new: true, select: 'applicationCount companyId' }
+    );
+    // Emit real-time applicant count to HR dashboard
+    if (updatedJob) {
+      emitApplicantCount(
+        jobId.toString(),
+        updatedJob.companyId?.toString() ?? '',
+        updatedJob.applicationCount ?? 0
+      );
+    }
 
     logger.info(`Application submitted: ${application._id} for job: ${jobId}`);
 

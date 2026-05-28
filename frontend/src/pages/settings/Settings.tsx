@@ -1,23 +1,34 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import CompanyProfile from './CompanyProfile';
 import PipelineStagesConfig from './PipelineStagesConfig';
 import NotificationsConfig from './NotificationsConfig';
 import IntegrationsConfig from './IntegrationsConfig';
 import PermissionMatrix from './PermissionMatrix';
+import { useAuthStore } from '../../store/authStore';
 
 type Section = 'profile' | 'pipeline' | 'notifications' | 'integrations' | 'permissions';
 
-const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: 'profile',       label: 'Company Profile',   icon: '🏢' },
-  { id: 'pipeline',      label: 'Pipeline Stages',   icon: '📊' },
-  { id: 'notifications', label: 'Notifications',     icon: '🔔' },
-  { id: 'integrations',  label: 'Integrations',      icon: '🔌' },
-  { id: 'permissions',   label: 'Permissions',       icon: '🔐' },
+const ALL_SECTIONS: { id: Section; label: string; icon: string; roles: string[] }[] = [
+  { id: 'profile',       label: 'Company Profile', icon: '🏢', roles: ['admin', 'employer'] },
+  { id: 'pipeline',      label: 'Pipeline Stages', icon: '📊', roles: ['admin', 'employer', 'hr'] },
+  { id: 'notifications', label: 'Notifications',   icon: '🔔', roles: ['admin', 'employer', 'hr'] },
+  { id: 'integrations',  label: 'Integrations',    icon: '🔌', roles: ['admin', 'employer', 'hr'] },
+  { id: 'permissions',   label: 'Permissions',     icon: '🔐', roles: ['admin', 'employer', 'hr'] },
 ];
 
 export default function Settings() {
-  const [section, setSection] = useState<Section>('profile');
+  const user = useAuthStore(s => s.user);
+  const role = user?.role ?? '';
+
+  const SECTIONS = useMemo(
+    () => ALL_SECTIONS.filter(s => s.roles.includes(role)),
+    [role]
+  );
+
+  const [section, setSection] = useState<Section>(() =>
+    SECTIONS[0]?.id ?? 'pipeline'
+  );
 
   return (
     <div className="animate-fade-in">

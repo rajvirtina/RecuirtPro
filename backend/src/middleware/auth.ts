@@ -15,11 +15,14 @@ export const isSuperAdmin = (user: AuthRequest['user']): boolean => {
 };
 
 /**
- * Get the tenant companyId — returns null for super admin (global access)
+ * Get the tenant companyId — returns null for super admin (global access).
+ * When called with a request, also falls back to the custom-domain resolved
+ * company if the user has no explicit companyId (e.g. unauthenticated public
+ * routes browsed via a white-label domain).
  */
-export const getTenantCompanyId = (user: AuthRequest['user']): string | null => {
+export const getTenantCompanyId = (user: AuthRequest['user'], req?: Request): string | null => {
   if (isSuperAdmin(user)) return null;
-  return user?.companyId || null;
+  return user?.companyId || (req as any)?.customDomainCompanyId || null;
 };
 
 /**

@@ -97,15 +97,20 @@ async function selectQuestionsForSession(
   let aiGenerated: IAIQuestion[] = [];
   if (remaining > 0) {
     try {
-      const llmRes = await llm.post('/api/generate-questions', {
-        job_title:         jobTitle,
-        job_description:   jobDescription || jobTitle,
-        required_skills:   uncoveredSkills.length > 0 ? uncoveredSkills : jobSkills,
-        interview_round:   interviewRound,
-        difficulty:        sessionDifficulty,
-        num_questions:     remaining,
-        exclude_questions: excludeTexts,
-      });
+      const llmRes = await Promise.race([
+        llm.post('/api/generate-questions', {
+          job_title:         jobTitle,
+          job_description:   jobDescription || jobTitle,
+          required_skills:   uncoveredSkills.length > 0 ? uncoveredSkills : jobSkills,
+          interview_round:   interviewRound,
+          difficulty:        sessionDifficulty,
+          num_questions:     remaining,
+          exclude_questions: excludeTexts,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('LLM_TIMEOUT')), 15_000)
+        ),
+      ]);
 
       const raw: any[] = llmRes.data?.questions || [];
       aiGenerated = raw.map((q: any, i: number): IAIQuestion => ({
@@ -116,7 +121,11 @@ async function selectQuestionsForSession(
         orderIndex:              selected.length + i + 1,
       }));
     } catch (llmErr: any) {
-      logger.warn(`LLM gap-fill failed in selectQuestionsForSession: ${llmErr.message}`);
+      if ((llmErr as Error).message === 'LLM_TIMEOUT') {
+        logger.warn('LLM question generation timed out after 15 s — falling back to bank-only questions');
+      } else {
+        logger.warn(`LLM gap-fill failed in selectQuestionsForSession: ${llmErr.message}`);
+      }
     }
   }
 

@@ -30,6 +30,7 @@ export const scheduleInterview = async (
       panel,
       round,
       interviewTemplateId,
+      proctoringLevel,
     } = req.body;
 
     // Verify application exists
@@ -75,7 +76,10 @@ export const scheduleInterview = async (
       isOnline: mode === 'online',
       candidateConfirmed: false,
       rescheduleCount: 0,
-      proctoringEnabled: true, // Enable proctoring by default for online interviews
+      proctoringEnabled: mode === 'online',
+      proctoringLevel: proctoringLevel && ['none', 'basic', 'enhanced'].includes(proctoringLevel)
+        ? proctoringLevel
+        : mode === 'online' ? 'basic' : 'none',
     });
 
     // Update application status
@@ -296,6 +300,7 @@ export const updateInterview = async (
       'meetingLink',
       'panel',
       'instructions',
+      'proctoringLevel',
     ];
 
     Object.keys(updates).forEach((key) => {
@@ -305,6 +310,7 @@ export const updateInterview = async (
     });
 
     // If rescheduling, validate and update status (EC-03)
+    let wasRescheduled = false;
     if (updates.scheduledTime && updates.scheduledTime !== interview.scheduledTime) {
       if (new Date(updates.scheduledTime) < new Date()) {
         return sendError(res, 'Interview cannot be rescheduled to a past date', 400);
@@ -312,9 +318,41 @@ export const updateInterview = async (
       interview.status = InterviewStatus.RESCHEDULED;
       interview.previousScheduledTime = interview.scheduledTime;
       (interview as any).rescheduleCount += 1;
+      wasRescheduled = true;
     }
 
     await interview.save();
+
+    // Resend notifications on reschedule (P2 gap fix)
+    if (wasRescheduled) {
+      const populated = await Interview.findById(id)
+        .populate('jobId', 'title')
+        .populate('candidateId', 'firstName lastName email');
+      if (populated) {
+        const frontendUrl = process.env.FRONTEND_URL || 'https://hiring.ambiquest.com';
+        const job = (populated.jobId as any);
+        const candidate = (populated.candidateId as any);
+        const scheduledDate = new Date(interview.scheduledTime);
+        const dateStr = scheduledDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        if (candidate?.email) {
+          sendEmail({
+            to: candidate.email,
+            subject: `Interview Rescheduled: ${job?.title || 'Position'}`,
+            template: 'interviewScheduled',
+            data: {
+              candidateName: `${candidate.firstName} ${candidate.lastName}`,
+              jobTitle: job?.title || 'the position',
+              interviewDate: dateStr,
+              interviewTime: timeStr,
+              interviewType: interview.round || 'Interview',
+              interviewLink: interview.meetingLink || `${frontendUrl}/proctoring-check/${interview._id}`,
+              proctoringCheckUrl: `${frontendUrl}/proctoring-check/${interview._id}`,
+            },
+          }).catch(e => logger.warn('Reschedule notification failed:', e.message));
+        }
+      }
+    }
 
     logger.info(`Interview ${id} updated by ${req.user?._id}`);
 

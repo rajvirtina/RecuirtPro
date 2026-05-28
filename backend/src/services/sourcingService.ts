@@ -1,6 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
+import crypto from 'crypto';
 import logger from '../utils/logger';
 import { SourcingPlatform } from '../types';
+import { cacheGet, cacheSet } from '../utils/redisClient';
+
+const SOURCING_CACHE_TTL = 900; // 15 minutes
 
 // ============================================================
 // TYPES
@@ -724,11 +728,49 @@ export class SourcingService {
     }
   }
 
+  /** Refresh an expired OAuth token for a given platform. */
+  async refreshOAuthToken(
+    platform: SourcingPlatform,
+    refreshToken: string
+  ): Promise<{ accessToken: string; expiresIn?: number; refreshToken?: string }> {
+    switch (platform) {
+      case SourcingPlatform.LINKEDIN: {
+        const resp = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
+          params: {
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: process.env.LINKEDIN_CLIENT_ID,
+            client_secret: process.env.LINKEDIN_CLIENT_SECRET,
+          },
+        });
+        return {
+          accessToken:  resp.data.access_token,
+          expiresIn:    resp.data.expires_in,
+          refreshToken: resp.data.refresh_token,
+        };
+      }
+      default:
+        throw new Error(`Token refresh not supported for ${platform}`);
+    }
+  }
+
   async searchCandidates(
     platforms: SourcingPlatform[],
     criteria: SourcingCriteria,
     tokens: Partial<Record<SourcingPlatform, string>>
-  ): Promise<{ candidates: CandidateProfile[]; executionTimeMs: number }> {
+  ): Promise<{ candidates: CandidateProfile[]; executionTimeMs: number; fromCache?: boolean }> {
+    // ── Cache key: hash of sorted platforms + canonical criteria ──────────────
+    const cacheKey = `sourcing:${crypto
+      .createHash('sha1')
+      .update(JSON.stringify({ platforms: [...platforms].sort(), criteria }))
+      .digest('hex')}`;
+
+    const cached = await cacheGet<{ candidates: CandidateProfile[]; executionTimeMs: number }>(cacheKey);
+    if (cached) {
+      logger.info(`Sourcing cache hit: ${cacheKey.slice(0, 20)}…`);
+      return { ...cached, fromCache: true };
+    }
+
     const startTime = Date.now();
     const allCandidates: CandidateProfile[] = [];
 
@@ -765,10 +807,15 @@ export class SourcingService {
     // Sort by match score descending
     deduped.sort((a, b) => b.matchScore - a.matchScore);
 
-    return {
+    const result = {
       candidates: deduped,
       executionTimeMs: Date.now() - startTime,
     };
+
+    // Store in cache (fire-and-forget)
+    cacheSet(cacheKey, result, SOURCING_CACHE_TTL).catch(() => {});
+
+    return result;
   }
 
   async calculateMatchForJob(candidate: CandidateProfile, job: JobRequirements): Promise<MatchDetails> {

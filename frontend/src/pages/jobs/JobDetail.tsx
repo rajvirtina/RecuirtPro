@@ -145,10 +145,13 @@ export default function JobDetail() {
 
   const formatSalary = () => {
     if (!job.salaryMin && !job.salaryMax) return null;
-    const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
-    if (job.salaryMin && job.salaryMax) return `${fmt(job.salaryMin)} – ${fmt(job.salaryMax)}`;
-    if (job.salaryMin) return `From ${fmt(job.salaryMin)}`;
-    return `Up to ${fmt(job.salaryMax!)}`;
+    const toLPA = (n: number) => {
+      const lpa = n / 100_000;
+      return `₹${lpa % 1 === 0 ? lpa : lpa.toFixed(1)} LPA`;
+    };
+    if (job.salaryMin && job.salaryMax) return `${toLPA(job.salaryMin)} – ${toLPA(job.salaryMax)}`;
+    if (job.salaryMin) return `From ${toLPA(job.salaryMin)}`;
+    return `Up to ${toLPA(job.salaryMax!)}`;
   };
 
   const salary = formatSalary();

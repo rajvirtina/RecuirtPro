@@ -213,7 +213,7 @@ export const disconnectIntegration = async (req: AuthRequest, res: Response): Pr
 
 export const searchCandidates = async (req: AuthRequest, res: Response): Promise<void | Response> => {
   try {
-    const { platforms, criteria: rawCriteria } = req.body;
+    const { platforms, criteria: rawCriteria, page = 1, limit = 25 } = req.body;
     const companyId = getTenantCompanyId(req.user) || req.user?.companyId;
     if (!companyId) return sendError(res, 'Company context required', 400);
 
@@ -225,6 +225,9 @@ export const searchCandidates = async (req: AuthRequest, res: Response): Promise
     const invalid = platforms.filter((p: string) => !validPlatforms.includes(p as SourcingPlatform));
     if (invalid.length) return sendError(res, `Invalid platforms: ${invalid.join(', ')}`, 400);
 
+    const pageNum  = Math.max(1, parseInt(String(page), 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10)));
+
     const criteria: SourcingCriteria = {
       keywords: rawCriteria?.keywords || [],
       skills: rawCriteria?.skills || [],
@@ -235,24 +238,42 @@ export const searchCandidates = async (req: AuthRequest, res: Response): Promise
       employmentType: rawCriteria?.employmentType,
       education: rawCriteria?.education,
       techStack: rawCriteria?.techStack,
-      maxResults: Math.min(rawCriteria?.maxResults || 25, 100),
+      maxResults: Math.min(rawCriteria?.maxResults || 100, 200),
       minMatchScore: rawCriteria?.minMatchScore || 85,
     };
 
-    // Get stored tokens
+    // Get stored tokens — refresh expired ones before searching
     const integrations = await SourcingIntegration.find({
       companyId,
       platform: { $in: platforms },
       status: IntegrationStatus.CONNECTED,
       deletedAt: null,
-    }).select('+accessToken');
+    }).select('+accessToken +refreshToken');
 
     const tokens: Partial<Record<SourcingPlatform, string>> = {};
     for (const int of integrations) {
+      // Mid-session token refresh: if token is about to expire (< 5 min), refresh now
+      if (int.tokenExpiresAt && int.refreshToken) {
+        const expiresInMs = int.tokenExpiresAt.getTime() - Date.now();
+        if (expiresInMs < 5 * 60 * 1000) {
+          try {
+            const refreshed = await sourcingService.refreshOAuthToken(int.platform as SourcingPlatform, int.refreshToken);
+            int.accessToken = refreshed.accessToken;
+            int.tokenExpiresAt = refreshed.expiresIn
+              ? new Date(Date.now() + refreshed.expiresIn * 1000)
+              : int.tokenExpiresAt;
+            if (refreshed.refreshToken) int.refreshToken = refreshed.refreshToken;
+            await int.save();
+            logger.info(`Refreshed ${int.platform} token for company ${companyId}`);
+          } catch (e: any) {
+            logger.warn(`Failed to refresh ${int.platform} token:`, e.message);
+          }
+        }
+      }
       try { tokens[int.platform as SourcingPlatform] = int.getDecryptedAccessToken(); } catch { /* noop */ }
     }
 
-    const { candidates, executionTimeMs } = await sourcingService.searchCandidates(
+    const { candidates, executionTimeMs, fromCache } = await sourcingService.searchCandidates(
       platforms as SourcingPlatform[], criteria, tokens
     );
 
@@ -260,14 +281,24 @@ export const searchCandidates = async (req: AuthRequest, res: Response): Promise
     const avgScore = qualified.length > 0
       ? Math.round(qualified.reduce((s, c) => s + c.matchScore, 0) / qualified.length) : 0;
 
-    await SourcingSearch.create({
-      companyId, userId: req.user!._id, platforms, criteria,
-      resultsCount: qualified.length, avgMatchScore: avgScore, executionTimeMs,
-    });
+    // Pagination slice
+    const totalCount = qualified.length;
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const offset = (pageNum - 1) * limitNum;
+    const paginated = qualified.slice(offset, offset + limitNum);
+
+    if (!fromCache) {
+      await SourcingSearch.create({
+        companyId, userId: req.user!._id, platforms, criteria,
+        resultsCount: totalCount, avgMatchScore: avgScore, executionTimeMs,
+      });
+    }
 
     return sendSuccess(res, {
-      candidates: qualified, count: qualified.length, totalScanned: candidates.length,
-      platforms, criteria, executionTimeMs, avgMatchScore: avgScore,
+      candidates: paginated,
+      pagination: { page: pageNum, limit: limitNum, total: totalCount, totalPages, hasNext: pageNum < totalPages },
+      totalScanned: candidates.length,
+      platforms, criteria, executionTimeMs, avgMatchScore: avgScore, fromCache: fromCache ?? false,
     }, 'Candidates sourced successfully');
   } catch (error: any) {
     logger.error('Error in searchCandidates:', error);

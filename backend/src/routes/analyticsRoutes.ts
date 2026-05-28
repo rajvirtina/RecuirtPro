@@ -8,6 +8,7 @@ import {
   getRecruiterProductivity,
   getOfferRate,
   getAIScoreDistribution,
+  exportAnalytics,
 } from '../controllers/analyticsController';
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
@@ -21,6 +22,20 @@ const dateQueryValidators = [
   query('startDate').optional().isISO8601().withMessage('startDate must be a valid ISO 8601 date'),
   query('endDate').optional().isISO8601().withMessage('endDate must be a valid ISO 8601 date'),
 ];
+
+/** Bulk CSV export for any report type */
+router.get(
+  '/export',
+  protect,
+  authorize(...hrAdminEmployer),
+  [
+    query('type').optional().isIn(['funnel','applications','source','time-to-hire','recruiter','offers','ai-scores'])
+      .withMessage('type must be one of: funnel, applications, source, time-to-hire, recruiter, offers, ai-scores'),
+    ...dateQueryValidators,
+  ],
+  validate,
+  exportAnalytics
+);
 
 /** Conversion funnel: Applied → Shortlisted → Interviewed → Offer Sent → Hired */
 router.get(

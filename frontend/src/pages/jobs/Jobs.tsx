@@ -28,10 +28,13 @@ const FILTER_TABS = [
 
 function formatSalary(min?: number, max?: number): string {
   if (!min && !max) return '';
-  const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
-  if (min && max) return `${fmt(min)} – ${fmt(max)}`;
-  if (min) return `From ${fmt(min)}`;
-  return `Up to ${fmt(max!)}`;
+  const toLPA = (n: number) => {
+    const lpa = n / 100_000;
+    return `₹${lpa % 1 === 0 ? lpa : lpa.toFixed(1)} LPA`;
+  };
+  if (min && max) return `${toLPA(min)} – ${toLPA(max)}`;
+  if (min) return `From ${toLPA(min)}`;
+  return `Up to ${toLPA(max!)}`;
 }
 
 function JobCard({ job, isEmployer, onDuplicate }: { job: Job; isEmployer: boolean; onDuplicate?: (id: string) => void }) {

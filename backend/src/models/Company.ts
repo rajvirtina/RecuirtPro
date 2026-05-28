@@ -42,6 +42,14 @@ export interface ICompanyDocument extends Document {
     language?: string;
   };
   defaultPipelineStages?: IPipelineStage[];
+  permissionOverrides?: {
+    action: string;
+    admin: boolean;
+    hr: boolean;
+    employer: boolean;
+    interviewer: boolean;
+    candidate: boolean;
+  }[];
   notifications?: {
     emailOnNewApplication?: boolean;
     emailOnStageChange?: boolean;
@@ -149,6 +157,17 @@ const companySchema = new Schema<ICompanyDocument>(
         { id: 'offer', label: 'Offer', order: 3, color: '#10b981' },
         { id: 'hired', label: 'Hired', order: 4, color: '#22c55e' },
       ],
+    },
+    permissionOverrides: {
+      type: [{
+        action:      { type: String, required: true },
+        admin:       { type: Boolean, default: false },
+        hr:          { type: Boolean, default: false },
+        employer:    { type: Boolean, default: false },
+        interviewer: { type: Boolean, default: false },
+        candidate:   { type: Boolean, default: false },
+      }],
+      default: [],
     },
     notifications: {
       emailOnNewApplication: { type: Boolean, default: true },

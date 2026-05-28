@@ -201,6 +201,35 @@ export const verifySystemReadiness = async (
   }
 };
 
+// ─── Tiered proctoring rule sets ─────────────────────────────────────────────
+// 'none'     — proctoring disabled; all events are informational only
+// 'basic'    — webcam + face detection; no tab/window checks
+// 'enhanced' — all checks including tab switches, multiple displays, app detection
+
+const ENHANCED_ONLY_EVENTS = new Set<string>([
+  'tab_switch',
+  'window_blur',
+  'multiple_displays',
+  'multiple_browser_tabs',
+  'unauthorized_app',
+  'system_resource_issue',
+]);
+
+function getTierSeverity(
+  proctoringLevel: 'none' | 'basic' | 'enhanced',
+  eventType: string,
+  requestedSeverity?: string
+): { allowed: boolean; severity: string } {
+  if (proctoringLevel === 'none') {
+    return { allowed: false, severity: 'low' };
+  }
+  if (proctoringLevel === 'basic' && ENHANCED_ONLY_EVENTS.has(eventType)) {
+    // Downgrade to informational — not enforced at basic tier
+    return { allowed: true, severity: 'low' };
+  }
+  return { allowed: true, severity: requestedSeverity || 'medium' };
+}
+
 /**
  * @desc    Log proctoring event during interview
  * @route   POST /api/v1/proctoring/event
@@ -220,24 +249,31 @@ export const logProctoringEvent = async (
       metadata,
     } = req.body;
 
-    const interview = await Interview.findById(interviewId);
+    const interview = await Interview.findById(interviewId).select('candidateId proctoringLevel proctoringEnabled');
 
     if (!interview) {
       return sendError(res, 'Interview not found', 404);
+    }
+
+    const level = (interview as any).proctoringLevel ?? 'basic';
+    const { allowed, severity: effectiveSeverity } = getTierSeverity(level, eventType, severity);
+
+    if (!allowed) {
+      return sendSuccess(res, { skipped: true, reason: 'Proctoring disabled for this interview' }, 'Event skipped');
     }
 
     const event = await ProctoringEvent.create({
       interviewId,
       candidateId: interview.candidateId,
       eventType,
-      severity: severity || 'medium',
+      severity: effectiveSeverity,
       description,
       snapshotUrl,
-      metadata,
+      metadata: { ...metadata, proctoringLevel: level },
     });
 
     logger.warn(
-      `Proctoring event logged: ${eventType} for interview ${interviewId} - Severity: ${severity}`
+      `Proctoring event logged: ${eventType} [${level}] for interview ${interviewId} - Severity: ${effectiveSeverity}`
     );
 
     return sendSuccess(res, event, 'Event logged', 201);
@@ -811,11 +847,20 @@ export const logSessionViolation = async (
     const eventType = SESSION_VIOLATION_MAP[type] ?? ProctoringEventType.VIOLATION;
     const description = SESSION_VIOLATION_DESC[type] ?? `Proctoring violation: ${type}`;
 
+    // Enforce tier-based rules
+    const interview = await Interview.findById(session.interviewId).select('proctoringLevel').lean();
+    const level = (interview as any)?.proctoringLevel ?? 'basic';
+    const { allowed, severity: effectiveSeverity } = getTierSeverity(level, type, severity);
+
+    if (!allowed) {
+      return sendSuccess(res, { logged: false, reason: 'Proctoring disabled for this interview' }, 'Skipped');
+    }
+
     const event = await ProctoringEvent.create({
       interviewId:  session.interviewId,
       candidateId:  session.candidateId,
       eventType,
-      severity:     severity ?? 'medium',
+      severity:     effectiveSeverity,
       description,
       timestamp:    timestamp ? new Date(timestamp) : new Date(),
       // Store small webcam frames (face violations) as data URLs; skip if too large

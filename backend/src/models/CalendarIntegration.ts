@@ -17,6 +17,8 @@ export interface ICalendarIntegrationDocument extends Document {
   metadata?: any;
   createdAt: Date;
   updatedAt: Date;
+  getDecryptedAccessToken(): string;
+  getDecryptedRefreshToken(): string | undefined;
 }
 
 const calendarIntegrationSchema = new Schema<ICalendarIntegrationDocument>(

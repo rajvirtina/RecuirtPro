@@ -277,6 +277,130 @@ export const createCalendarEvent = async (
   }
 };
 
+/**
+ * @desc    Query free/busy slots for a list of panel-member user IDs on a given date
+ * @route   POST /api/v1/calendar/check-availability
+ * @body    { userIds: string[], date: string (ISO), durationMinutes: number }
+ * @access  Private (Employer/HR/Admin)
+ */
+export const getFreeBusy = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { userIds, date, durationMinutes = 60 } = req.body;
+    if (!userIds?.length || !date) {
+      return sendError(res, 'userIds and date are required', 400);
+    }
+
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    // Load active calendar integrations for these users
+    const integrations = await CalendarIntegration.find({
+      userId: { $in: userIds },
+      isActive: true,
+    });
+
+    // Fetch busy blocks per user
+    const busyByUser: Record<string, Array<{ start: string; end: string }>> = {};
+
+    await Promise.all(
+      integrations.map(async (int) => {
+        try {
+          if (int.expiresAt && int.expiresAt < new Date()) {
+            await refreshAccessToken(int);
+          }
+          const accessToken = int.getDecryptedAccessToken?.() || int.accessToken;
+          const uid = int.userId.toString();
+
+          if (int.provider === CalendarProvider.GOOGLE) {
+            const resp = await axios.post(
+              'https://www.googleapis.com/calendar/v3/freeBusy',
+              {
+                timeMin: dayStart.toISOString(),
+                timeMax: dayEnd.toISOString(),
+                items: [{ id: 'primary' }],
+              },
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            busyByUser[uid] = resp.data?.calendars?.primary?.busy ?? [];
+          } else if (int.provider === CalendarProvider.MICROSOFT) {
+            const resp = await axios.post(
+              'https://graph.microsoft.com/v1.0/me/getSchedule',
+              {
+                schedules: [(int as any).email || 'me'],
+                startTime: { dateTime: dayStart.toISOString(), timeZone: 'UTC' },
+                endTime:   { dateTime: dayEnd.toISOString(),   timeZone: 'UTC' },
+                availabilityViewInterval: 30,
+              },
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            const schedule = resp.data?.value?.[0];
+            busyByUser[uid] = (schedule?.scheduleItems ?? []).map((item: any) => ({
+              start: item.start?.dateTime,
+              end:   item.end?.dateTime,
+            }));
+          }
+        } catch (e: any) {
+          logger.warn(`Free/busy fetch failed for user ${int.userId}:`, e.message);
+        }
+      })
+    );
+
+    // Generate candidate slots (09:00–18:00, durationMinutes intervals)
+    const slots: Array<{ startTime: string; endTime: string; available: boolean; busyUsers: string[] }> = [];
+    const intervalMs = durationMinutes * 60_000;
+
+    let cursor = new Date(dayStart);
+    cursor.setHours(9, 0, 0, 0);
+    const workEnd = new Date(dayStart);
+    workEnd.setHours(18, 0, 0, 0);
+
+    while (cursor < workEnd) {
+      const slotEnd = new Date(cursor.getTime() + intervalMs);
+      if (slotEnd > workEnd) break;
+
+      const busyUsers: string[] = [];
+      for (const [uid, busyBlocks] of Object.entries(busyByUser)) {
+        const isBusy = busyBlocks.some(b => {
+          const bs = new Date(b.start).getTime();
+          const be = new Date(b.end).getTime();
+          return cursor.getTime() < be && slotEnd.getTime() > bs;
+        });
+        if (isBusy) busyUsers.push(uid);
+      }
+
+      slots.push({
+        startTime: cursor.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        endTime:   slotEnd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        available: busyUsers.length === 0,
+        busyUsers,
+      });
+
+      cursor = slotEnd;
+    }
+
+    // Users with no calendar connected get no busy blocks (all slots appear free for them)
+    const connectedUserIds = integrations.map(i => i.userId.toString());
+    const unconnnected = userIds.filter((id: string) => !connectedUserIds.includes(id));
+
+    return sendSuccess(res, {
+      date,
+      slots,
+      unconnectedUsers: unconnnected,
+      note: unconnnected.length
+        ? `${unconnnected.length} panel member(s) have no calendar connected — their availability is assumed free`
+        : undefined,
+    }, 'Availability retrieved');
+  } catch (error: any) {
+    logger.error('Error in getFreeBusy:', error);
+    return sendError(res, error.message || 'Error fetching availability', 500);
+  }
+};
+
 // ============= Helper Functions =============
 
 async function exchangeGoogleToken(code: string, redirectUri: string) {

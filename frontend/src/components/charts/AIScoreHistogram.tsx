@@ -11,9 +11,19 @@ interface Props {
 }
 
 export function AIScoreHistogram({ data, average }: Props) {
-  if (!data || data.length === 0) return null;
+  const hasData = data && data.some(d => d.count > 0);
 
-  const maxCount = Math.max(...data.map(d => d.count));
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[260px] gap-3 text-center">
+        <svg className="w-10 h-10 text-neutral-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <p className="text-sm font-medium text-neutral-500">No AI score data yet</p>
+        <p className="text-xs text-neutral-400">Scores will appear here once candidates complete AI interviews</p>
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height={260}>

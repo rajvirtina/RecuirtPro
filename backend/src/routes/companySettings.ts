@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import * as ctrl from '../controllers/companySettingsController';
+
 import { protect, authorize } from '../middleware/auth';
 import { UserRole } from '../types';
 
@@ -40,5 +41,7 @@ router.patch('/branding', authorize(UserRole.EMPLOYER, UserRole.ADMIN), ctrl.upd
 router.post('/branding/logo', authorize(UserRole.EMPLOYER, UserRole.ADMIN), logoUpload.single('logo'), ctrl.uploadLogo);
 router.get('/pipeline-stages', ctrl.getPipelineStages);
 router.put('/pipeline-stages', authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN), ctrl.updatePipelineStages);
+router.get('/permissions', ctrl.getPermissions);
+router.patch('/permissions', authorize(UserRole.EMPLOYER, UserRole.ADMIN), ctrl.updatePermissions);
 
 export default router;

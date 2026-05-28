@@ -11,6 +11,7 @@ import {
   deleteJob,
 } from '../controllers/jobController';
 import { duplicateJob } from '../controllers/jobTemplateController';
+import { postToNaukri, postToLinkedIn, getJobPostings } from '../controllers/jobPostingController';
 import { protect, authorize, optionalAuth } from '../middleware/auth';
 import { validate } from '../middleware/validator';
 import { UserRole } from '../types';
@@ -144,6 +145,48 @@ router.post(
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,
   duplicateJob
+);
+
+/**
+ * @route   GET /api/v1/jobs/:id/postings
+ * @desc    Get external job board posting status
+ * @access  Private (Employer, HR, Admin)
+ */
+router.get(
+  '/:id/postings',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  getJobPostings
+);
+
+/**
+ * @route   POST /api/v1/jobs/:id/post/naukri
+ * @desc    Post job to Naukri.com via their Job Posting API
+ * @access  Private (Employer, HR, Admin)
+ */
+router.post(
+  '/:id/post/naukri',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  postToNaukri
+);
+
+/**
+ * @route   POST /api/v1/jobs/:id/post/linkedin
+ * @desc    Post job to LinkedIn via the LinkedIn Jobs Posting API
+ * @access  Private (Employer, HR, Admin)
+ */
+router.post(
+  '/:id/post/linkedin',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  postToLinkedIn
 );
 
 export default router;

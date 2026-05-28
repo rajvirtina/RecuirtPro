@@ -7,6 +7,7 @@ import mongoSanitize from 'express-mongo-sanitize';
 import cookieParser from 'cookie-parser'; // BUG-001: httpOnly cookie support
 import config from './config';
 import { errorHandler, notFound, limiter, xssSanitize } from './middleware';
+import { customDomainMiddleware } from './middleware/customDomain';
 import { stream } from './utils/logger';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
@@ -125,6 +126,9 @@ app.use(
 app.use(mongoSanitize());
 app.use(xssSanitize);
 app.use(compression());
+
+// Custom domain tenant resolution — runs before rate-limiter and auth
+app.use(customDomainMiddleware);
 
 // Health check — mounted BEFORE the rate limiter so probe traffic is never throttled
 app.use('/api', healthRoutes);

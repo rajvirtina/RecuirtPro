@@ -51,6 +51,11 @@ export const initializeSocket = (server: HTTPServer) => {
     // can be emitted without tracking individual socket IDs.
     socket.join(`user-${socket.data.userId}`);
 
+    // HR / Employer / Admin users join their company room to receive applicant count updates
+    if (['hr', 'employer', 'admin'].includes(socket.data.role) && socket.data.companyId) {
+      socket.join(`company-${socket.data.companyId}`);
+    }
+
     // ============ VIDEO CONFERENCING EVENTS ============
     
     // Join video meeting room — with authorization (SEC-13/B-18)
@@ -408,6 +413,19 @@ export const emitNotificationToUser = (userId: string, payload: {
   }
   io.to(`user-${userId}`).emit('new-notification', {
     ...payload,
+    timestamp: Date.now(),
+  });
+};
+
+/**
+ * Emit real-time applicant count update to HR dashboard for a job.
+ * HR clients subscribe to the 'company-{companyId}' room.
+ */
+export const emitApplicantCount = (jobId: string, companyId: string, count: number) => {
+  if (!io) return;
+  io.to(`company-${companyId}`).emit('applicant-count-updated', {
+    jobId,
+    applicationCount: count,
     timestamp: Date.now(),
   });
 };

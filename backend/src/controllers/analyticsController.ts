@@ -402,6 +402,195 @@ export const getOfferRate = async (req: AuthRequest, res: Response): Promise<voi
   }
 };
 
+// ─── 8. CSV Bulk Export ───────────────────────────────────────────────────────
+
+type CsvRow = Record<string, string | number | null>;
+
+function toCsv(rows: CsvRow[]): string {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const escape = (v: string | number | null) => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const lines = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h] ?? null)).join(','))];
+  return lines.join('\r\n');
+}
+
+/**
+ * @desc  Bulk CSV export for any analytics report type
+ * @route GET /api/v1/analytics/export?type=funnel|applications|source|time-to-hire|recruiter|offers|ai-scores&startDate=&endDate=
+ */
+export const exportAnalytics = async (req: AuthRequest, res: Response): Promise<void | Response> => {
+  try {
+    const tenantId = getTenantCompanyId(req.user);
+    const type = (req.query.type as string) || 'funnel';
+    const { start, end } = parseDates(req);
+
+    const baseMatch: any = { deletedAt: null, createdAt: { $gte: start, $lte: end } };
+    if (tenantId) baseMatch.companyId = oid(tenantId);
+
+    let rows: CsvRow[] = [];
+    let filename = `analytics-${type}-${start.toISOString().slice(0, 10)}-to-${end.toISOString().slice(0, 10)}.csv`;
+
+    if (type === 'funnel') {
+      const statusCounts = await Application.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]);
+      const counts: Record<string, number> = {};
+      statusCounts.forEach(({ _id, count }) => { counts[_id] = count; });
+      const ALL = ['applied','shortlisted','interview_scheduled','in_progress','selected','hired','offer_released','rejected','on_hold','withdrawn'];
+      const SL  = ['shortlisted','interview_scheduled','in_progress','selected','hired','offer_released'];
+      const INT = ['interview_scheduled','in_progress','selected','hired','offer_released'];
+      const OFR = ['offer_released','hired'];
+      const sum = (s: string[]) => s.reduce((a, k) => a + (counts[k] ?? 0), 0);
+      const applied = sum(ALL), shortlisted = sum(SL), interviewed = sum(INT), offerSent = sum(OFR), hired = counts['hired'] ?? 0;
+      rows = [
+        { stage: 'Applied',     count: applied,     conversion_rate_pct: 100 },
+        { stage: 'Shortlisted', count: shortlisted,  conversion_rate_pct: convRate(shortlisted, applied) },
+        { stage: 'Interviewed', count: interviewed,  conversion_rate_pct: convRate(interviewed, shortlisted) },
+        { stage: 'Offer Sent',  count: offerSent,    conversion_rate_pct: convRate(offerSent, interviewed) },
+        { stage: 'Hired',       count: hired,        conversion_rate_pct: convRate(hired, offerSent) },
+      ];
+
+    } else if (type === 'applications') {
+      const agg = await Application.aggregate([
+        { $match: baseMatch },
+        {
+          $group: {
+            _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' }, day: { $dayOfMonth: '$createdAt' } },
+            total: { $sum: 1 },
+            qualified: { $sum: { $cond: [{ $gte: [{ $ifNull: ['$overallScore', 0] }, 70] }, 1, 0] } },
+          },
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+      ]);
+      rows = agg.map(x => ({
+        date:      `${x._id.year}-${String(x._id.month).padStart(2,'0')}-${String(x._id.day).padStart(2,'0')}`,
+        total:     x.total,
+        qualified: x.qualified,
+      }));
+
+    } else if (type === 'source') {
+      const agg = await Application.aggregate([
+        { $match: baseMatch },
+        { $group: { _id: { $ifNull: ['$source', 'direct'] }, count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]);
+      const total = agg.reduce((s, x) => s + x.count, 0);
+      rows = agg.map(x => ({
+        source: String(x._id),
+        count:  x.count,
+        percentage_pct: total > 0 ? Math.round((x.count / total) * 100) : 0,
+      }));
+
+    } else if (type === 'time-to-hire') {
+      const hiredMatch: any = { deletedAt: null, status: 'hired', hiredAt: { $exists: true, $ne: null } };
+      if (tenantId) hiredMatch.companyId = oid(tenantId);
+      hiredMatch.hiredAt = { $gte: start, $lte: end };
+      const agg = await Application.aggregate([
+        { $match: hiredMatch },
+        { $lookup: { from: 'jobs', localField: 'jobId', foreignField: '_id', as: 'job' } },
+        { $unwind: { path: '$job', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: { $ifNull: ['$job.department', 'Unspecified'] },
+            avgMs:   { $avg: { $subtract: ['$hiredAt', '$appliedAt'] } },
+            count:   { $sum: 1 },
+            minDays: { $min: { $divide: [{ $subtract: ['$hiredAt', '$appliedAt'] }, 86_400_000] } },
+            maxDays: { $max: { $divide: [{ $subtract: ['$hiredAt', '$appliedAt'] }, 86_400_000] } },
+          },
+        },
+        { $sort: { avgMs: 1 } },
+      ]);
+      rows = agg.map(x => ({
+        department: x._id,
+        avg_days:   Math.round((x.avgMs / 86_400_000) * 10) / 10,
+        min_days:   Math.round(x.minDays * 10) / 10,
+        max_days:   Math.round(x.maxDays * 10) / 10,
+        hires:      x.count,
+      }));
+
+    } else if (type === 'recruiter') {
+      const userMatch: any = { role: { $in: ['hr', 'employer', 'admin'] }, deletedAt: null, status: 'active' };
+      if (tenantId) userMatch.companyId = oid(tenantId);
+      const hrUsers = await User.find(userMatch).select('_id firstName lastName email').lean();
+      const appBase: any = { deletedAt: null, createdAt: { $gte: start, $lte: end } };
+      if (tenantId) appBase.companyId = oid(tenantId);
+      const recruiters = await Promise.all(hrUsers.map(async (u) => {
+        const userId = new mongoose.Types.ObjectId(String(u._id));
+        const [appsReviewed, interviewsScheduled, offersMade, responseAgg] = await Promise.all([
+          Application.countDocuments({ ...appBase, 'statusHistory.changedBy': userId }),
+          Interview.countDocuments({ ...(tenantId ? { companyId: oid(tenantId) } : {}), scheduledBy: userId, createdAt: { $gte: start, $lte: end } }),
+          Application.countDocuments({ ...(tenantId ? { companyId: oid(tenantId) } : {}), deletedAt: null, statusHistory: { $elemMatch: { status: 'offer_released', changedBy: userId, changedAt: { $gte: start, $lte: end } } } }),
+          Application.aggregate([
+            { $match: { ...appBase, 'statusHistory.changedBy': userId } },
+            { $unwind: '$statusHistory' },
+            { $match: { 'statusHistory.changedBy': userId } },
+            { $sort: { 'statusHistory.changedAt': 1 } },
+            { $group: { _id: '$_id', first: { $first: '$statusHistory.changedAt' }, applied: { $first: '$appliedAt' } } },
+            { $project: { hours: { $divide: [{ $subtract: ['$first', '$applied'] }, 3_600_000] } } },
+            { $group: { _id: null, avg: { $avg: '$hours' } } },
+          ]),
+        ]);
+        return {
+          name: `${u.firstName} ${u.lastName}`,
+          email: u.email,
+          applications_reviewed: appsReviewed,
+          interviews_scheduled: interviewsScheduled,
+          offers_made: offersMade,
+          avg_response_hours: responseAgg[0]?.avg != null ? Math.round(responseAgg[0].avg * 10) / 10 : null,
+        };
+      }));
+      rows = recruiters.filter(r => r.applications_reviewed > 0 || r.interviews_scheduled > 0 || r.offers_made > 0);
+
+    } else if (type === 'offers') {
+      const offerMatch: any = { createdAt: { $gte: start, $lte: end } };
+      if (tenantId) offerMatch.companyId = oid(tenantId);
+      const agg = await Offer.aggregate([
+        { $match: offerMatch },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]);
+      const total = agg.reduce((s: number, x: any) => s + x.count, 0);
+      rows = agg.map((x: any) => ({
+        status: x._id,
+        count:  x.count,
+        percentage_pct: total > 0 ? Math.round((x.count / total) * 100) : 0,
+      }));
+
+    } else if (type === 'ai-scores') {
+      const scoreMatch: any = { overallScore: { $exists: true, $ne: null }, createdAt: { $gte: start, $lte: end } };
+      if (tenantId) scoreMatch.companyId = oid(tenantId);
+      const bucketLabels = ['0-9','10-19','20-29','30-39','40-49','50-59','60-69','70-79','80-89','90-100'];
+      const boundaries   = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+      const results = await Application.aggregate([
+        { $match: scoreMatch },
+        { $bucket: { groupBy: '$overallScore', boundaries: [0,10,20,30,40,50,60,70,80,90,101], default: 'other', output: { count: { $sum: 1 } } } },
+      ]);
+      rows = boundaries.map((b, i) => {
+        const found = results.find((r: any) => r._id === b);
+        return { score_range: bucketLabels[i], count: found?.count ?? 0 };
+      });
+
+    } else {
+      return sendError(res, 'Invalid export type. Valid: funnel, applications, source, time-to-hire, recruiter, offers, ai-scores', 400);
+    }
+
+    const csv = toCsv(rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send('﻿' + csv) as unknown as void; // BOM for Excel UTF-8
+  } catch (error: any) {
+    logger.error('exportAnalytics error:', error);
+    return sendError(res, error.message || 'Failed to export analytics data', 500);
+  }
+};
+
 // ─── 7. AI Score Distribution ─────────────────────────────────────────────────
 
 /**

@@ -347,19 +347,32 @@ export const emailTemplates = {
               <li>System meets proctoring requirements</li>
             </ul>
           </div>
-          
+
+          ${data.proctoringLevel === 'enhanced' ? `
+          <div class="info-box" style="background-color: #EFF6FF; border-left: 4px solid #3B82F6;">
+            <p style="margin: 0;"><strong>🖥️ Enhanced Proctoring — Desktop App Required</strong></p>
+            <p style="margin: 10px 0 0 0;">This interview uses <strong>Enhanced Proctoring</strong>. You must install and launch the RecuirtPro Desktop Companion before joining.</p>
+            <ol style="margin: 10px 0 0 0;">
+              <li>Download the Desktop Companion: <a href="${data.desktopAppUrl || 'https://hiring.ambiquest.com/downloads/RecuirtProCompanion-Setup.exe'}" style="color:#3B82F6;">Download for Windows</a></li>
+              <li>Install and run it — you will see a tray icon confirming it is active</li>
+              <li>Then proceed to the system check below</li>
+            </ol>
+            <p style="margin: 8px 0 0 0; font-size: 12px; color: #6B7280;">If your corporate IT policy blocks installation, contact the recruiter before the interview day.</p>
+          </div>
+          ` : ''}
+
           <div style="text-align: center; margin: 30px 0;">
             <a href="${data.proctoringCheckUrl}" class="button" style="background-color: #F59E0B;">
               Complete System Check (Required)
             </a>
           </div>
-          
+
           <p style="color: #991B1B; font-weight: 600;">⚠️ You must complete the system check before the interview time. Failure to do so may result in interview cancellation.</p>
-          
+
           <div style="text-align: center; margin: 20px 0;">
             <a href="${data.interviewLink}" class="button">Join Interview (After System Check)</a>
           </div>
-          
+
           <p><strong>Interview Guidelines:</strong></p>
           <ul>
             <li>Ensure stable internet connection</li>

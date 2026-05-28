@@ -374,19 +374,40 @@ const companyAdminNav: NavItem[] = [
   { name: 'Profile',       href: '/profile',            Icon: ProfileIcon,   group: 'account' },
 ];
 
-const defaultNav: NavItem[] = [
-  { name: 'Dashboard',    href: '/dashboard',   Icon: DashboardIcon,  group: 'main' },
-  { name: 'Jobs',         href: '/jobs',        Icon: JobsIcon,       group: 'main' },
-  { name: 'Applications', href: '/applications',Icon: AppsIcon,       group: 'main' },
-  { name: 'Pipeline',     href: '/pipeline',    Icon: PipelineIcon,   group: 'main' },
-  { name: 'Interviews',   href: '/interviews',  Icon: InterviewIcon,  group: 'main' },
-  { name: 'Offers',       href: '/offers',      Icon: OfferIcon,      group: 'main' },
-  { name: 'Analytics',    href: '/analytics',   Icon: AnalyticsIcon,  group: 'main' },
-  { name: 'Questions',    href: '/questions',   Icon: QuestionIcon,   group: 'tools' },
-  { name: 'Sourcing',     href: '/sourcing',    Icon: SourcingIcon,   group: 'tools' },
-  { name: 'Settings',     href: '/settings',    Icon: AdminIcon,      group: 'tools' },
-  { name: 'Profile',      href: '/profile',     Icon: ProfileIcon,    group: 'account' },
+/** HR: day-to-day recruiting workflow — no offer approval, no HR team management */
+const hrNav: NavItem[] = [
+  { name: 'Dashboard',    href: '/dashboard',    Icon: DashboardIcon,  group: 'main' },
+  { name: 'Jobs',         href: '/jobs',         Icon: JobsIcon,       group: 'main' },
+  { name: 'Applications', href: '/applications', Icon: AppsIcon,       group: 'main' },
+  { name: 'Pipeline',     href: '/pipeline',     Icon: PipelineIcon,   group: 'main' },
+  { name: 'Interviews',   href: '/interviews',   Icon: InterviewIcon,  group: 'main' },
+  { name: 'Offers',       href: '/offers',       Icon: OfferIcon,      group: 'main' },
+  { name: 'Analytics',    href: '/analytics',    Icon: AnalyticsIcon,  group: 'main' },
+  { name: 'Questions',    href: '/questions',    Icon: QuestionIcon,   group: 'tools' },
+  { name: 'Sourcing',     href: '/sourcing',     Icon: SourcingIcon,   group: 'tools' },
+  { name: 'Proctoring',   href: '/proctoring/monitor', Icon: ProctoringIcon, group: 'tools' },
+  { name: 'Settings',     href: '/settings',     Icon: AdminIcon,      group: 'tools' },
+  { name: 'Profile',      href: '/profile',      Icon: ProfileIcon,    group: 'account' },
 ];
+
+/** Employer: full access including HR team management + financial/approval controls */
+const employerNav: NavItem[] = [
+  { name: 'Dashboard',     href: '/dashboard',          Icon: DashboardIcon,  group: 'main' },
+  { name: 'Jobs',          href: '/jobs',               Icon: JobsIcon,       group: 'main' },
+  { name: 'Applications',  href: '/applications',       Icon: AppsIcon,       group: 'main' },
+  { name: 'Pipeline',      href: '/pipeline',           Icon: PipelineIcon,   group: 'main' },
+  { name: 'Interviews',    href: '/interviews',         Icon: InterviewIcon,  group: 'main' },
+  { name: 'Offers',        href: '/offers',             Icon: OfferIcon,      group: 'main' },
+  { name: 'Analytics',     href: '/analytics',          Icon: AnalyticsIcon,  group: 'main' },
+  { name: 'HR Management', href: '/admin/hr-management',Icon: HRIcon,         group: 'admin' },
+  { name: 'Questions',     href: '/questions',          Icon: QuestionIcon,   group: 'tools' },
+  { name: 'Sourcing',      href: '/sourcing',           Icon: SourcingIcon,   group: 'tools' },
+  { name: 'Proctoring',    href: '/proctoring/monitor', Icon: ProctoringIcon, group: 'tools' },
+  { name: 'Settings',      href: '/settings',           Icon: AdminIcon,      group: 'tools' },
+  { name: 'Profile',       href: '/profile',            Icon: ProfileIcon,    group: 'account' },
+];
+
+const defaultNav: NavItem[] = employerNav;
 
 /* ── Sidebar nav item component ─────────────────────────────────────── */
 function SidebarNavItem({
@@ -447,11 +468,13 @@ export default function Layout() {
   };
 
   const navigation =
-    user?.role === 'candidate'              ? candidateNav  :
-    user?.role === 'admin' && !user?.companyId ? superAdminNav :
-    user?.role === 'admin'                  ? companyAdminNav :
-    user?.role === 'interviewer'            ? interviewerNav :
-                                              defaultNav;
+    user?.role === 'candidate'                   ? candidateNav   :
+    user?.role === 'admin' && !user?.companyId   ? superAdminNav  :
+    user?.role === 'admin'                       ? companyAdminNav :
+    user?.role === 'interviewer'                 ? interviewerNav :
+    user?.role === 'hr'                          ? hrNav          :
+    user?.role === 'employer'                    ? employerNav    :
+                                                   defaultNav;
 
   const groups = Array.from(new Set(navigation.map((n) => n.group)));
 

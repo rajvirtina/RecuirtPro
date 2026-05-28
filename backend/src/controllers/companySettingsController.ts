@@ -173,6 +173,58 @@ export const getPipelineStages = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * GET /api/v1/companies/permissions
+ */
+export const getPermissions = async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = getTenantCompanyId(req.user);
+    if (!companyId) return sendError(res, 'No company associated', 400);
+
+    const company = await Company.findById(companyId).select('permissionOverrides').lean();
+    if (!company) return sendError(res, 'Company not found', 404);
+
+    return sendSuccess(res, { overrides: company.permissionOverrides || [] }, 'Permissions retrieved');
+  } catch (error: any) {
+    logger.error('Error in getPermissions:', error);
+    return sendError(res, error.message || 'Error fetching permissions', 500);
+  }
+};
+
+/**
+ * PATCH /api/v1/companies/permissions
+ * Body: { overrides: [{ action, admin, hr, employer, interviewer, candidate }] }
+ */
+export const updatePermissions = async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = getTenantCompanyId(req.user);
+    if (!companyId) return sendError(res, 'No company associated', 400);
+
+    const { overrides } = req.body;
+    if (!Array.isArray(overrides)) return sendError(res, 'overrides must be an array', 400);
+
+    const ROLES = ['admin', 'hr', 'employer', 'interviewer', 'candidate'] as const;
+    const sanitized = overrides.map((o: any) => {
+      if (!o.action || typeof o.action !== 'string') throw new Error('Each override must have an action string');
+      const entry: Record<string, any> = { action: o.action };
+      for (const role of ROLES) { entry[role] = Boolean(o[role]); }
+      return entry;
+    });
+
+    const company = await Company.findByIdAndUpdate(
+      companyId,
+      { $set: { permissionOverrides: sanitized } },
+      { new: true }
+    ).lean();
+    if (!company) return sendError(res, 'Company not found', 404);
+
+    return sendSuccess(res, { overrides: company.permissionOverrides }, 'Permissions updated');
+  } catch (error: any) {
+    logger.error('Error in updatePermissions:', error);
+    return sendError(res, error.message || 'Error updating permissions', 500);
+  }
+};
+
+/**
  * PUT /api/v1/companies/pipeline-stages
  */
 export const updatePipelineStages = async (req: AuthRequest, res: Response) => {
