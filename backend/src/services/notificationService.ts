@@ -2,6 +2,8 @@ import { Notification } from '../models';
 import { NotificationType } from '../types';
 import logger from '../utils/logger';
 import { emitNotificationToUser } from '../socket/socketController';
+import { sendSms } from './smsService';
+import { sendSlackMessage, slackNewApplication, slackInterviewScheduled, slackOfferAccepted } from './slackService';
 
 interface CreateNotificationInput {
   userId: string;
@@ -95,7 +97,13 @@ class NotificationService {
   // EVENT-BASED NOTIFICATION TRIGGERS
   // ============================================================
 
-  async notifyApplicationReceived(companyHrUserIds: string[], applicantName: string, jobTitle: string, applicationId: string) {
+  async notifyApplicationReceived(
+    companyHrUserIds: string[],
+    applicantName: string,
+    jobTitle: string,
+    applicationId: string,
+    extra?: { companyName?: string }
+  ) {
     await this.createBulkNotifications(companyHrUserIds, {
       type: NotificationType.IN_APP,
       title: 'New Application Received',
@@ -103,17 +111,33 @@ class NotificationService {
       priority: 'medium',
       data: { applicationId, type: 'application_received' },
     });
+    // Slack
+    void slackNewApplication(applicantName, jobTitle, extra?.companyName || 'your company');
   }
 
-  async notifyInterviewScheduled(candidateId: string, jobTitle: string, scheduledTime: Date, interviewId: string) {
+  async notifyInterviewScheduled(
+    candidateId: string,
+    jobTitle: string,
+    scheduledTime: Date,
+    interviewId: string,
+    extra?: { candidatePhone?: string; meetingLink?: string }
+  ) {
+    const dateStr = scheduledTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     await this.createNotification({
       userId: candidateId,
       type: NotificationType.IN_APP,
       title: 'Interview Scheduled',
-      message: `Your interview for ${jobTitle} is scheduled for ${scheduledTime.toLocaleString()}`,
+      message: `Your interview for ${jobTitle} is scheduled for ${dateStr}`,
       priority: 'high',
       data: { interviewId, type: 'interview_scheduled' },
     });
+    // SMS to candidate
+    if (extra?.candidatePhone) {
+      const smsBody = `Your interview for ${jobTitle} is on ${dateStr}.${extra.meetingLink ? ` Join: ${extra.meetingLink}` : ''} — RecuirtPro`;
+      void sendSms(extra.candidatePhone, smsBody);
+    }
+    // Slack
+    void slackInterviewScheduled('Candidate', jobTitle, dateStr);
   }
 
   async notifyStatusChange(candidateId: string, jobTitle: string, newStatus: string, applicationId: string) {
@@ -127,7 +151,14 @@ class NotificationService {
     });
   }
 
-  async notifyOfferReceived(candidateId: string, designation: string, companyName: string, offerId: string) {
+  async notifyOfferReceived(
+    candidateId: string,
+    designation: string,
+    companyName: string,
+    offerId: string,
+    extra?: { candidatePhone?: string; expiresAt?: Date }
+  ) {
+    const expiryNote = extra?.expiresAt ? ` Deadline: ${extra.expiresAt.toLocaleDateString('en-IN')}.` : '';
     await this.createNotification({
       userId: candidateId,
       type: NotificationType.IN_APP,
@@ -136,6 +167,13 @@ class NotificationService {
       priority: 'urgent',
       data: { offerId, type: 'offer_received' },
     });
+    // SMS to candidate
+    if (extra?.candidatePhone) {
+      void sendSms(
+        extra.candidatePhone,
+        `You have an offer for ${designation} at ${companyName}.${expiryNote} Log in to RecuirtPro to respond.`
+      );
+    }
   }
 
   /** Offer accepted or rejected by candidate → notify HR team */
@@ -154,6 +192,7 @@ class NotificationService {
       priority: accepted ? 'high' : 'medium',
       data: { offerId, type: 'offer_actioned', decision },
     });
+    if (accepted) void slackOfferAccepted(candidateName, designation);
   }
 
   /** AI interview session completed → notify HR/panel */

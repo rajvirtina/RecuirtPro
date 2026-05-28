@@ -8,6 +8,7 @@ import {
   getRecruiterProductivity,
   getOfferRate,
   getAIScoreDistribution,
+  getScoreRadar,
   exportAnalytics,
 } from '../controllers/analyticsController';
 import { protect, authorize } from '../middleware/auth';
@@ -111,6 +112,16 @@ router.get(
   dateQueryValidators,
   validate,
   getAIScoreDistribution
+);
+
+/** AI interview score radar: avg scores by dimension */
+router.get(
+  '/score-radar',
+  protect,
+  authorize(...hrAdminEmployer),
+  dateQueryValidators,
+  validate,
+  getScoreRadar
 );
 
 export default router;

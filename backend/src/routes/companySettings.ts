@@ -43,5 +43,7 @@ router.get('/pipeline-stages', ctrl.getPipelineStages);
 router.put('/pipeline-stages', authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN), ctrl.updatePipelineStages);
 router.get('/permissions', ctrl.getPermissions);
 router.patch('/permissions', authorize(UserRole.EMPLOYER, UserRole.ADMIN), ctrl.updatePermissions);
+router.get('/settings/retention', ctrl.getRetentionSettings);
+router.patch('/settings/retention', authorize(UserRole.ADMIN), ctrl.updateRetentionSettings);
 
 export default router;

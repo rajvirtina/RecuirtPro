@@ -107,11 +107,19 @@ export const config = {
     fromName: process.env.EMAIL_FROM_NAME || 'RecuirtPro',
   },
   
-  // SMS
+  // SMS (Twilio)
   sms: {
-    apiKey: process.env.SMS_API_KEY || '',
-    senderId: process.env.SMS_SENDER_ID || 'RECRUIT',
-    provider: process.env.SMS_PROVIDER || 'twilio',
+    enabled:   process.env.SMS_ENABLED === 'true',
+    apiKey:    process.env.SMS_API_KEY    || '', // Twilio Account SID
+    authToken: process.env.SMS_AUTH_TOKEN || '', // Twilio Auth Token
+    senderId:  process.env.SMS_SENDER_ID  || 'RECRUIT',
+    provider:  process.env.SMS_PROVIDER   || 'twilio',
+  },
+
+  // Slack
+  slack: {
+    enabled:    process.env.SLACK_ENABLED === 'true',
+    webhookUrl: process.env.SLACK_WEBHOOK_URL || '',
   },
   
   // AWS S3

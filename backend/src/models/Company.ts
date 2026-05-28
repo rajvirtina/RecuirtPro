@@ -36,6 +36,8 @@ export interface ICompanyDocument extends Document {
     enableNaukriIntegration?: boolean;
     enableLinkedInIntegration?: boolean;
     dataRetentionDays?: number;
+    dataRetentionMonths?: number;
+    autoDeleteRejected?: boolean;
     timezone?: string;
     dateFormat?: string;
     currency?: string;
@@ -130,6 +132,16 @@ const companySchema = new Schema<ICompanyDocument>(
       dataRetentionDays: {
         type: Number,
         default: 365,
+      },
+      dataRetentionMonths: {
+        type: Number,
+        default: 12,
+        min:     1,
+        max:     84,
+      },
+      autoDeleteRejected: {
+        type:    Boolean,
+        default: false,
       },
       timezone: { type: String, default: 'Asia/Kolkata' },
       dateFormat: { type: String, default: 'DD/MM/YYYY' },

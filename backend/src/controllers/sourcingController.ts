@@ -58,8 +58,9 @@ export const getIntegrations = async (req: AuthRequest, res: Response): Promise<
     const companyId = getTenantCompanyId(req.user) || req.user?.companyId;
     if (!companyId) return sendError(res, 'Company context required', 400);
 
+    // Include accessToken only to detect demo mode — never expose the value itself
     const integrations = await SourcingIntegration.find({ companyId, deletedAt: null })
-      .select('-accessToken -refreshToken');
+      .select('-refreshToken');
 
     const platformStatus = Object.values(SourcingPlatform).map(platform => {
       const integration = integrations.find(i => i.platform === platform);
@@ -71,6 +72,7 @@ export const getIntegrations = async (req: AuthRequest, res: Response): Promise<
         tokenExpiresAt: integration?.tokenExpiresAt,
         lastSyncAt: integration?.lastSyncAt,
         isExpired: integration?.tokenExpiresAt ? new Date() > integration.tokenExpiresAt : false,
+        isDemoMode: integration?.accessToken === 'dev-simulated',
       };
     });
 
@@ -294,11 +296,15 @@ export const searchCandidates = async (req: AuthRequest, res: Response): Promise
       });
     }
 
+    // Detect demo mode: any token that is 'dev-simulated' means results are synthetic
+    const isSimulated = Object.values(tokens).some(t => t === 'dev-simulated');
+
     return sendSuccess(res, {
       candidates: paginated,
       pagination: { page: pageNum, limit: limitNum, total: totalCount, totalPages, hasNext: pageNum < totalPages },
       totalScanned: candidates.length,
       platforms, criteria, executionTimeMs, avgMatchScore: avgScore, fromCache: fromCache ?? false,
+      isSimulated,
     }, 'Candidates sourced successfully');
   } catch (error: any) {
     logger.error('Error in searchCandidates:', error);

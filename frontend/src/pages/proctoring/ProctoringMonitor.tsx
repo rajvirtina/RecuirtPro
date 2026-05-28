@@ -93,6 +93,7 @@ function ProctoringMonitorInner({ sessionId, children }: { sessionId: string; ch
   const devtoolsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState(false);
 
   // ── Deduplicated violation poster ──────────────────────────────────────────
   const postViolation = useCallback(async (payload: ViolationPayload) => {
@@ -198,6 +199,14 @@ function ProctoringMonitorInner({ sessionId, children }: { sessionId: string; ch
         setModelsLoaded(true);
       } catch (err) {
         console.warn('[Proctoring] Face API models unavailable — face detection disabled:', err);
+        if (!cancelled) {
+          setModelLoadError(true);
+          // Notify via toast so the candidate knows face detection is off
+          toast.warning(
+            'Face detection unavailable — model files could not be loaded. Your interview can continue, but face monitoring is disabled.',
+            { duration: 8000, id: 'face-model-error' }
+          );
+        }
       }
     };
 
@@ -391,6 +400,20 @@ function ProctoringMonitorInner({ sessionId, children }: { sessionId: string; ch
         <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
         Monitoring active
       </div>
+
+      {/* Face-model load error — persistent banner */}
+      {modelLoadError && (
+        <div
+          role="alert"
+          className="fixed top-12 right-3 z-50 max-w-xs bg-amber-50 border border-amber-300 rounded-lg shadow-md px-4 py-3 text-xs text-amber-800 pointer-events-auto"
+        >
+          <p className="font-semibold mb-0.5">Face detection unavailable</p>
+          <p className="text-amber-700">
+            The face-detection models could not be loaded from <code>/models</code>.
+            Face monitoring is disabled for this session. Other proctoring checks remain active.
+          </p>
+        </div>
+      )}
 
       {children}
     </>

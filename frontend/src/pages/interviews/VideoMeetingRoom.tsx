@@ -7,8 +7,11 @@ import { toast } from 'sonner';
 
 interface Interview {
   _id: string;
+  // Backend populates these as jobId / candidateId — accept both shapes
   job?: { title: string };
+  jobId?: { title: string } | string;
   candidate?: { firstName: string; lastName: string };
+  candidateId?: { firstName: string; lastName: string } | string;
   scheduledTime: string;
   duration: number;
   status: string;
@@ -20,6 +23,18 @@ interface Interview {
     systemCheckPassed?: boolean;
     systemCheckViolations?: string[];
   };
+}
+
+/** Safe helper — backend populates jobId/candidateId but some callers use job/candidate */
+function getJobTitle(i: Interview | null): string {
+  if (!i) return 'Interview';
+  const j = (i.job ?? (typeof i.jobId === 'object' ? i.jobId : null)) as any;
+  return j?.title ?? 'Interview';
+}
+function getCandidateName(i: Interview | null): string {
+  if (!i) return 'Candidate';
+  const c = (i.candidate ?? (typeof i.candidateId === 'object' ? i.candidateId : null)) as any;
+  return c ? `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() : 'Candidate';
 }
 
 interface Participant {
@@ -115,6 +130,7 @@ export default function VideoMeetingRoom() {
   const [interview, setInterview] = useState<Interview | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [participants, setParticipants] = useState<Map<string, Participant>>(new Map());
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -142,6 +158,15 @@ export default function VideoMeetingRoom() {
       cleanup();
     };
   }, [id]);
+
+  // Attach the local stream to the video element once both are available.
+  // The video element only exists in the DOM after loading=false, so we cannot
+  // do this assignment inline in initializeMeeting (localVideoRef.current is null then).
+  useEffect(() => {
+    if (!localStream || !localVideoRef.current) return;
+    localVideoRef.current.srcObject = localStream;
+    localVideoRef.current.play().catch(() => {/* autoplay policy — harmless */});
+  }, [localStream, loading]);  // re-run when loading flips to false (video element mounts)
 
   // Keep participantsRef in sync so event-handler closures can read current state.
   useEffect(() => {
@@ -206,12 +231,9 @@ export default function VideoMeetingRoom() {
       // Get user media with full permission + device-enumeration check
       const stream = await initializeMediaDevices();
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.play().catch(() => {
-          /* autoplay policy — user gesture will trigger it */
-        });
-      }
+      // Store in state so the useEffect can attach it to the video element
+      // after setLoading(false) makes the <video> element appear in the DOM.
+      setLocalStream(stream);
 
       // Connect to Socket.IO
       connectSocket();
@@ -640,20 +662,16 @@ export default function VideoMeetingRoom() {
         });
 
         screenStreamRef.current = screenStream;
-        
+
         // Replace video track in all peer connections
         const videoTrack = screenStream.getVideoTracks()[0];
         peerConnectionsRef.current.forEach((pc) => {
           const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(videoTrack);
-          }
+          if (sender) sender.replaceTrack(videoTrack);
         });
 
-        // Update local video
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = screenStream;
-        }
+        // Update local preview via state so the useEffect re-attaches
+        setLocalStream(screenStream);
 
         setScreenSharing(true);
         
@@ -679,19 +697,15 @@ export default function VideoMeetingRoom() {
       screenStreamRef.current = null;
     }
 
-    // Restore camera track
+    // Restore camera track in all peer connections and re-attach local preview
     if (localStreamRef.current) {
       const videoTrack = localStreamRef.current.getVideoTracks()[0];
       peerConnectionsRef.current.forEach((pc) => {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
+        if (sender) sender.replaceTrack(videoTrack);
       });
-
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
+      // Re-trigger the useEffect that attaches the camera stream back to the local video element
+      setLocalStream(localStreamRef.current);
     }
 
     setScreenSharing(false);
@@ -733,10 +747,12 @@ export default function VideoMeetingRoom() {
     // Stop all tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
     }
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => track.stop());
     }
+    setLocalStream(null);
 
     // Close all peer connections
     peerConnectionsRef.current.forEach((pc) => pc.close());
@@ -781,7 +797,7 @@ export default function VideoMeetingRoom() {
           <p className="text-gray-300 text-sm leading-relaxed">{mediaError}</p>
           <div className="flex flex-col gap-3">
             <button
-              onClick={() => { setMediaError(null); setLoading(true); initializeMeeting(); }}
+              onClick={() => { setMediaError(null); setLocalStream(null); setLoading(true); initializeMeeting(); }}
               className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
             >
               Retry
@@ -801,10 +817,8 @@ export default function VideoMeetingRoom() {
     );
   }
 
-  const jobTitle = interview?.job?.title || 'Interview';
-  const candidateName = interview?.candidate
-    ? `${interview.candidate.firstName} ${interview.candidate.lastName}`
-    : 'Candidate';
+  const jobTitle = getJobTitle(interview);
+  const candidateName = getCandidateName(interview);
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
@@ -1035,29 +1049,27 @@ export default function VideoMeetingRoom() {
 function RemoteVideo({ participant }: { participant: Participant }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [needsClick, setNeedsClick] = useState(false);
 
   useEffect(() => {
-    if (videoRef.current && participant.stream) {
-      console.log(`📹 Setting stream for participant: ${participant.userName}`);
-      console.log('Stream tracks:', participant.stream.getTracks().map(t => `${t.kind} - ${t.label} - ${t.enabled ? 'enabled' : 'disabled'}`));
-      
-      videoRef.current.srcObject = participant.stream;
-      
-      // Ensure video plays
-      videoRef.current.play().catch(err => {
-        console.error('Error playing remote video:', err);
-      });
-    }
-  }, [participant.stream, participant.userName]);
+    if (!videoRef.current || !participant.stream) return;
+    videoRef.current.srcObject = participant.stream;
+    videoRef.current.play().catch((err) => {
+      // NotAllowedError = browser autoplay policy blocked — show click-to-play prompt
+      if (err.name === 'NotAllowedError') {
+        setNeedsClick(true);
+      } else {
+        console.warn('[RemoteVideo] play() failed:', err);
+      }
+    });
+  }, [participant.stream]);
 
-  const handleLoadedMetadata = () => {
-    console.log(`✅ Video metadata loaded for ${participant.userName}`);
-    setIsVideoReady(true);
+  const handleUserClick = () => {
+    videoRef.current?.play().catch(() => {});
+    setNeedsClick(false);
   };
 
-  const handleCanPlay = () => {
-    console.log(`▶️ Video can play for ${participant.userName}`);
-  };
+  const handleLoadedMetadata = () => setIsVideoReady(true);
 
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden">
@@ -1069,11 +1081,25 @@ function RemoteVideo({ participant }: { participant: Participant }) {
             playsInline
             className="w-full h-full object-cover"
             onLoadedMetadata={handleLoadedMetadata}
-            onCanPlay={handleCanPlay}
           />
-          
+
+          {/* Autoplay blocked — user must tap to start audio/video */}
+          {needsClick && (
+            <div
+              className="absolute inset-0 flex items-center justify-center bg-black/60 cursor-pointer z-10"
+              onClick={handleUserClick}
+            >
+              <div className="text-center">
+                <svg className="w-12 h-12 text-white mx-auto mb-2" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                <p className="text-white text-sm font-medium">Click to start video</p>
+              </div>
+            </div>
+          )}
+
           {/* Loading indicator while video is initializing */}
-          {!isVideoReady && (
+          {!isVideoReady && !needsClick && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-700">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-2"></div>

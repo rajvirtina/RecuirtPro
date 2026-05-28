@@ -258,6 +258,25 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
       return;
     }
     
+    // GAP-09: If description is changing, push current version to history first
+    const descriptionChanging =
+      sanitizedUpdate.description !== undefined &&
+      sanitizedUpdate.description !== (job as any).description;
+
+    if (descriptionChanging && (job as any).description) {
+      await Job.findByIdAndUpdate(req.params.id, {
+        $push: {
+          descriptionHistory: {
+            version:     (job as any).version || 1,
+            description: (job as any).description,
+            updatedAt:   new Date(),
+            updatedBy:   req.user?._id,
+          },
+        },
+        $inc: { version: 1 },
+      });
+    }
+
     const updatedJob = await Job.findByIdAndUpdate(req.params.id, sanitizedUpdate, { new: true, runValidators: true });
     sendSuccess(res, { job: updatedJob }, "Job updated");
   } catch (error) { next(error); }
@@ -305,6 +324,18 @@ export const updateJobStatus = async (req: AuthRequest, res: Response, next: Nex
     (job as any).status = newStatus;
     await job.save();
     logger.info(`[updateJobStatus] Job ${job._id} transitioned ${currentStatus} → ${newStatus} by ${req.user?.email}`);
+
+    // GAP-04: Auto-post to any pending portals when job is published
+    if (newStatus === JobStatus.PUBLISHED) {
+      setImmediate(() => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { triggerPendingPortalPostings } = require('../services/jobPortalService') as typeof import('../services/jobPortalService');
+          void triggerPendingPortalPostings(String(job._id));
+        } catch { /* non-fatal */ }
+      });
+    }
+
     sendSuccess(res, { job }, 'Job status updated');
   } catch (error) { next(error); }
 };

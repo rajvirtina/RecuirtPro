@@ -3,7 +3,7 @@
  * Displays live violations from ongoing interviews
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import apiClient from '../../services/api';
 
@@ -51,6 +51,9 @@ export default function ProctoringDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState<string | null>(null);
   const [interviewEvents, setInterviewEvents] = useState<Violation[]>([]);
+  const [warningMsg, setWarningMsg] = useState<Record<string, string>>({});
+  const [confirmTerminate, setConfirmTerminate] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [stats, setStats] = useState({
     totalActive: 0,
     totalViolations: 0,
@@ -83,11 +86,32 @@ export default function ProctoringDashboard() {
     });
 
     setSocket(socketInstance);
+    socketRef.current = socketInstance;
 
     return () => {
       socketInstance.disconnect();
     };
   }, []);
+
+  const sendWarning = (interviewId: string) => {
+    const msg = warningMsg[interviewId]?.trim();
+    if (!msg) return;
+    socketRef.current?.emit('hr-command', { interviewId, command: 'warn', message: msg });
+    setWarningMsg((prev) => ({ ...prev, [interviewId]: '' }));
+    showNotification('Warning Sent', `Warning sent to interview ${interviewId}`);
+  };
+
+  const terminateInterview = (interviewId: string) => {
+    socketRef.current?.emit('hr-command', {
+      interviewId,
+      command: 'terminate',
+      reason: 'HR terminated due to proctoring violations',
+    });
+    setActiveInterviews((prev) => prev.filter((i) => i._id !== interviewId));
+    setStats((prev) => ({ ...prev, totalActive: prev.totalActive - 1 }));
+    setConfirmTerminate(null);
+    showNotification('Interview Terminated', `Interview ${interviewId} terminated`);
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -324,12 +348,11 @@ export default function ProctoringDashboard() {
               </div>
             ) : (
               activeInterviews.map((interview) => (
-                <div
-                  key={interview._id}
-                  className="p-4 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => loadInterviewEvents(interview._id)}
-                >
-                  <div className="flex items-center justify-between">
+                <div key={interview._id} className="p-4">
+                  <div
+                    className="flex items-center justify-between cursor-pointer hover:bg-gray-50 -mx-4 px-4 py-2 rounded"
+                    onClick={() => loadInterviewEvents(interview._id)}
+                  >
                     <div>
                       <p className="font-medium text-gray-900">
                         {interview.candidateId?.firstName} {interview.candidateId?.lastName}
@@ -351,6 +374,34 @@ export default function ProctoringDashboard() {
                         </p>
                       )}
                     </div>
+                  </div>
+
+                  {/* HR Command controls */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={warningMsg[interview._id] || ''}
+                      onChange={(e) => setWarningMsg((prev) => ({ ...prev, [interview._id]: e.target.value }))}
+                      placeholder="Warning message…"
+                      className="flex-1 text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      onKeyDown={(e) => e.key === 'Enter' && sendWarning(interview._id)}
+                    />
+                    <button
+                      onClick={() => sendWarning(interview._id)}
+                      disabled={!socket?.connected || !warningMsg[interview._id]?.trim()}
+                      className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 border border-yellow-300 rounded hover:bg-yellow-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Send warning to candidate"
+                    >
+                      ⚠️ Warn
+                    </button>
+                    <button
+                      onClick={() => setConfirmTerminate(interview._id)}
+                      disabled={!socket?.connected}
+                      className="px-2 py-1 text-xs bg-red-100 text-red-700 border border-red-300 rounded hover:bg-red-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Terminate interview"
+                    >
+                      🛑 Terminate
+                    </button>
                   </div>
                 </div>
               ))
@@ -407,6 +458,40 @@ export default function ProctoringDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Terminate Confirmation Dialog */}
+      {confirmTerminate && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 rounded-full p-2">
+                <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Terminate Interview</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Are you sure you want to terminate this interview? The candidate will be immediately
+              disconnected and this action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmTerminate(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => terminateInterview(confirmTerminate)}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700"
+              >
+                Terminate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Interview Details Modal */}
       {selectedInterview && (

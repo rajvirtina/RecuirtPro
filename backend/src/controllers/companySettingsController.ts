@@ -225,6 +225,66 @@ export const updatePermissions = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * GET /api/v1/companies/settings/retention
+ */
+export const getRetentionSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = getTenantCompanyId(req.user);
+    if (!companyId) return sendError(res, 'No company associated', 400);
+
+    const company = await Company.findById(companyId).select('settings').lean();
+    if (!company) return sendError(res, 'Company not found', 404);
+
+    return sendSuccess(res, {
+      dataRetentionMonths: company.settings?.dataRetentionMonths ?? 12,
+      autoDeleteRejected:  company.settings?.autoDeleteRejected  ?? false,
+    });
+  } catch (error: any) {
+    logger.error('Error in getRetentionSettings:', error);
+    return sendError(res, error.message || 'Error fetching retention settings', 500);
+  }
+};
+
+/**
+ * PATCH /api/v1/companies/settings/retention
+ * Body: { dataRetentionMonths: number, autoDeleteRejected: boolean }
+ */
+export const updateRetentionSettings = async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = getTenantCompanyId(req.user);
+    if (!companyId) return sendError(res, 'No company associated', 400);
+
+    const { dataRetentionMonths, autoDeleteRejected } = req.body;
+
+    const update: Record<string, any> = {};
+    if (dataRetentionMonths !== undefined) {
+      const months = Number(dataRetentionMonths);
+      if (isNaN(months) || months < 1 || months > 84) {
+        return sendError(res, 'dataRetentionMonths must be between 1 and 84', 400);
+      }
+      update['settings.dataRetentionMonths'] = months;
+    }
+    if (autoDeleteRejected !== undefined) {
+      update['settings.autoDeleteRejected'] = Boolean(autoDeleteRejected);
+    }
+
+    const company = await Company.findByIdAndUpdate(
+      companyId,
+      { $set: update },
+      { new: true }
+    ).select('settings').lean();
+
+    return sendSuccess(res, {
+      dataRetentionMonths: company?.settings?.dataRetentionMonths ?? 12,
+      autoDeleteRejected:  company?.settings?.autoDeleteRejected  ?? false,
+    }, 'Data retention settings updated');
+  } catch (error: any) {
+    logger.error('Error in updateRetentionSettings:', error);
+    return sendError(res, error.message || 'Error updating retention settings', 500);
+  }
+};
+
+/**
  * PUT /api/v1/companies/pipeline-stages
  */
 export const updatePipelineStages = async (req: AuthRequest, res: Response) => {

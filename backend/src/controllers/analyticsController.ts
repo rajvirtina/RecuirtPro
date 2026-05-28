@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import { Response } from 'express';
 import { Application, Interview, User, Offer } from '../models';
 import { AuthRequest, OfferStatus } from '../types';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { AIInterviewSession } = require('../models') as typeof import('../models');
 import { sendSuccess, sendError } from '../utils/response';
 import { getTenantCompanyId } from '../middleware/auth';
 import logger from '../utils/logger';
@@ -663,5 +665,72 @@ export const getAIScoreDistribution = async (req: AuthRequest, res: Response): P
   } catch (error: any) {
     logger.error('getAIScoreDistribution error:', error);
     return sendError(res, error.message || 'Failed to retrieve AI score data', 500);
+  }
+};
+
+/** Radar chart: average AI interview scores by 5 dimensions for analytics overview */
+export const getScoreRadar = async (req: AuthRequest, res: Response): Promise<void | Response> => {
+  try {
+    const tenantId = getTenantCompanyId(req.user);
+    const { start, end } = parseDates(req);
+
+    // AI interview dimensions: technical, communication, confidence
+    const aiMatch: any = {
+      'analysis': { $exists: true, $ne: null },
+      'status': 'completed',
+      'createdAt': { $gte: start, $lte: end },
+    };
+    if (tenantId) aiMatch.companyId = oid(tenantId);
+
+    const aiAgg = await AIInterviewSession.aggregate([
+      { $match: aiMatch },
+      {
+        $group: {
+          _id: null,
+          avgTechnical:     { $avg: '$analysis.technicalScore' },
+          avgCommunication: { $avg: '$analysis.communicationScore' },
+          avgConfidence:    { $avg: '$analysis.confidenceScore' },
+          count:            { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Application dimensions: skill match (problem solving proxy) + overall fit (cultural fit proxy)
+    const appMatch: any = {
+      skillMatchScore:      { $exists: true, $ne: null },
+      overallScore:         { $exists: true, $ne: null },
+      createdAt:            { $gte: start, $lte: end },
+      deletedAt:            null,
+    };
+    if (tenantId) appMatch.companyId = oid(tenantId);
+
+    const appAgg = await Application.aggregate([
+      { $match: appMatch },
+      {
+        $group: {
+          _id: null,
+          avgSkillMatch: { $avg: '$skillMatchScore' },
+          avgOverall:    { $avg: '$overallScore' },
+        },
+      },
+    ]);
+
+    const aiRow  = aiAgg[0];
+    const appRow = appAgg[0];
+    const round1 = (v: number | undefined) => Math.round((v ?? 0) * 10) / 10;
+
+    return sendSuccess(res, {
+      scores: {
+        technical:      round1(aiRow?.avgTechnical),
+        communication:  round1(aiRow?.avgCommunication),
+        confidence:     round1(aiRow?.avgConfidence),
+        problemSolving: round1(appRow?.avgSkillMatch),
+        culturalFit:    round1(appRow?.avgOverall),
+      },
+      count: aiRow?.count ?? 0,
+    }, 'Score radar retrieved');
+  } catch (error: any) {
+    logger.error('getScoreRadar error:', error);
+    return sendError(res, error.message || 'Failed to retrieve score radar', 500);
   }
 };

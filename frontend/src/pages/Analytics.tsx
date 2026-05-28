@@ -12,6 +12,7 @@ import { SourceDonut }       from '../components/charts/SourceDonut';
 import { TimeToHireBar }     from '../components/charts/TimeToHireBar';
 import { OfferRateChart }    from '../components/charts/OfferRateChart';
 import { AIScoreHistogram }  from '../components/charts/AIScoreHistogram';
+import { ScoreRadar }        from '../components/charts/ScoreRadar';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,12 @@ export default function Analytics() {
     ...qOpts,
   });
 
+  const { data: radarRes, isPending: radarPending } = useQuery({
+    queryKey: ['analytics', 'scoreRadar', start, end],
+    queryFn:  async () => { const r = await apiClient.get(`/analytics/score-radar?${qs}`); return r.data as any; },
+    ...qOpts,
+  });
+
   // ── Derived values ──────────────────────────────────────────────────────────
 
   const funnel   = funnelRes?.funnel   ?? [];
@@ -258,6 +265,8 @@ export default function Analytics() {
   const offerAcceptRate  = offerRes?.acceptanceRate ?? 0;
   const scoreHistogram   = aiScoreRes?.histogram   ?? [];
   const scoreStats       = aiScoreRes?.stats       ?? {};
+  const radarScores      = radarRes?.scores        ?? null;
+  const radarCount       = radarRes?.count         ?? 0;
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -453,6 +462,17 @@ export default function Analytics() {
           <AIScoreHistogram data={scoreHistogram} average={scoreStats.average} />
         </SectionCard>
       </div>
+
+      {/* ── Chart 8: Competency Radar (full width) ── */}
+      <SectionCard
+        title="Average Competency Scores"
+        subtitle={radarCount > 0 ? `Aggregate of ${radarCount} completed AI interview session${radarCount !== 1 ? 's' : ''}` : 'AI interview competency breakdown vs role benchmark'}
+        loading={radarPending}
+        empty={!radarPending && (!radarScores || Object.values(radarScores).every((v: any) => v === 0))}
+        onEmpty="No completed AI interviews in this period. Competency scores will appear once candidates finish AI interviews."
+      >
+        {radarScores && <ScoreRadar scores={radarScores} />}
+      </SectionCard>
 
     </div>
   );

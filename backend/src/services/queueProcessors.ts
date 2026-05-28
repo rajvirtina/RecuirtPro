@@ -3,82 +3,154 @@ import { config } from '../config';
 import logger from '../utils/logger';
 import { isEmailQueueUp, closeEmailQueue } from '../services/emailService';
 
-// =============================================
-// Cross-portal job posting queue
-// =============================================
-let crossPortalQueue: Bull.Queue | null = null;
+// ── Redis connection config ───────────────────────────────────────────────────
+
+function makeRedisConfig() {
+  const cfg: any = {
+    host:                 config.redis.host,
+    port:                 config.redis.port,
+    password:             config.redis.password || undefined,
+    maxRetriesPerRequest: 3,
+    retryStrategy: (times: number) => {
+      if (times > 3) return null; // stop retrying
+      return Math.min(times * 1000, 5000);
+    },
+  };
+  if ((config.redis as any).tls) cfg.tls = {};
+  return cfg;
+}
+
+function isRedisConfigured() {
+  const h = config.redis.host;
+  return h && h !== 'localhost' && h.trim() !== '';
+}
+
+// ── Queue instances ───────────────────────────────────────────────────────────
+
+let crossPortalQueue:     Bull.Queue | null = null;
+let offerExpiryQueue:     Bull.Queue | null = null;
+let jobExpiryQueue:       Bull.Queue | null = null;
+let retentionCleanupQueue: Bull.Queue | null = null;
 
 function initQueues() {
-  const redisHost = config.redis.host;
-  if (!redisHost || redisHost === 'localhost' || redisHost.trim() === '') {
-    console.log('[Queues] Redis not configured — cross-portal posting disabled');
+  if (!isRedisConfigured()) {
+    logger.info('[Queues] Redis not configured — all background queues disabled');
     return;
   }
 
   try {
-    const redisConfig: any = {
-      host: config.redis.host,
-      port: config.redis.port,
-      password: config.redis.password || undefined,
-      maxRetriesPerRequest: 3,
-      retryStrategy: (times: number) => {
-        if (times > 3) {
-          console.error('[Queues] Redis connection failed after 3 retries — disabling cross-portal queue');
-          return null;
-        }
-        return Math.min(times * 1000, 5000);
-      },
-    };
-    if ((config.redis as any).tls) {
-      redisConfig.tls = {};
-    }
+    const redisConfig = makeRedisConfig();
 
+    // ── Cross-portal job posting ───────────────────────────────────────────
     crossPortalQueue = new Bull('cross-portal-posting', { redis: redisConfig });
-
-    crossPortalQueue.on('error', (err) => {
-      console.error('[CrossPortalQueue] Redis error:', err.message);
-    });
-
-    // Cross-portal processor
+    crossPortalQueue.on('error', (err) => logger.error('[CrossPortalQueue] Redis error:', err.message));
     crossPortalQueue.process(async (job) => {
-      const { jobId, portals, jobData } = job.data;
-      logger.info(`[CrossPortalQueue] Processing job ${job.id}: posting ${jobId} to ${portals.join(', ')}`);
+      const { jobId, portals } = job.data as { jobId: string; portals: string[]; jobData: any };
+      logger.info(`[CrossPortalQueue] Posting job ${jobId} to: ${portals.join(', ')}`);
       const results: Record<string, { success: boolean; error?: string }> = {};
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { triggerPortalPosting } = require('./jobPortalService') as typeof import('./jobPortalService');
       for (const portal of portals) {
         try {
-          switch (portal) {
-            case 'naukri':
-            case 'linkedin':
-              logger.info(`[CrossPortalQueue] Posting to ${portal} (placeholder) for job ${jobId}`);
-              results[portal] = { success: true };
-              break;
-            default:
-              results[portal] = { success: false, error: `Unknown portal: ${portal}` };
-          }
-        } catch (error: any) {
-          results[portal] = { success: false, error: error.message };
+          const r = await triggerPortalPosting(jobId, portal as 'naukri' | 'linkedin');
+          results[portal] = r;
+        } catch (err: any) {
+          results[portal] = { success: false, error: err.message };
         }
       }
       return results;
     });
+    crossPortalQueue.on('failed', (job, err) =>
+      logger.error(`[CrossPortalQueue] Job ${job.id} failed:`, err.message)
+    );
 
-    crossPortalQueue.on('failed', (job, err) => {
-      logger.error(`[CrossPortalQueue] Job ${job.id} failed:`, err.message);
+    // ── Offer expiry — runs every hour ────────────────────────────────────
+    offerExpiryQueue = new Bull('offer-expiry', { redis: redisConfig });
+    offerExpiryQueue.on('error', (err) => logger.error('[OfferExpiryQueue] Error:', err.message));
+    offerExpiryQueue.add({}, { repeat: { cron: '0 * * * *' } });
+    offerExpiryQueue.process(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { Offer } = require('../models') as typeof import('../models');
+      const result = await (Offer as any).updateMany(
+        { status: 'sent', expiresAt: { $lt: new Date() }, deletedAt: null },
+        {
+          $set: { status: 'expired' },
+          $push: {
+            statusHistory: {
+              status: 'expired',
+              changedAt: new Date(),
+              remarks: 'Auto-expired by system',
+            },
+          },
+        }
+      );
+      if (result.modifiedCount > 0) {
+        logger.info(`[OfferExpiry] Auto-expired ${result.modifiedCount} offer(s)`);
+      }
     });
+
+    // ── Job expiry — runs daily at midnight ───────────────────────────────
+    jobExpiryQueue = new Bull('job-expiry', { redis: redisConfig });
+    jobExpiryQueue.on('error', (err) => logger.error('[JobExpiryQueue] Error:', err.message));
+    jobExpiryQueue.add({}, { repeat: { cron: '0 0 * * *' } });
+    jobExpiryQueue.process(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { Job } = require('../models') as typeof import('../models');
+      const result = await (Job as any).updateMany(
+        { status: 'published', expiryDate: { $lt: new Date() }, deletedAt: null },
+        { $set: { status: 'expired' } }
+      );
+      if (result.modifiedCount > 0) {
+        logger.info(`[JobExpiry] Auto-expired ${result.modifiedCount} job(s)`);
+      }
+    });
+
+    // ── Data retention cleanup — runs nightly at 2 AM ────────────────────
+    retentionCleanupQueue = new Bull('data-retention-cleanup', { redis: redisConfig });
+    retentionCleanupQueue.on('error', (err) => logger.error('[RetentionQueue] Error:', err.message));
+    retentionCleanupQueue.add({}, { repeat: { cron: '0 2 * * *' } });
+    retentionCleanupQueue.process(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { Company, Application } = require('../models') as typeof import('../models');
+
+      const companies = await (Company as any).find({
+        'settings.autoDeleteRejected': true,
+        deletedAt: null,
+      }).select('_id settings.dataRetentionMonths').lean();
+
+      for (const company of companies) {
+        const months = company.settings?.dataRetentionMonths ?? 12;
+        const cutoff = new Date();
+        cutoff.setMonth(cutoff.getMonth() - months);
+
+        const stale = await (Application as any).find({
+          companyId: company._id,
+          status:    'rejected',
+          updatedAt: { $lt: cutoff },
+          deletedAt: null,
+        }).select('_id candidateId').lean();
+
+        for (const app of stale) {
+          await (Application as any).findByIdAndUpdate(app._id, { deletedAt: new Date() });
+        }
+        if (stale.length > 0) {
+          logger.info(`[Retention] Soft-deleted ${stale.length} stale rejected applications for company ${company._id}`);
+        }
+      }
+    });
+
+    logger.info('[Queues] All queues initialized successfully');
   } catch (err: any) {
-    console.error('[Queues] Failed to initialize cross-portal queue:', err.message);
+    logger.error('[Queues] Failed to initialize queues:', err.message);
   }
 }
 
-// Initialize on load
 initQueues();
+
+// ── Public helpers ────────────────────────────────────────────────────────────
 
 /** Reflects email queue Redis status (email queue is owned by emailService) */
 export const isRedisAvailable = () => isEmailQueueUp();
-
-// =============================================
-// Cross-portal posting helper
-// =============================================
 
 export const enqueueCrossPortalPosting = async (options: {
   jobId: string;
@@ -87,21 +159,22 @@ export const enqueueCrossPortalPosting = async (options: {
 }) => {
   if (crossPortalQueue) {
     return crossPortalQueue.add(options, {
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 10000 },
+      attempts:        2,
+      backoff:         { type: 'exponential', delay: 10_000 },
       removeOnComplete: 50,
-      removeOnFail: 200,
+      removeOnFail:    200,
     });
   }
-  logger.warn(`[CrossPortal] Skipped — Redis not available`);
+  logger.warn('[CrossPortal] Skipped — Redis not available');
 };
 
-// =============================================
-// Graceful Shutdown
-// =============================================
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
 
 export const closeQueues = async () => {
   await closeEmailQueue();
-  if (crossPortalQueue) await crossPortalQueue.close();
+  const closes = [crossPortalQueue, offerExpiryQueue, jobExpiryQueue, retentionCleanupQueue]
+    .filter(Boolean)
+    .map((q) => q!.close());
+  await Promise.allSettled(closes);
   logger.info('[Queues] All queues closed gracefully');
 };

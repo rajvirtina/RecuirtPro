@@ -138,6 +138,9 @@ export default function CandidateSourcing() {
   // Stats
   const [stats, setStats] = useState<SourcingStats | null>(null);
 
+  // Demo / simulated data flag
+  const [isSimulated, setIsSimulated] = useState(false);
+
   // ── Fetch helpers ────────────────────────────────────────────
   const fetchJobs = useCallback(async () => {
     try {
@@ -184,7 +187,7 @@ export default function CandidateSourcing() {
     const selected = Object.entries(sources).filter(([, v]) => v).map(([k]) => k);
     if (!selected.length) { setMessage({ type: 'error', text: 'Select at least one source' }); return; }
 
-    setLoading(true); setMessage({ type: '', text: '' }); setCandidates([]);
+    setLoading(true); setMessage({ type: '', text: '' }); setCandidates([]); setIsSimulated(false);
     try {
       let res;
       if (selectedJob) {
@@ -203,8 +206,10 @@ export default function CandidateSourcing() {
           },
         });
       }
-      const data = res.data?.data?.candidates || [];
+      const responseData = res.data?.data;
+      const data = responseData?.candidates || [];
       setCandidates(data);
+      setIsSimulated(responseData?.isSimulated ?? false);
       setMessage({ type: 'success', text: `Found ${data.length} candidates from ${selected.join(', ')}` });
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Search failed' });
@@ -470,6 +475,20 @@ export default function CandidateSourcing() {
               </div>
             ) : candidates.length > 0 ? (
               <>
+                {isSimulated && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-start gap-3">
+                    <svg className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Simulated / Demo Data</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        These results are AI-generated placeholders because one or more platforms are connected in demo mode (no real API credentials configured).
+                        Connect real LinkedIn, Naukri, or GitHub credentials in the <strong>Integrations</strong> tab to see live candidate data.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="bg-white shadow rounded-lg p-4 flex items-center justify-between">
                   <p className="text-sm text-gray-600">{candidates.length} candidate{candidates.length !== 1 ? 's' : ''} found</p>
                 </div>

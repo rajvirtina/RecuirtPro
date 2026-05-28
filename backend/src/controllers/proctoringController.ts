@@ -10,6 +10,32 @@ import logger from '../utils/logger';
 import { emitViolation, emitInterviewTermination, emitWarning } from '../socket/socketController';
 import { notificationService } from '../services/notificationService';
 import { isSuperAdmin, getTenantCompanyId } from '../middleware/auth';
+import { config } from '../config';
+
+// ── S3 snapshot upload ────────────────────────────────────────────────────────
+
+async function uploadSnapshotToS3(base64: string, interviewId: string): Promise<string | undefined> {
+  const bucket = config.aws.s3Bucket;
+  if (!config.aws.accessKeyId || !config.aws.secretAccessKey || !bucket) {
+    return undefined; // S3 not configured
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const AWS = require('aws-sdk') as typeof import('aws-sdk');
+    const s3  = new AWS.S3({
+      accessKeyId:     config.aws.accessKeyId,
+      secretAccessKey: config.aws.secretAccessKey,
+      region:          config.aws.region,
+    });
+    const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    const key    = `proctoring-snapshots/${interviewId}/${Date.now()}.jpg`;
+    await s3.putObject({ Bucket: bucket, Key: key, Body: buffer, ContentType: 'image/jpeg' }).promise();
+    return `https://${bucket}.s3.${config.aws.region}.amazonaws.com/${key}`;
+  } catch (err: any) {
+    logger.warn(`S3 snapshot upload failed: ${err.message}`);
+    return undefined;
+  }
+}
 
 /**
  * @desc    Verify system readiness for proctored interview
@@ -856,6 +882,16 @@ export const logSessionViolation = async (
       return sendSuccess(res, { logged: false, reason: 'Proctoring disabled for this interview' }, 'Skipped');
     }
 
+    // Upload snapshot to S3 if configured; fall back to inline base64 for small frames
+    let snapshotUrl: string | undefined;
+    if (screenshotBase64) {
+      snapshotUrl = await uploadSnapshotToS3(screenshotBase64, session.interviewId.toString());
+      // Fallback: store inline only when S3 is unconfigured and frame is small
+      if (!snapshotUrl && screenshotBase64.length < 150_000) {
+        snapshotUrl = screenshotBase64;
+      }
+    }
+
     const event = await ProctoringEvent.create({
       interviewId:  session.interviewId,
       candidateId:  session.candidateId,
@@ -863,10 +899,7 @@ export const logSessionViolation = async (
       severity:     effectiveSeverity,
       description,
       timestamp:    timestamp ? new Date(timestamp) : new Date(),
-      // Store small webcam frames (face violations) as data URLs; skip if too large
-      snapshotUrl:  screenshotBase64 && screenshotBase64.length < 150_000
-        ? screenshotBase64
-        : undefined,
+      snapshotUrl,
       metadata: {
         source:    'ai_interview_browser',
         sessionId,

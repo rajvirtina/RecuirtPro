@@ -23,6 +23,12 @@ export interface IJobDocument extends Document {
   expiryDate?: Date;
   tags?: string[];
   version: number;
+  descriptionHistory?: Array<{
+    version: number;
+    description: string;
+    updatedAt: Date;
+    updatedBy: mongoose.Types.ObjectId;
+  }>;
   previousVersionId?: mongoose.Types.ObjectId;
   postings: IJobPosting[];
   createdBy: mongoose.Types.ObjectId;
@@ -179,6 +185,18 @@ const jobSchema = new Schema<IJobDocument>(
     version: {
       type: Number,
       default: 1,
+    },
+    descriptionHistory: {
+      type: [
+        {
+          version:     { type: Number, required: true },
+          description: { type: String, required: true },
+          updatedAt:   { type: Date,   required: true },
+          updatedBy:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        },
+      ],
+      default: [],
+      select:  false, // exclude from default queries (large field)
     },
     previousVersionId: {
       type: Schema.Types.ObjectId,
