@@ -365,6 +365,23 @@ export default function CandidateSourcing() {
                     </label>
                   ))}
                 </div>
+                {sources.linkedin && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-xs text-blue-800 leading-relaxed">
+                      <strong>LinkedIn Recruiter API required.</strong> Standard LinkedIn OAuth
+                      allows searching only your own network. Full candidate search requires a
+                      LinkedIn Recruiter subscription with API access.{' '}
+                      <a
+                        href="https://business.linkedin.com/talent-solutions/recruiter"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-blue-900"
+                      >
+                        Learn more →
+                      </a>
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Job selector */}
