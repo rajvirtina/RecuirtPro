@@ -528,14 +528,22 @@ export const submitAnswer = async (req: Request, res: Response): Promise<void> =
     let passed       = true;
 
     try {
-      const evalRes = await llm.post('/api/evaluate-response', {
-        job_title:             session.jobTitle,
-        required_skills:       session.requiredSkills,
-        question:              expectedQ.text,
-        question_type:         expectedQ.type,
-        response_text:         responseText.trim(),
-        response_time_seconds: Number(responseTimeSeconds),
-      });
+      // 10-second hard cap: if the LLM service is slow, the candidate should
+      // not be blocked.  On timeout we fall through to the neutral (5/5/5/5)
+      // fallback scores already initialised above — the interview continues.
+      const evalRes = await Promise.race([
+        llm.post('/api/evaluate-response', {
+          job_title:             session.jobTitle,
+          required_skills:       session.requiredSkills,
+          question:              expectedQ.text,
+          question_type:         expectedQ.type,
+          response_text:         responseText.trim(),
+          response_time_seconds: Number(responseTimeSeconds),
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('LLM_TIMEOUT')), 10_000)
+        ),
+      ]);
       const d = evalRes.data;
       scores = {
         technicalAccuracy:   Number(d.technical_accuracy)   || 5,
@@ -543,11 +551,16 @@ export const submitAnswer = async (req: Request, res: Response): Promise<void> =
         confidence:          Number(d.confidence)           || 5,
         overall:             Number(d.overall_score)        || 5,
       };
-      feedback   = d.feedback     || feedback;
+      feedback   = d.feedback        || feedback;
       improveTip = d.improvement_tip || improveTip;
       passed     = d.passed !== undefined ? Boolean(d.passed) : scores.overall >= 6;
     } catch (llmErr: any) {
-      logger.warn(`LLM evaluation failed, using fallback: ${llmErr.message}`);
+      if (llmErr.message === 'LLM_TIMEOUT') {
+        logger.warn(`LLM evaluation timeout after 10 s — continuing without score for question ${questionId}`);
+      } else {
+        logger.warn(`LLM evaluation failed, using fallback scores: ${llmErr.message}`);
+      }
+      // Neutral fallback scores (5/5/5/5) already set — interview continues unaffected.
     }
 
     const responseRecord: IAIResponse = {

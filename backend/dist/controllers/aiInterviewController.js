@@ -455,14 +455,19 @@ const submitAnswer = async (req, res) => {
         let improveTip = 'Try to support your answer with specific examples from past experience.';
         let passed = true;
         try {
-            const evalRes = await llm.post('/api/evaluate-response', {
-                job_title: session.jobTitle,
-                required_skills: session.requiredSkills,
-                question: expectedQ.text,
-                question_type: expectedQ.type,
-                response_text: responseText.trim(),
-                response_time_seconds: Number(responseTimeSeconds),
-            });
+            const evalRes = await Promise.race([
+                llm.post('/api/evaluate-response', {
+                    job_title: session.jobTitle,
+                    required_skills: session.requiredSkills,
+                    question: expectedQ.text,
+                    question_type: expectedQ.type,
+                    response_text: responseText.trim(),
+                    response_time_seconds: Number(responseTimeSeconds),
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('LLM_TIMEOUT')), 10000)
+                ),
+            ]);
             const d = evalRes.data;
             scores = {
                 technicalAccuracy: Number(d.technical_accuracy) || 5,
@@ -475,7 +480,11 @@ const submitAnswer = async (req, res) => {
             passed = d.passed !== undefined ? Boolean(d.passed) : scores.overall >= 6;
         }
         catch (llmErr) {
-            logger_1.default.warn(`LLM evaluation failed, using fallback: ${llmErr.message}`);
+            if (llmErr.message === 'LLM_TIMEOUT') {
+                logger_1.default.warn(`LLM evaluation timeout after 10 s — continuing without score for question ${questionId}`);
+            } else {
+                logger_1.default.warn(`LLM evaluation failed, using fallback scores: ${llmErr.message}`);
+            }
         }
         const responseRecord = {
             questionId,

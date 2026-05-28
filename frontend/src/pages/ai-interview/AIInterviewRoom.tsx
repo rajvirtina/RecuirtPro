@@ -392,10 +392,16 @@ export default function AIInterviewRoom() {
     setSpeechSupported(supported);
     if (!supported) {
       setVoiceMode(false);
-      toast.info('Voice input is not available in this browser — using text mode.', {
-        description: 'For voice input, use Google Chrome or Microsoft Edge.',
-        duration: 6000,
-      });
+      // Delay 1 s so the toast doesn't flash immediately on page load in
+      // unsupported browsers before the UI has had a chance to settle.
+      const timer = setTimeout(() => {
+        toast.info('Switched to text mode', {
+          description: 'Voice input requires Google Chrome or Microsoft Edge. Text mode is fully supported.',
+          duration: 7000,
+          icon: '⌨️',
+        });
+      }, 1000);
+      return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally empty — run once on mount only
@@ -961,12 +967,12 @@ export default function AIInterviewRoom() {
         /* "Thinking" state — shown during submit (LLM call in flight) and
            during the Q1 evaluating pause (no previous scores to display yet). */
         <div className="text-center py-10 space-y-5">
-          <div className="flex justify-center gap-3">
-            {[0, 1, 2].map(i => (
+          <div className="flex justify-center gap-2">
+            {[0, 1, 2, 3].map(i => (
               <div
                 key={i}
-                className="w-3.5 h-3.5 rounded-full bg-primary-400 animate-bounce"
-                style={{ animationDelay: `${i * 0.15}s` }}
+                className="w-3 h-3 rounded-full bg-primary-400 animate-bounce"
+                style={{ animationDelay: `${i * 0.2}s` }}
               />
             ))}
           </div>
