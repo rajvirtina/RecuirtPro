@@ -76,6 +76,13 @@ export const getPipeline = async (
         },
       },
       { $unwind: { path: '$jobId', preserveNullAndEmptyArrays: true } },
+      // Rename populated fields to match frontend PipelineCandidate interface
+      {
+        $addFields: {
+          candidate: '$candidateId',
+          job:       '$jobId',
+        },
+      },
       {
         $group: {
           _id:        '$status',

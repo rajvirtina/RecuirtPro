@@ -28,27 +28,36 @@ interface AdminStats {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchAdminStats();
-
-    // Re-fetch when the tab becomes visible again (user navigates back to dashboard)
-    const handleVisibility = () => { if (document.visibilityState === 'visible') fetchAdminStats(); };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  const fetchAdminStats = async () => {
+  const fetchAdminStats = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
+      else setRefreshing(true);
       const response = await apiClient.get('/admin/stats');
       setStats(response.data.data);
     } catch (error) {
       console.error('Error fetching admin stats:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+
+  useEffect(() => {
+    fetchAdminStats();
+
+    // Auto-refresh every 30 seconds without showing full-page spinner
+    const interval = setInterval(() => fetchAdminStats(true), 30_000);
+
+    // Re-fetch when the tab becomes visible again
+    const handleVisibility = () => { if (document.visibilityState === 'visible') fetchAdminStats(true); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -60,9 +69,20 @@ export default function AdminDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="mt-2 text-gray-600">System overview and management</p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="mt-2 text-gray-600">System overview and management</p>
+        </div>
+        {refreshing && (
+          <span className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
+            <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            Refreshing…
+          </span>
+        )}
       </div>
 
       {/* Stats Grid */}
