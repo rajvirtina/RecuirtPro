@@ -224,7 +224,10 @@ export default function JobDetail() {
           {job.description && (
             <section>
               <h2 className="text-h3 text-neutral-900 mb-3">Job Description</h2>
-              <p className="text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">{job.description}</p>
+              <div
+                className="text-sm text-neutral-700 leading-relaxed prose prose-sm max-w-none"
+                dangerouslySetInnerHTML={{ __html: job.description }}
+              />
             </section>
           )}
 

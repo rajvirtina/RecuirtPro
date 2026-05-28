@@ -91,7 +91,7 @@ function JobCard({ job, isEmployer, onDuplicate }: { job: Job; isEmployer: boole
 
             {/* Description */}
             {job.description && (
-              <p className="mt-3 text-sm text-neutral-600 line-clamp-2">{job.description}</p>
+              <p className="mt-3 text-sm text-neutral-600 line-clamp-2">{job.description.replace(/<[^>]+>/g, '')}</p>
             )}
 
             {/* Skills */}

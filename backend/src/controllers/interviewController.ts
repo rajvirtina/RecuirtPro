@@ -20,11 +20,11 @@ export const scheduleInterview = async (
   try {
     const {
       applicationId,
-      jobId,
-      candidateId,
       scheduledTime,
       duration,
       mode,
+      interviewType,
+      notes,
       location,
       meetingLink,
       panel,
@@ -38,6 +38,10 @@ export const scheduleInterview = async (
     if (!application) {
       return sendError(res, 'Application not found', 404);
     }
+
+    // Derive jobId / candidateId from application when not supplied by caller
+    const jobId = req.body.jobId || application.jobId;
+    const candidateId = req.body.candidateId || application.candidateId;
 
     // Authorization check
     const tenantId = getTenantCompanyId(req.user);
@@ -63,6 +67,8 @@ export const scheduleInterview = async (
       scheduledTime,
       duration: duration || 60,
       mode,
+      interviewType,
+      notes,
       location,
       meetingLink,
       panel: panel || [],

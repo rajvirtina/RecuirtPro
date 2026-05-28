@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import apiClient from '../../services/api';
@@ -21,11 +21,10 @@ export default function CompanyProfile() {
   const [form, setForm] = useState<Record<string, any>>({});
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
-  // Sync form when data loads
-  const initialized = data && !form._init;
-  if (initialized) {
+  // Sync form whenever server data loads or changes (e.g. after a save + refetch)
+  useEffect(() => {
+    if (!data) return;
     setForm({
-      _init: true,
       name: data.name || '',
       website: data.website || '',
       industry: data.industry || '',
@@ -34,7 +33,7 @@ export default function CompanyProfile() {
       customDomain: data.branding?.customDomain || '',
     });
     if (data.branding?.logoUrl) setLogoPreview(data.branding.logoUrl);
-  }
+  }, [data]);
 
   const updateMutation = useMutation({
     mutationFn: (payload: Record<string, any>) => apiClient.patch('/companies/settings', payload),
@@ -63,7 +62,8 @@ export default function CompanyProfile() {
       });
     },
     onSuccess: (res) => {
-      setLogoPreview(res.data.data.logoUrl);
+      const url = res.data?.data?.logoUrl;
+      if (url) setLogoPreview(url);
       toast.success('Logo uploaded');
       queryClient.invalidateQueries({ queryKey: ['companySettings'] });
     },

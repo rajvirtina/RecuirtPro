@@ -102,16 +102,16 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
   useEffect(() => {
     const fetchInterviewers = async () => {
       try {
-        const res = await apiClient.get('/users?role=interviewer');
-        setAvailableInterviewers((res.data as any) || []);
+        const res = await apiClient.get('/admin/users?role=interviewer');
+        setAvailableInterviewers((res.data as any)?.data || []);
       } catch {
-        // Fallback: try fetching company users
+        // Fallback: all company users that can interview
         try {
-          const res = await apiClient.get('/users');
-          const interviewers = ((res.data as any) || []).filter(
-            (u: any) => u.role === 'interviewer' || u.role === 'hr' || u.role === 'admin'
+          const res = await apiClient.get('/admin/users');
+          const all = (res.data as any)?.data || [];
+          setAvailableInterviewers(
+            all.filter((u: any) => u.role === 'interviewer' || u.role === 'hr' || u.role === 'admin')
           );
-          setAvailableInterviewers(interviewers);
         } catch {
           toast.error('Failed to load interviewers');
         }
@@ -157,12 +157,21 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
     try {
       setLoading(true);
 
+      const modeMap: Record<Platform, string> = {
+        teams: 'online',
+        google_meet: 'online',
+        zoom: 'online',
+        in_person: 'onsite',
+      };
+
       const payload: any = {
         applicationId: application._id,
+        jobId: application.job._id,
+        candidateId: application.candidate?._id,
         interviewType,
         duration,
-        interviewerIds: selectedInterviewers.map((i) => i._id),
-        platform,
+        panel: selectedInterviewers.map((i) => i._id),
+        mode: modeMap[platform],
         notes,
         isAI: interviewType === 'ai_interview',
         proctoringLevel,
@@ -170,7 +179,7 @@ export default function ScheduleInterviewModal({ application, onClose, onSchedul
       };
 
       if (scheduleMode === 'specific' && selectedDate) {
-        payload.scheduledAt = new Date(`${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}`).toISOString();
+        payload.scheduledTime = new Date(`${format(selectedDate, 'yyyy-MM-dd')}T${selectedTime}`).toISOString();
       } else {
         payload.selfSchedule = {
           availableFrom: availableFrom.toISOString(),
