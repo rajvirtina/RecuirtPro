@@ -80,6 +80,7 @@ function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          index={0}
           label="Total Applications"
           value={stats?.overview?.totalApplications ?? 0}
           icon={<Icon d={ICONS.apps} />}
@@ -88,6 +89,7 @@ function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
           onClick={() => navigate('/applications')}
         />
         <StatCard
+          index={1}
           label="Pending"
           value={stats?.overview?.pendingApplications ?? 0}
           icon={<Icon d={ICONS.pending} />}
@@ -95,6 +97,7 @@ function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
           sub="Awaiting response"
         />
         <StatCard
+          index={2}
           label="Shortlisted"
           value={stats?.overview?.shortlistedApplications ?? 0}
           icon={<Icon d={ICONS.check} />}
@@ -102,6 +105,7 @@ function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
           sub="By employers"
         />
         <StatCard
+          index={3}
           label="Upcoming Interviews"
           value={stats?.overview?.upcomingInterviews ?? 0}
           icon={<Icon d={ICONS.calendar} />}
@@ -226,6 +230,7 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          index={0}
           label="Active Jobs"
           value={stats?.overview?.activeJobs ?? 0}
           icon={<Icon d={ICONS.jobs} />}
@@ -234,6 +239,7 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
           onClick={() => navigate('/jobs')}
         />
         <StatCard
+          index={1}
           label="Total Applications"
           value={stats?.overview?.totalApplications ?? 0}
           icon={<Icon d={ICONS.apps} />}
@@ -242,6 +248,7 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
           onClick={() => navigate('/applications')}
         />
         <StatCard
+          index={2}
           label="Scheduled Interviews"
           value={stats?.overview?.scheduledInterviews ?? 0}
           icon={<Icon d={ICONS.calendar} />}
@@ -250,6 +257,7 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
           onClick={() => navigate('/interviews')}
         />
         <StatCard
+          index={3}
           label="Conversion Rate"
           value={`${stats?.conversionRate?.overallConversion ?? 0}%`}
           icon={<Icon d={ICONS.trending} />}

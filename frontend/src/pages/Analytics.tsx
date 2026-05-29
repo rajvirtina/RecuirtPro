@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { format, subDays } from 'date-fns';
 import { useQuery }          from '@tanstack/react-query';
+import { motion }            from 'framer-motion';
 import apiClient             from '../services/api';
 import { StatCard }          from '../components/ui/StatCard';
 import { Button }            from '../components/ui/Button';
@@ -295,19 +296,26 @@ export default function Analytics() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Date preset buttons */}
-          <div className="flex gap-1 bg-neutral-100 p-1 rounded-lg">
+          {/* Date preset buttons with animated active indicator */}
+          <div className="relative flex gap-1 bg-neutral-100 p-1 rounded-lg">
             {PRESETS.map(p => (
               <button
                 key={p.value}
                 onClick={() => setPreset(p.value)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                className={`relative px-3 py-1.5 text-sm font-medium rounded-md transition-colors z-10 ${
                   preset === p.value
-                    ? 'bg-white text-neutral-900 shadow-sm'
+                    ? 'text-neutral-900'
                     : 'text-neutral-500 hover:text-neutral-700'
                 }`}
               >
-                {p.label}
+                {preset === p.value && (
+                  <motion.div
+                    className="absolute inset-0 bg-white rounded-md shadow-sm"
+                    layoutId="analytics-filter-pill"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">{p.label}</span>
               </button>
             ))}
           </div>
@@ -357,6 +365,7 @@ export default function Analytics() {
         ) : (
           <>
             <StatCard
+              index={0}
               label="Total Applications"
               value={(summary.totalApplications ?? 0).toLocaleString()}
               iconBg="bg-primary-50"
@@ -364,6 +373,7 @@ export default function Analytics() {
               icon={<svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
             />
             <StatCard
+              index={1}
               label="Total Hired"
               value={(summary.hired ?? 0).toLocaleString()}
               iconBg="bg-success-50"
@@ -371,6 +381,7 @@ export default function Analytics() {
               icon={<svg className="w-5 h-5 text-success-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>}
             />
             <StatCard
+              index={2}
               label="Overall Conversion"
               value={`${summary.overallConversionRate ?? 0}%`}
               iconBg="bg-info-50"
@@ -378,6 +389,7 @@ export default function Analytics() {
               icon={<svg className="w-5 h-5 text-info-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
             />
             <StatCard
+              index={3}
               label="In Pipeline"
               value={((summary.shortlisted ?? 0) + (summary.interviewed ?? 0)).toLocaleString()}
               iconBg="bg-warning-50"

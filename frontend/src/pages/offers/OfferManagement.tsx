@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
+import { fireMilestone, spring, dur, ease } from '../../lib/motion';
 
 // ─── Types ───────────────────────────────────────────────────
 interface Offer {
@@ -56,9 +58,15 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
 };
 
 const StatusBadge = ({ status }: { status: string }) => (
-  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-700'}`}>
+  <motion.span
+    key={status}
+    className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[status] || 'bg-gray-100 text-gray-700'}`}
+    initial={{ scale: 0.85, opacity: 0 }}
+    animate={{ scale: 1, opacity: 1 }}
+    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+  >
     {status.replace(/_/g, ' ')}
-  </span>
+  </motion.span>
 );
 
 // ─── Main Component ──────────────────────────────────────────
@@ -154,6 +162,10 @@ export default function OfferManagement() {
       setStatusRemarks('');
       if (selectedOffer?._id === offerId) setSelectedOffer(res.data?.data || null);
       fetchOffers();
+      // Celebrate milestone moments
+      if (newStatus === 'accepted') {
+        fireMilestone();
+      }
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Failed to update status' });
     }

@@ -1,4 +1,5 @@
 import { clsx } from 'clsx';
+import { motion } from 'framer-motion';
 
 export interface WizardStep {
   id:    number;
@@ -80,15 +81,19 @@ export function StepProgress({
                 </div>
               </div>
 
-              {/* Connector line */}
+              {/* Connector line with animated fill */}
               {index < steps.length - 1 && (
                 <div
-                  className={clsx(
-                    'flex-1 h-px mx-2 mt-[-14px] sm:mt-[-28px] transition-colors duration-300',
-                    isCompleted ? 'bg-success-400' : 'bg-neutral-200',
-                  )}
+                  className="flex-1 h-px mx-2 mt-[-14px] sm:mt-[-28px] bg-neutral-200 relative overflow-hidden"
                   aria-hidden="true"
-                />
+                >
+                  <motion.div
+                    className="absolute inset-0 bg-success-400 origin-left"
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: isCompleted ? 1 : 0 }}
+                    transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+                  />
+                </div>
               )}
             </div>
           );

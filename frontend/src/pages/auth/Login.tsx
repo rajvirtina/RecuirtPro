@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { slideUpVariants, dur, ease, spring } from '../../lib/motion';
 
 type UserType = 'employee' | 'employer';
 
@@ -18,6 +20,7 @@ export default function Login() {
   const [showSSO, setShowSSO]             = useState(false);
   const [ssoSlug, setSSOSlug]             = useState('');
   const [ssoLoading, setSSOLoading]       = useState(false);
+  const reduced = useReducedMotion();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -62,22 +65,34 @@ export default function Login() {
   };
 
   return (
-    <div className="w-full">
+    <motion.div
+      className="w-full"
+      initial={reduced ? undefined : { opacity: 0, y: 12 }}
+      animate={reduced ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: dur.base, ease: ease.enter }}
+    >
       <div className="mb-8">
         <h1 className="text-h1 text-neutral-900">Welcome back</h1>
         <p className="text-body text-neutral-500 mt-1">Sign in to your RecuirtPro account</p>
       </div>
 
-      {/* Role toggle */}
-      <div className="flex bg-neutral-100 p-1 rounded-md mb-6">
+      {/* Role toggle with animated indicator */}
+      <div className="relative flex bg-neutral-100 p-1 rounded-md mb-6">
+        {/* Sliding indicator */}
+        <motion.div
+          className="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-sm shadow-xs"
+          animate={{ x: activeTab === 'employee' ? 0 : '100%' }}
+          transition={spring.settle}
+          style={{ left: '4px' }}
+        />
         {(['employee', 'employer'] as UserType[]).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => { setActiveTab(tab); setError(''); }}
-            className={`flex-1 py-2 text-sm font-medium rounded-sm transition-all capitalize ${
+            className={`relative z-10 flex-1 py-2 text-sm font-medium rounded-sm transition-colors capitalize ${
               activeTab === tab
-                ? 'bg-white text-neutral-900 shadow-xs'
+                ? 'text-neutral-900'
                 : 'text-neutral-500 hover:text-neutral-700'
             }`}
           >
@@ -86,15 +101,23 @@ export default function Login() {
         ))}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="mb-5 flex items-start gap-2.5 p-3.5 bg-error-50 border border-error-100 rounded-md">
-          <svg className="w-4 h-4 text-error-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-sm text-error-700">{error}</p>
-        </div>
-      )}
+      {/* Error — animated slide-down */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            className="mb-5 flex items-start gap-2.5 p-3.5 bg-error-50 border border-error-100 rounded-md"
+            initial={reduced ? undefined : { opacity: 0, y: -8, height: 0, marginBottom: 0 }}
+            animate={reduced ? undefined : { opacity: 1, y: 0, height: 'auto', marginBottom: 20 }}
+            exit={reduced ? undefined : { opacity: 0, y: -8, height: 0, marginBottom: 0 }}
+            transition={{ duration: dur.fast, ease: ease.enter }}
+          >
+            <svg className="w-4 h-4 text-error-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm text-error-700">{error}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Email */}
@@ -222,6 +245,6 @@ export default function Login() {
           'Employer accounts are provisioned by your company admin.'
         )}
       </p>
-    </div>
+    </motion.div>
   );
 }

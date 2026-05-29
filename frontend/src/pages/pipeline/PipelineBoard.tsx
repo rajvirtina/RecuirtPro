@@ -12,13 +12,13 @@ import {
   useSensors,
   closestCorners,
 } from '@dnd-kit/core';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
-import { Button } from '../../components/ui/Button';
-import { SkeletonRow } from '../../components/ui/Skeleton';
 import KanbanColumn from '../../components/pipeline/KanbanColumn';
 import CandidateCard, { type PipelineCandidate } from '../../components/pipeline/CandidateCard';
 import { toast } from 'sonner';
+import { staggerContainer, staggerItem, spring } from '../../lib/motion';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,7 @@ interface Job {
 export default function PipelineBoard() {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const reduced = useReducedMotion();
   const isReadOnly = user?.role === 'interviewer';
 
   // State
@@ -257,7 +258,12 @@ export default function PipelineBoard() {
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    <motion.div
+      className="flex flex-col h-full"
+      initial={reduced ? undefined : { opacity: 0 }}
+      animate={reduced ? undefined : { opacity: 1 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
       {/* Top bar */}
       <div className="shrink-0 p-6 pb-4 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -296,7 +302,7 @@ export default function PipelineBoard() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'list'
+                  (viewMode as string) === 'list'
                     ? 'bg-primary-600 text-white'
                     : 'bg-white text-neutral-600 hover:bg-neutral-50'
                 }`}
@@ -331,33 +337,51 @@ export default function PipelineBoard() {
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex gap-4 h-full">
+            <motion.div
+              className="flex gap-4 h-full"
+              variants={staggerContainer(0.04)}
+              initial="hidden"
+              animate="visible"
+            >
               {DEFAULT_STAGES.map((stage) => (
-                <KanbanColumn
-                  key={stage.id}
-                  stageId={stage.id}
-                  stageLabel={stage.label}
-                  candidates={pipeline[stage.id] || []}
-                  isOver={overColumnId === stage.id}
-                  isReadOnly={isReadOnly}
-                  onAdvance={handleAdvance}
-                  onReject={handleReject}
-                  onView={handleView}
-                />
+                <motion.div key={stage.id} variants={staggerItem}>
+                  <KanbanColumn
+                    stageId={stage.id}
+                    stageLabel={stage.label}
+                    candidates={pipeline[stage.id] || []}
+                    isOver={overColumnId === stage.id}
+                    isReadOnly={isReadOnly}
+                    onAdvance={handleAdvance}
+                    onReject={handleReject}
+                    onView={handleView}
+                  />
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
 
-            {/* Drag Overlay */}
-            <DragOverlay>
+            {/* Drag Overlay — animated card ghost */}
+            <DragOverlay dropAnimation={{
+              duration: 250,
+              easing: 'cubic-bezier(0.2, 0, 0.2, 1)',
+            }}>
               {activeCandidate ? (
-                <div className="w-[260px] opacity-90 rotate-2">
+                <motion.div
+                  className="w-[260px]"
+                  initial={reduced ? undefined : { scale: 1, rotate: 0, opacity: 0.9 }}
+                  animate={reduced ? undefined : { scale: 1.05, rotate: 2, opacity: 1 }}
+                  transition={spring.stiff}
+                  style={{
+                    boxShadow: '0 20px 50px -10px rgba(0,0,0,0.2)',
+                    borderRadius: '8px',
+                  }}
+                >
                   <CandidateCard application={activeCandidate} isReadOnly />
-                </div>
+                </motion.div>
               ) : null}
             </DragOverlay>
           </DndContext>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

@@ -145,3 +145,104 @@ export const recommendationBadge: Variants = {
   hidden:  { opacity: 0, scale: 0.5 },
   visible: { opacity: 1, scale: 1, transition: spring.bouncy },
 };
+
+// ── Directional slide (for wizards) ──────────────────────────────────────────
+export const slideLeftVariants: Variants = {
+  initial: { opacity: 0, x: 30 },
+  animate: { opacity: 1, x: 0, transition: t.base },
+  exit:    { opacity: 0, x: -30, transition: t.exit },
+};
+
+export const slideRightVariants: Variants = {
+  initial: { opacity: 0, x: -30 },
+  animate: { opacity: 1, x: 0, transition: t.base },
+  exit:    { opacity: 0, x: 30, transition: t.exit },
+};
+
+// Tab indicator slide
+export const tabIndicatorVariants: Variants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: spring.settle },
+};
+
+// Tag chip animations
+export const chipVariants: Variants = {
+  hidden:  { opacity: 0, scale: 0.7 },
+  visible: { opacity: 1, scale: 1, transition: spring.bouncy },
+  exit:    { opacity: 0, scale: 0.7, transition: t.fast },
+};
+
+// Toast slide-in
+export const toastVariants: Variants = {
+  hidden:  { opacity: 0, y: -10, scale: 0.95 },
+  visible: { opacity: 1, y: 0,   scale: 1, transition: spring.settle },
+  exit:    { opacity: 0, y: -10, scale: 0.95, transition: t.fast },
+};
+
+// Notification bell badge
+export const bellBadgeVariants: Variants = {
+  rest:  { scale: 1 },
+  pulse: { scale: [1, 1.4, 1], transition: { duration: 0.4, ease: ease.standard } },
+};
+
+// Offer stepper progress
+export const stepperFillVariants: Variants = {
+  inactive: { scaleX: 0, originX: 0 },
+  active:   { scaleX: 1, originX: 0, transition: { duration: dur.slow, ease: ease.enter } },
+};
+
+// Recording indicator pulse
+export const recordingPulse: Variants = {
+  rest:    { scale: 1, opacity: 1 },
+  pulsing: {
+    scale: [1, 1.2, 1],
+    opacity: [1, 0.7, 1],
+    transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' },
+  },
+};
+
+// Waveform bar animation
+export const waveformBar = (delay: number): Variants => ({
+  idle:   { scaleY: 0.3 },
+  active: {
+    scaleY: [0.3, 1, 0.5, 0.8, 0.3],
+    transition: { duration: 0.8, repeat: Infinity, ease: 'easeInOut', delay },
+  },
+});
+
+// Risk level meter
+export const riskMeterVariants: Variants = {
+  initial: { width: '0%' },
+  animate: { width: 'var(--risk-width)', transition: { duration: dur.slow, ease: ease.enter } },
+};
+
+// Scroll-triggered reveal
+export const scrollReveal: Variants = {
+  hidden:  { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: dur.base, ease: ease.enter } },
+};
+
+// ── Utility: confetti burst ──────────────────────────────────────────────────
+export function fireCelebration() {
+  import('canvas-confetti').then(({ default: confetti }) => {
+    confetti({
+      particleCount: 80,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#6366f1', '#22c55e', '#f59e0b', '#3b82f6'],
+    });
+  });
+}
+
+// ── Utility: milestone confetti (two bursts) ─────────────────────────────────
+export function fireMilestone() {
+  import('canvas-confetti').then(({ default: confetti }) => {
+    const end = Date.now() + 300;
+    const fire = () => {
+      confetti({ particleCount: 40, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#6366f1', '#22c55e'] });
+      confetti({ particleCount: 40, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#f59e0b', '#3b82f6'] });
+      if (Date.now() < end) requestAnimationFrame(fire);
+    };
+    fire();
+  });
+}

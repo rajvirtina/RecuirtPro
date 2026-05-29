@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Badge } from '../ui/Badge';
 
 export interface ViolationEvent {
@@ -233,10 +234,16 @@ export function ViolationTimeline({ events }: ViolationTimelineProps) {
                   const sev   = SEVERITY_STYLES[event.severity] ?? SEVERITY_STYLES.low;
                   const label = EVENT_LABELS[event.type] || event.type.replace(/_/g, ' ');
                   return (
-                    <li key={event.id || idx} className="pb-5 pl-6 last:pb-0">
-                      {/* Timeline dot */}
+                    <motion.li
+                      key={event.id || idx}
+                      className="pb-5 pl-6 last:pb-0"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, ease: [0, 0, 0.2, 1], delay: idx * 0.04 }}
+                    >
+                      {/* Timeline dot — pulses for critical */}
                       <span
-                        className={`absolute -left-1.5 w-3 h-3 rounded-full ring-2 ring-white ${sev.dot}`}
+                        className={`absolute -left-1.5 w-3 h-3 rounded-full ring-2 ring-white ${sev.dot} ${event.severity === 'critical' ? 'animate-attention' : ''}`}
                         aria-hidden="true"
                       />
 
@@ -271,7 +278,7 @@ export function ViolationTimeline({ events }: ViolationTimelineProps) {
                           </div>
                         )}
                       </article>
-                    </li>
+                    </motion.li>
                   );
                 })}
               </ol>

@@ -250,16 +250,32 @@ function NotificationBell() {
         className="relative p-2 rounded-lg hover:bg-neutral-100 transition-colors"
       >
         <BellIcon className="text-neutral-500" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-mono leading-none">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
+        <AnimatePresence>
+          {unreadCount > 0 && (
+            <motion.span
+              key={unreadCount}
+              className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-0.5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-mono leading-none"
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 600, damping: 28 }}
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
       </button>
 
       {/* Dropdown panel */}
-      {open && (
-        <div className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-neutral-200 z-50 overflow-hidden animate-fade-in">
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="absolute right-0 top-11 w-80 bg-white rounded-xl shadow-xl border border-neutral-200 z-50 overflow-hidden"
+            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.96 }}
+            transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
+          >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
             <h3 className="text-sm font-semibold text-neutral-900">
@@ -328,8 +344,9 @@ function NotificationBell() {
               </button>
             </div>
           )}
-        </div>
-      )}
+        </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

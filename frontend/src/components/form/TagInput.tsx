@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { clsx } from 'clsx';
+import { motion, AnimatePresence } from 'framer-motion';
+import { spring } from '../../lib/motion';
 
 interface TagInputProps {
   label?:       React.ReactNode;
@@ -67,24 +69,31 @@ export function TagInput({
         )}
         onClick={() => inputRef.current?.focus()}
       >
-        {tags.map((tag, i) => (
-          <span
-            key={`${tag}-${i}`}
-            className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-primary-50 border border-primary-100 text-primary-700 rounded-md text-xs font-medium select-none"
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); removeTag(i); }}
-              className="hover:text-primary-900 transition-colors leading-none"
-              aria-label={`Remove ${tag}`}
+        <AnimatePresence initial={false}>
+          {tags.map((tag, i) => (
+            <motion.span
+              key={`${tag}-${i}`}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-primary-50 border border-primary-100 text-primary-700 rounded-md text-xs font-medium select-none"
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              transition={spring.bouncy}
+              layout
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); removeTag(i); }}
+                className="hover:text-primary-900 transition-colors leading-none"
+                aria-label={`Remove ${tag}`}
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          </span>
+          </motion.span>
         ))}
+        </AnimatePresence>
 
         <input
           ref={inputRef}

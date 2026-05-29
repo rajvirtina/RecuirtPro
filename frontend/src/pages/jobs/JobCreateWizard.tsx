@@ -12,6 +12,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate }    from 'react-router-dom';
 import { clsx }           from 'clsx';
 import { toast }          from 'sonner';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 import apiClient          from '../../services/api';
 import { useAuthStore }   from '../../store/authStore';
@@ -21,6 +22,7 @@ import { Input, Select }  from '../../components/ui/Input';
 import { TagInput }       from '../../components/form/TagInput';
 import { RichTextEditor } from '../../components/form/RichTextEditor';
 import { StepProgress }   from '../../components/form/StepProgress';
+import { dur, ease }      from '../../lib/motion';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -289,6 +291,8 @@ export default function JobCreateWizard() {
   // Step state
   const [step,           setStep]           = useState(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [direction, setDirection]           = useState<1 | -1>(1); // 1=forward, -1=backward
+  const reduced = useReducedMotion();
 
   // Job ID — obtained when the draft is first created (Step 1 completion)
   const [jobId, setJobId] = useState<string | null>(null);
@@ -457,6 +461,7 @@ export default function JobCreateWizard() {
   const goToStep = (target: number) => {
     if (completedSteps.has(target)) {
       setErrors({});
+      setDirection(target > step ? 1 : -1);
       setStep(target);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -470,12 +475,14 @@ export default function JobCreateWizard() {
 
     setCompletedSteps(prev => new Set([...prev, step]));
     setErrors({});
+    setDirection(1);
     setStep(s => s + 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleBack = () => {
     setErrors({});
+    setDirection(-1);
     setStep(s => s - 1);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -586,9 +593,20 @@ export default function JobCreateWizard() {
         />
       </div>
 
+      {/* Step content with directional slide transition */}
+      <AnimatePresence mode="wait" custom={direction}>
+        <motion.div
+          key={step}
+          custom={direction}
+          initial={reduced ? undefined : { opacity: 0, x: direction * 30 }}
+          animate={reduced ? undefined : { opacity: 1, x: 0 }}
+          exit={reduced ? undefined : { opacity: 0, x: direction * -30 }}
+          transition={{ duration: dur.base, ease: ease.enter }}
+        >
+
       {/* ══ STEP 1 — BASICS ══════════════════════════════════════════════ */}
       {step === 1 && (
-        <div className="card card-md space-y-5 animate-fade-in">
+        <div className="card card-md space-y-5">
           <SectionHead title="Basic Information" subtitle="What role are you hiring for?" />
 
           {/* Template selector */}
@@ -1058,6 +1076,9 @@ export default function JobCreateWizard() {
           </div>
         </div>
       )}
+
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }
