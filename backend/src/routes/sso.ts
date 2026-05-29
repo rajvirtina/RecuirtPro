@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authorize, authenticate } from '../middleware/auth';
+import { authorize, protect } from '../middleware/auth';
 import { UserRole } from '../types';
 import {
   initiateSSOLogin,
@@ -17,9 +17,9 @@ router.get('/:slug/initiate', initiateSSOLogin);
 router.get('/:slug/callback', handleSSOCallback);
 
 // Protected: admin/employer reads SSO config
-router.get('/config', authenticate, authorize(UserRole.ADMIN, UserRole.EMPLOYER), getSSOConfig);
+router.get('/config', protect, authorize(UserRole.ADMIN, UserRole.EMPLOYER), getSSOConfig);
 
 // Protected: admin/employer saves SSO config
-router.post('/config', authenticate, authorize(UserRole.ADMIN, UserRole.EMPLOYER), saveSSOConfig);
+router.post('/config', protect, authorize(UserRole.ADMIN, UserRole.EMPLOYER), saveSSOConfig);
 
 export default router;

@@ -188,13 +188,13 @@ export const handleSSOCallback = async (req: Request, res: Response): Promise<vo
         role:          company.sso.defaultRole ?? UserRole.HR,
         companyId:     company._id,
         emailVerified: true,
-        isActive:      true,
+        status:        'active',
         password:      crypto.randomBytes(32).toString('hex'),
       });
       logger.info(`[SSO] Created user via SSO: ${email} for company ${slug}`);
     }
 
-    if (!user.isActive) {
+    if (user.status !== 'active') {
       res.redirect(`${frontendUrl()}/login?error=sso_account_inactive`);
       return;
     }
@@ -206,12 +206,8 @@ export const handleSSOCallback = async (req: Request, res: Response): Promise<vo
       role:      user.role,
       companyId: user.companyId?.toString(),
     };
-    const token = jwt.sign(payload, config.jwt.secret as string, {
-      expiresIn: config.jwt.expire as string,
-    });
-    const refreshToken = jwt.sign(payload, config.jwt.refreshSecret as string, {
-      expiresIn: config.jwt.refreshExpire as string,
-    });
+    const token = jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.expire } as any);
+    const refreshToken = jwt.sign(payload, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpire } as any);
 
     // Return token to frontend via redirect with short-lived query param
     // The frontend should exchange this once and store in httpOnly cookie
