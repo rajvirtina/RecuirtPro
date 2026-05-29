@@ -1,6 +1,8 @@
 import { forwardRef, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
+import { AnimatePresence, motion } from 'framer-motion';
+import { dur, ease } from '../../lib/motion';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -55,16 +57,31 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           />
         </div>
 
-        {hasError && (
-          <p id={`${inputId}-error`} role="alert" className="text-xs text-error-600 mt-1">
-            {error}
-          </p>
-        )}
-        {!hasError && hint && (
-          <p id={`${inputId}-hint`} className="text-xs text-neutral-400 mt-1">
-            {hint}
-          </p>
-        )}
+        <AnimatePresence initial={false}>
+          {hasError && (
+            <motion.p
+              id={`${inputId}-error`}
+              role="alert"
+              className="text-xs text-error-600 mt-1"
+              initial={{ opacity: 0, y: -4, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto', transition: { duration: dur.fast, ease: ease.enter } }}
+              exit={  { opacity: 0, y: -4, height: 0,      transition: { duration: dur.fast, ease: ease.exit  } }}
+            >
+              {error}
+            </motion.p>
+          )}
+          {!hasError && hint && (
+            <motion.p
+              id={`${inputId}-hint`}
+              className="text-xs text-neutral-400 mt-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: dur.fast } }}
+              exit={  { opacity: 0, transition: { duration: dur.fast } }}
+            >
+              {hint}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     );
   },
@@ -123,16 +140,31 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           {children}
         </select>
 
-        {hasError && (
-          <p id={`${selectId}-error`} role="alert" className="text-xs text-error-600 mt-1">
-            {error}
-          </p>
-        )}
-        {!hasError && hint && (
-          <p id={`${selectId}-hint`} className="text-xs text-neutral-400 mt-1">
-            {hint}
-          </p>
-        )}
+        <AnimatePresence initial={false}>
+          {hasError && (
+            <motion.p
+              id={`${selectId}-error`}
+              role="alert"
+              className="text-xs text-error-600 mt-1"
+              initial={{ opacity: 0, y: -4, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto', transition: { duration: dur.fast, ease: ease.enter } }}
+              exit={  { opacity: 0, y: -4, height: 0,      transition: { duration: dur.fast, ease: ease.exit  } }}
+            >
+              {error}
+            </motion.p>
+          )}
+          {!hasError && hint && (
+            <motion.p
+              id={`${selectId}-hint`}
+              className="text-xs text-neutral-400 mt-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: dur.fast } }}
+              exit={  { opacity: 0, transition: { duration: dur.fast } }}
+            >
+              {hint}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     );
   },
@@ -186,16 +218,31 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
 
-        {hasError && (
-          <p id={`${textareaId}-error`} role="alert" className="text-xs text-error-600 mt-1">
-            {error}
-          </p>
-        )}
-        {!hasError && hint && (
-          <p id={`${textareaId}-hint`} className="text-xs text-neutral-400 mt-1">
-            {hint}
-          </p>
-        )}
+        <AnimatePresence initial={false}>
+          {hasError && (
+            <motion.p
+              id={`${textareaId}-error`}
+              role="alert"
+              className="text-xs text-error-600 mt-1"
+              initial={{ opacity: 0, y: -4, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto', transition: { duration: dur.fast, ease: ease.enter } }}
+              exit={  { opacity: 0, y: -4, height: 0,      transition: { duration: dur.fast, ease: ease.exit  } }}
+            >
+              {error}
+            </motion.p>
+          )}
+          {!hasError && hint && (
+            <motion.p
+              id={`${textareaId}-hint`}
+              className="text-xs text-neutral-400 mt-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1, transition: { duration: dur.fast } }}
+              exit={  { opacity: 0, transition: { duration: dur.fast } }}
+            >
+              {hint}
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     );
   },

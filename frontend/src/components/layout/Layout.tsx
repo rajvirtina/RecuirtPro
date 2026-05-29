@@ -1,4 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { pageVariants } from '../../lib/motion';
 import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
@@ -645,7 +647,19 @@ export default function Layout() {
         </header>
 
         <main id="main-content" className="min-h-screen">
-          <Outlet />
+          {/* Route transition — fade+slide on every page change */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.key}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ minHeight: 'inherit' }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

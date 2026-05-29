@@ -1,5 +1,7 @@
 import { ReactNode } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Button } from './Button';
+import { dur, ease } from '../../lib/motion';
 
 interface EmptyStateProps {
   icon?:    ReactNode;
@@ -10,22 +12,56 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ icon, title, desc, action, children }: EmptyStateProps) {
+  const reduced = useReducedMotion();
+
   return (
-    <div className="empty-state">
+    <motion.div
+      className="empty-state"
+      initial={reduced ? undefined : { opacity: 0, y: 12 }}
+      animate={reduced ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: dur.base, ease: ease.enter }}
+    >
       {icon && (
-        <div className="mb-4 p-3 rounded-xl bg-neutral-100">
+        <motion.div
+          className="mb-4 p-3 rounded-xl bg-neutral-100"
+          initial={reduced ? undefined : { scale: 0.8, opacity: 0 }}
+          animate={reduced ? undefined : { scale: 1,   opacity: 1 }}
+          transition={{ duration: dur.slow, ease: ease.enter, delay: 0.05 }}
+        >
           <span className="empty-icon block">{icon}</span>
-        </div>
+        </motion.div>
       )}
-      <h3 className="empty-title">{title}</h3>
-      {desc && <p className="empty-desc">{desc}</p>}
+      <motion.h3
+        className="empty-title"
+        initial={reduced ? undefined : { opacity: 0 }}
+        animate={reduced ? undefined : { opacity: 1 }}
+        transition={{ duration: dur.base, delay: 0.10 }}
+      >
+        {title}
+      </motion.h3>
+      {desc && (
+        <motion.p
+          className="empty-desc"
+          initial={reduced ? undefined : { opacity: 0 }}
+          animate={reduced ? undefined : { opacity: 1 }}
+          transition={{ duration: dur.base, delay: 0.15 }}
+        >
+          {desc}
+        </motion.p>
+      )}
       {action && (
-        <Button variant="primary" size="md" onClick={action.onClick}>
-          {action.label}
-        </Button>
+        <motion.div
+          initial={reduced ? undefined : { opacity: 0, y: 4 }}
+          animate={reduced ? undefined : { opacity: 1, y: 0 }}
+          transition={{ duration: dur.base, delay: 0.20 }}
+        >
+          <Button variant="primary" size="md" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        </motion.div>
       )}
       {children}
-    </div>
+    </motion.div>
   );
 }
 

@@ -16,28 +16,33 @@ const envPaths = [
 ];
 for (const p of envPaths) { dotenv.config({ path: p }); }
 
-// ALWAYS try to load .env.production — on Hostinger shared hosting (no SSH),
-// .env is gitignored and won't exist, but .env.production is committed and deployed.
-// This ensures production values are loaded even if NODE_ENV isn't pre-set by the host.
+// Load production secrets from disk if the file exists locally.
+// SECURITY: backend/.env.production must NOT be committed to git.
+// Deployment strategy (Hostinger without SSH):
+//   Option A (recommended): Set secrets in the Hostinger control panel →
+//     Hosting → Manage → Advanced → Environment Variables. They are injected
+//     at container start and are never in the repository.
+//   Option B: Upload backend/.env.production via SFTP to the server home
+//     directory (~/recruitpro.env) before deploying. The file is gitignored
+//     and will be loaded from the paths below.
 const prodPaths = [
+  // Hostinger persistent home-directory locations (survive redeploys via SFTP upload)
+  path.resolve(process.env.HOME || '/root', 'recruitpro.env'),
+  path.resolve(process.env.HOME || '/root', '.recruitpro.env'),
+  '/home/recruitpro.env',
+  // Legacy fallback — only present if manually uploaded to the deploy directory
   path.resolve(__dirname, '../../.env.production'),
   path.resolve(__dirname, '../../../backend/.env.production'),
   path.resolve(process.cwd(), '.env.production'),
   path.resolve(process.cwd(), 'backend/.env.production'),
-  // Hostinger persistent production env
-  path.resolve(process.env.HOME || '/root', 'recruitpro.env'),
-  path.resolve(process.env.HOME || '/root', '.recruitpro.env'),
 ];
 
 if (process.env.NODE_ENV === 'production') {
-  // In production: override all values from .env.production
   const hostPort = process.env.PORT; // preserve Hostinger-injected port
-  for (const p of prodPaths) { dotenv.config({ path: p, override: true }); }
-  if (hostPort) process.env.PORT = hostPort; // restore Hostinger's port
+  for (const p of prodPaths) { if (existsSync(p)) { dotenv.config({ path: p, override: true }); break; } }
+  if (hostPort) process.env.PORT = hostPort;
 } else if (!process.env.MONGODB_URI) {
-  // Fallback: if no .env loaded anything useful, try .env.production without override
-  // This handles Hostinger where .env doesn't exist but .env.production does
-  for (const p of prodPaths) { dotenv.config({ path: p }); }
+  for (const p of prodPaths) { if (existsSync(p)) { dotenv.config({ path: p }); break; } }
 }
 
 // SEC-06: Reject default secrets in production

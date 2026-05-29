@@ -106,20 +106,40 @@ export default {
         'xl':  '0 20px 50px -10px rgba(0,0,0,0.16)',
         'none': 'none',
       },
-      animation: {
-        'fade-in':   'fadeIn 0.2s ease-out',
-        'slide-up':  'slideUp 0.3s ease-out',
-        'slide-in':  'slideIn 0.25s ease-out',
-        'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
-      },
-      keyframes: {
-        fadeIn:   { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
-        slideUp:  { '0%': { opacity: '0', transform: 'translateY(8px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
-        slideIn:  { '0%': { opacity: '0', transform: 'translateX(-8px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
-        pulseSoft:{ '0%,100%': { opacity: '1' }, '50%': { opacity: '0.5' } },
+      // ── Motion token system ────────────────────────────────────────────
+      transitionDuration: {
+        fast:   '150ms',
+        base:   '250ms',
+        slow:   '400ms',
+        xslow:  '600ms',
       },
       transitionTimingFunction: {
-        'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
+        // One easing family for the entire product
+        smooth:      'cubic-bezier(0.4, 0, 0.2, 1)',  // standard
+        enter:       'cubic-bezier(0.0, 0, 0.2, 1)',   // decelerate (things entering)
+        exit:        'cubic-bezier(0.4, 0, 1.0, 1)',   // accelerate (things leaving)
+      },
+      animation: {
+        // Retained for CSS-only contexts; prefer Framer Motion in components
+        'fade-in':    'fadeIn 250ms cubic-bezier(0.0,0,0.2,1) both',
+        'slide-up':   'slideUp 250ms cubic-bezier(0.0,0,0.2,1) both',
+        'slide-in':   'slideIn 250ms cubic-bezier(0.0,0,0.2,1) both',
+        'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
+        // Shimmer for skeleton loaders
+        'shimmer':    'shimmer 1.6s linear infinite',
+        // Attention pulse (severity indicators)
+        'attention':  'attentionPulse 1.2s ease-in-out 3',
+        // Count badge bump
+        'bump':       'bump 300ms cubic-bezier(0.3,0,0.2,1)',
+      },
+      keyframes: {
+        fadeIn:        { '0%': { opacity: '0' },          '100%': { opacity: '1' } },
+        slideUp:       { '0%': { opacity: '0', transform: 'translateY(8px)' },  '100%': { opacity: '1', transform: 'translateY(0)' } },
+        slideIn:       { '0%': { opacity: '0', transform: 'translateX(-8px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+        pulseSoft:     { '0%,100%': { opacity: '1' }, '50%': { opacity: '0.5' } },
+        shimmer:       { '0%': { backgroundPosition: '-200% 0' }, '100%': { backgroundPosition: '200% 0' } },
+        attentionPulse:{ '0%,100%': { opacity: '1', transform: 'scale(1)' }, '50%': { opacity: '0.7', transform: 'scale(1.06)' } },
+        bump:          { '0%': { transform: 'scale(1)' }, '40%': { transform: 'scale(1.35)' }, '100%': { transform: 'scale(1)' } },
       },
       width: {
         'sidebar': '256px',

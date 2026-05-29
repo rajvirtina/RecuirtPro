@@ -69,6 +69,43 @@
   /* Sidebar */
   --sidebar-width: 256px;
   --topbar-height: 56px;
+
+  /* ── Motion token system ─────────────────────────────────────────── */
+  /* Single easing family — all transitions use one of these three */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter:    cubic-bezier(0.0, 0, 0.2, 1);
+  --ease-exit:     cubic-bezier(0.4, 0, 1.0, 1);
+
+  /* Duration scale */
+  --dur-fast:   150ms;
+  --dur-base:   250ms;
+  --dur-slow:   400ms;
+  --dur-xslow:  600ms;
+
+  /* Shimmer gradient — used for skeleton loaders */
+  --shimmer-gradient: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.55) 50%,
+    transparent 100%
+  );
+}
+
+/* ── Global reduced-motion override ─────────────────────────────────────── */
+/* This is the non-negotiable accessibility layer.                           */
+/* Framer Motion also reads the media query natively via useReducedMotion(). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:        0.01ms !important;
+    animation-iteration-count: 1      !important;
+    transition-duration:       0.01ms !important;
+    scroll-behavior:           auto   !important;
+  }
+  /* Allow opacity-only transitions which don't cause vestibular issues */
+  .allow-fade {
+    animation-duration:  var(--dur-base) !important;
+    transition-duration: var(--dur-base) !important;
+  }
 }
 
 /* ─── Base Styles ────────────────────────────────────────────────────── */
@@ -195,7 +232,20 @@
 
   /* ── Skeleton ── */
   .skeleton {
-    @apply bg-neutral-100 rounded-md animate-pulse;
+    @apply bg-neutral-100 rounded-md overflow-hidden relative;
+    background-size: 200% 100%;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--shimmer-gradient);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after { animation: none; }
+    .skeleton { @apply animate-pulse; }
   }
 
   /* ── Divider ── */
