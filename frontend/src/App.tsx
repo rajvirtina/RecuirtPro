@@ -14,6 +14,7 @@ import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import CompleteRegistration from './pages/auth/CompleteRegistration';
+import SSOCallback from './pages/auth/SSOCallback';
 import VerifyCompanyEmail from './pages/auth/VerifyCompanyEmail';
 import VerifyEmail from './pages/auth/VerifyEmail';
 import Dashboard from './pages/Dashboard';
@@ -29,6 +30,7 @@ import ApplicationDetail from './pages/applications/ApplicationDetail';
 import AIAssessmentReport from './pages/applications/AIAssessmentReport';
 import Interviews from './pages/interviews/Interviews';
 import InterviewDetail from './pages/interviews/InterviewDetail';
+import InterviewerDashboard from './pages/interviews/InterviewerDashboard';
 import VideoMeetingRoom from './pages/interviews/VideoMeetingRoom';
 import Questions from './pages/questions/Questions';
 import CandidateSourcing from './pages/sourcing/CandidateSourcing';
@@ -69,8 +71,7 @@ const DashboardRedirect = () => {
   const { user } = useAuthStore();
   if (user?.role === 'admin' && !user?.companyId) return <Navigate to="/superadmin" replace />;
   if (user?.role === 'admin') return <Navigate to="/admin" replace />;
-  // Interviewers have no general dashboard — their home is the interviews list
-  if (user?.role === 'interviewer') return <Navigate to="/interviews" replace />;
+  if (user?.role === 'interviewer') return <Navigate to="/interviewer-dashboard" replace />;
   return <Dashboard />;
 };
 
@@ -100,6 +101,9 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/complete-registration" element={<CompleteRegistration />} />
       </Route>
+
+      {/* SSO callback — public, token arrives as query param */}
+      <Route path="/sso-callback" element={<SSOCallback />} />
 
       {/* Public verification */}
       <Route path="/verify-company-email" element={<VerifyCompanyEmail />} />
@@ -140,6 +144,7 @@ function App() {
         <Route path="/applications/:id" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><ApplicationDetail /></RoleGuard>} />
         <Route path="/applications/:id/ai-report" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><AIAssessmentReport /></RoleGuard>} />
         <Route path="/ai-scores" element={<RoleGuard roles={['admin', 'hr', 'employer']}><AIScoreComparison /></RoleGuard>} />
+        <Route path="/interviewer-dashboard" element={<RoleGuard roles={['interviewer']}><InterviewerDashboard /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
         <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />

@@ -1,3 +1,13 @@
+// Sentry must be initialised before any other imports that might throw
+import * as Sentry from '@sentry/node';
+if (process.env.SENTRY_DSN && process.env.NODE_ENV === 'production') {
+  Sentry.init({
+    dsn:              process.env.SENTRY_DSN,
+    environment:      process.env.NODE_ENV,
+    tracesSampleRate: 0.1,
+  });
+}
+
 import app from './app';
 import config from './config';
 import connectDB from './config/database';
@@ -6,6 +16,8 @@ import { createServer } from 'http';
 import { initializeSocket } from './socket/socketController';
 import { closeQueues } from './services/queueProcessors';
 import { initEmailService } from './services/emailService';
+
+export { Sentry };
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error: Error) => {

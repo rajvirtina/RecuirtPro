@@ -6,9 +6,10 @@ import NotificationsConfig from './NotificationsConfig';
 import IntegrationsConfig from './IntegrationsConfig';
 import PermissionMatrix from './PermissionMatrix';
 import DataRetention from './DataRetention';
+import SSOConfig from './SSOConfig';
 import { useAuthStore } from '../../store/authStore';
 
-type Section = 'profile' | 'pipeline' | 'notifications' | 'integrations' | 'permissions' | 'retention';
+type Section = 'profile' | 'pipeline' | 'notifications' | 'integrations' | 'permissions' | 'retention' | 'sso';
 
 const ALL_SECTIONS: { id: Section; label: string; icon: string; roles: string[] }[] = [
   { id: 'profile',       label: 'Company Profile', icon: '🏢', roles: ['admin', 'employer'] },
@@ -17,6 +18,7 @@ const ALL_SECTIONS: { id: Section; label: string; icon: string; roles: string[] 
   { id: 'integrations',  label: 'Integrations',    icon: '🔌', roles: ['admin', 'employer', 'hr'] },
   { id: 'permissions',   label: 'Permissions',     icon: '🔐', roles: ['admin', 'employer', 'hr'] },
   { id: 'retention',     label: 'Data & Privacy',  icon: '🔒', roles: ['admin'] },
+  { id: 'sso',           label: 'SSO / SAML',      icon: '🔑', roles: ['admin', 'employer'] },
 ];
 
 export default function Settings() {
@@ -65,6 +67,7 @@ export default function Settings() {
           {section === 'integrations'  && <IntegrationsConfig />}
           {section === 'permissions'   && <PermissionMatrix />}
           {section === 'retention'     && <DataRetention />}
+          {section === 'sso'           && <SSOConfig />}
         </div>
       </div>
     </div>

@@ -22,7 +22,7 @@ RecuirtPro is an end-to-end recruitment automation platform that streamlines the
 - **Runtime**: Node.js 18+
 - **Framework**: Express.js
 - **Language**: TypeScript
-- **Database**: MongoDB 6.0+
+- **Database**: MongoDB 7.0+
 - **Authentication**: JWT (jsonwebtoken)
 - **Validation**: express-validator
 - **File Storage**: AWS S3
@@ -45,7 +45,7 @@ RecuirtPro is an end-to-end recruitment automation platform that streamlines the
 - **Cache/Queue**: Redis
 - **Search**: Elasticsearch (optional)
 - **Logging**: Winston
-- **Monitoring**: (TBD - Datadog/New Relic)
+- **Monitoring**: Sentry (error tracking + performance), Winston (structured logging)
 - **Deployment**: (TBD - AWS/Azure/GCP)
 
 ## System Architecture

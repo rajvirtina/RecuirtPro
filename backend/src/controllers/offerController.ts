@@ -372,20 +372,34 @@ export const generateOfferLetter = async (req: AuthRequest, res: Response): Prom
 /**
  * @desc    Generate and stream offer letter as PDF (pdfkit)
  * @route   GET /api/v1/offers/:id/pdf
- * @access  Private (HR / Admin / Employer)
+ * @access  Private (HR / Admin / Employer / Candidate — own offer only)
  */
 export const downloadOfferPDF = async (req: AuthRequest, res: Response): Promise<void | Response> => {
   try {
     const { id } = req.params;
-    const companyId = getTenantCompanyId(req.user) || req.user?.companyId;
-    if (!companyId) return sendError(res, 'Company context required', 400);
 
-    const offer = await Offer.findOne({ _id: id, companyId, deletedAt: null })
+    const offer = await Offer.findOne({ _id: id, deletedAt: null })
       .populate('candidateId', 'firstName lastName email')
       .populate('jobId', 'title')
       .populate('companyId', 'name');
 
     if (!offer) return sendError(res, 'Offer not found', 404);
+
+    // Tenant isolation: HR/Admin use companyId; candidates can only access their own offer
+    const tenantId = getTenantCompanyId(req.user);
+    const isCandidateViewing =
+      offer.candidateId && (offer.candidateId as any)._id?.toString() === req.user?._id;
+    if (tenantId && offer.companyId?.toString() !== tenantId && !isCandidateViewing) {
+      return sendError(res, 'Not authorized', 403);
+    }
+    if (!tenantId && !isCandidateViewing && !isSuperAdmin(req.user)) {
+      return sendError(res, 'Not authorized', 403);
+    }
+
+    // Candidates can only download letters that have been formally sent
+    if (isCandidateViewing && !['sent', 'accepted', 'negotiating', 'expired'].includes(offer.status)) {
+      return sendError(res, 'Offer letter is not yet available', 403);
+    }
 
     const candidate = offer.candidateId as any;
     const job       = offer.jobId       as any;

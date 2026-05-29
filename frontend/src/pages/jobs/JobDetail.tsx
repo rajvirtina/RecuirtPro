@@ -35,7 +35,7 @@ interface Job {
   updatedAt: string;
 }
 
-type ConfirmAction = 'delete' | 'close' | 'hold' | null;
+type ConfirmAction = 'delete' | 'close' | 'hold' | 'reject_approval' | null;
 
 function MetaChip({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
@@ -61,6 +61,11 @@ const CONFIRM_CONFIG: Record<string, { title: string; message: string; label: st
     title: 'Put this job on hold?',
     message: 'The job will stop accepting new applications until you resume it.',
     label: 'Put on Hold',
+  },
+  reject_approval: {
+    title: 'Reject this job approval?',
+    message: 'The job will be returned to draft status and the HR will need to resubmit it.',
+    label: 'Reject Approval',
   },
 };
 
@@ -122,6 +127,18 @@ export default function JobDetail() {
       await performStatusChange('closed');
     } else if (confirmAction === 'hold') {
       await performStatusChange('on_hold');
+    } else if (confirmAction === 'reject_approval') {
+      setActionPending(true);
+      try {
+        await apiClient.patch(`/jobs/${id}/reject-approval`);
+        toast.success('Job approval rejected — returned to draft');
+        setConfirmAction(null);
+        await fetchJobDetail();
+      } catch (err: any) {
+        toast.error(err?.response?.data?.message || 'Failed to reject approval');
+      } finally {
+        setActionPending(false);
+      }
     }
   };
 
@@ -279,11 +296,45 @@ export default function JobDetail() {
 
           {isOwner && (
             <div className="flex gap-2 flex-wrap ml-auto">
+              {/* HR sees "Submit for Approval"; Admin/Employer see "Publish" */}
               {(job.status === 'draft' || job.status === 'closed' || job.status === 'on_hold') && (
                 <Button variant="primary" loading={actionPending} onClick={handlePublishJob}>
-                  {job.status === 'draft' ? 'Publish Job' : 'Resume Job'}
+                  {job.status === 'draft'
+                    ? (user?.role === 'hr' ? 'Submit for Approval' : 'Publish Job')
+                    : 'Resume Job'}
                 </Button>
               )}
+
+              {/* Approval queue: admin/employer can approve or reject */}
+              {job.status === 'pending_approval' && (user?.role === 'admin' || user?.role === 'employer') && (
+                <>
+                  <Button variant="primary" loading={actionPending} onClick={async () => {
+                    setActionPending(true);
+                    try {
+                      await apiClient.patch(`/jobs/${id}/approve`);
+                      toast.success('Job approved and published');
+                      await fetchJobDetail();
+                    } catch (err: any) {
+                      toast.error(err?.response?.data?.message || 'Failed to approve job');
+                    } finally {
+                      setActionPending(false);
+                    }
+                  }}>
+                    Approve & Publish
+                  </Button>
+                  <Button variant="destructive" onClick={() => setConfirmAction('reject_approval')}>
+                    Reject Approval
+                  </Button>
+                </>
+              )}
+
+              {/* HR sees an informational note while pending */}
+              {job.status === 'pending_approval' && user?.role === 'hr' && (
+                <span className="text-sm text-warning-600 font-medium self-center">
+                  Awaiting approval from admin
+                </span>
+              )}
+
               {job.status === 'published' && (
                 <>
                   <Button variant="secondary" onClick={() => setConfirmAction('hold')}>

@@ -355,10 +355,10 @@ const superAdminNav: NavItem[] = [
 ];
 
 const interviewerNav: NavItem[] = [
-  { name: 'Dashboard',  href: '/dashboard',   Icon: DashboardIcon, group: 'main' },
-  { name: 'Interviews', href: '/interviews',  Icon: InterviewIcon, group: 'main' },
-  { name: 'Pipeline',   href: '/pipeline',    Icon: PipelineIcon,  group: 'main' },
-  { name: 'Profile',    href: '/profile',     Icon: ProfileIcon,   group: 'account' },
+  { name: 'Dashboard',  href: '/interviewer-dashboard', Icon: DashboardIcon, group: 'main' },
+  { name: 'Interviews', href: '/interviews',            Icon: InterviewIcon, group: 'main' },
+  { name: 'Pipeline',   href: '/pipeline',              Icon: PipelineIcon,  group: 'main' },
+  { name: 'Profile',    href: '/profile',               Icon: ProfileIcon,   group: 'account' },
 ];
 
 const companyAdminNav: NavItem[] = [

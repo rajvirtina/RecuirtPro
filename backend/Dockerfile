@@ -5,7 +5,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Install all deps (including devDependencies) so tsc is available
+RUN npm ci && npm cache clean --force
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npx tsc
@@ -20,9 +21,10 @@ WORKDIR /app
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
 COPY package*.json ./
+# Install only production dependencies — keeps the runtime image lean
+RUN npm ci --only=production && npm cache clean --force
+COPY --from=builder /app/dist ./dist
 
 # Create directories
 RUN mkdir -p uploads/resumes logs && \

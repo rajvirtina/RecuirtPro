@@ -8,6 +8,8 @@ import {
   createJob,
   updateJob,
   updateJobStatus,
+  approveJob,
+  rejectJobApproval,
   deleteJob,
 } from '../controllers/jobController';
 import { duplicateJob } from '../controllers/jobTemplateController';
@@ -112,8 +114,8 @@ router.patch(
     param('id').isMongoId().withMessage('Invalid job ID'),
     body('status')
       .notEmpty()
-      .isIn(['draft', 'published', 'on_hold', 'closed'])
-      .withMessage('Status must be one of: draft, published, on_hold, closed'),
+      .isIn(['draft', 'pending_approval', 'published', 'on_hold', 'closed'])
+      .withMessage('Status must be one of: draft, pending_approval, published, on_hold, closed'),
   ],
   validate,
   updateJobStatus
@@ -131,6 +133,37 @@ router.delete(
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,
   deleteJob
+);
+
+/**
+ * @route   PATCH /api/v1/jobs/:id/approve
+ * @desc    Approve a pending-approval job and publish it
+ * @access  Private (Employer, Admin only)
+ */
+router.patch(
+  '/:id/approve',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.ADMIN),
+  [param('id').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  approveJob
+);
+
+/**
+ * @route   PATCH /api/v1/jobs/:id/reject-approval
+ * @desc    Reject job approval — returns it to draft
+ * @access  Private (Employer, Admin only)
+ */
+router.patch(
+  '/:id/reject-approval',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.ADMIN),
+  [
+    param('id').isMongoId().withMessage('Invalid job ID'),
+    body('remarks').optional().isString().trim(),
+  ],
+  validate,
+  rejectJobApproval
 );
 
 /**

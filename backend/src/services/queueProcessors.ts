@@ -3,6 +3,11 @@ import { config } from '../config';
 import logger from '../utils/logger';
 import { isEmailQueueUp, closeEmailQueue, sendEmail } from '../services/emailService';
 import { sendSms } from './smsService';
+import { Offer } from '../models/Offer';
+import { Job } from '../models/Job';
+import { Application } from '../models/Application';
+import { Company } from '../models/Company';
+import { triggerPortalPosting } from './jobPortalService';
 
 // ── Redis connection config ───────────────────────────────────────────────────
 
@@ -50,8 +55,6 @@ function initQueues() {
       const { jobId, portals } = job.data as { jobId: string; portals: string[]; jobData: any };
       logger.info(`[CrossPortalQueue] Posting job ${jobId} to: ${portals.join(', ')}`);
       const results: Record<string, { success: boolean; error?: string }> = {};
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { triggerPortalPosting } = require('./jobPortalService') as typeof import('./jobPortalService');
       for (const portal of portals) {
         try {
           const r = await triggerPortalPosting(jobId, portal as 'naukri' | 'linkedin');
@@ -71,8 +74,6 @@ function initQueues() {
     offerExpiryQueue.on('error', (err) => logger.error('[OfferExpiryQueue] Error:', err.message));
     offerExpiryQueue.add({}, { repeat: { cron: '0 * * * *' } });
     offerExpiryQueue.process(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Offer } = require('../models') as typeof import('../models');
       const result = await (Offer as any).updateMany(
         { status: 'sent', expiresAt: { $lt: new Date() }, deletedAt: null },
         {
@@ -96,8 +97,6 @@ function initQueues() {
     jobExpiryQueue.on('error', (err) => logger.error('[JobExpiryQueue] Error:', err.message));
     jobExpiryQueue.add({}, { repeat: { cron: '0 0 * * *' } });
     jobExpiryQueue.process(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Job } = require('../models') as typeof import('../models');
       const result = await (Job as any).updateMany(
         { status: 'published', expiryDate: { $lt: new Date() }, deletedAt: null },
         { $set: { status: 'expired' } }
@@ -112,9 +111,6 @@ function initQueues() {
     retentionCleanupQueue.on('error', (err) => logger.error('[RetentionQueue] Error:', err.message));
     retentionCleanupQueue.add({}, { repeat: { cron: '0 2 * * *' } });
     retentionCleanupQueue.process(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Company, Application } = require('../models') as typeof import('../models');
-
       const companies = await (Company as any).find({
         'settings.autoDeleteRejected': true,
         deletedAt: null,
@@ -145,20 +141,37 @@ function initQueues() {
     reminderQueue = new Bull('interview-reminders', { redis: redisConfig });
     reminderQueue.on('error', (err) => logger.error('[ReminderQueue] Error:', err.message));
     reminderQueue.process(async (job) => {
-      const { candidatePhone, candidateEmail, candidateName, jobTitle, scheduledTime, meetingLink } = job.data;
+      const { candidatePhone, candidateEmail, candidateName, jobTitle, scheduledTime, meetingLink, panelMembers } = job.data;
       const timeStr = new Date(scheduledTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
+      // Notify candidate via SMS + email
       void sendSms(
         candidatePhone,
         `Reminder: Your interview for ${jobTitle} starts in 1 hour at ${timeStr}.${meetingLink ? ` Join: ${meetingLink}` : ''}`
       );
-
       void sendEmail({
         to: candidateEmail,
         subject: `Interview Reminder — ${jobTitle} in 1 hour`,
         template: 'interviewScheduled',
         data: { candidateName, jobTitle, scheduledTime: timeStr, meetingLink: meetingLink || null },
       }).catch(() => {});
+
+      // Notify each panel member (interviewers)
+      if (Array.isArray(panelMembers)) {
+        for (const member of panelMembers as Array<{ email: string; name?: string }>) {
+          void sendEmail({
+            to: member.email,
+            subject: `Interviewer Reminder — ${jobTitle} in 1 hour`,
+            template: 'interviewScheduled',
+            data: {
+              candidateName: member.name || 'Interviewer',
+              jobTitle,
+              scheduledTime: timeStr,
+              meetingLink: meetingLink || null,
+            },
+          }).catch(() => {});
+        }
+      }
     });
     reminderQueue.on('failed', (job, err) =>
       logger.error(`[ReminderQueue] Job ${job.id} failed:`, err.message)
@@ -187,6 +200,7 @@ export const enqueueInterviewReminder = async (interview: {
   candidateId: { phone?: string; email: string; firstName: string };
   jobId: { title: string };
   meetingLink?: string;
+  panel?: Array<{ email: string; name?: string }>;
 }): Promise<void> => {
   if (!reminderQueue) return;
 
@@ -203,6 +217,7 @@ export const enqueueInterviewReminder = async (interview: {
       jobTitle:       interview.jobId.title,
       scheduledTime:  interview.scheduledTime,
       meetingLink:    interview.meetingLink,
+      panelMembers:   interview.panel ?? [],
     },
     { delay, attempts: 2, removeOnComplete: 100 }
   );

@@ -44,7 +44,7 @@ services:
       REDIS_PORT: 6379
       PORT: 5001
     env_file:
-      - ./backend/.env.production
+      - ./backend/.env
     depends_on:
       mongodb:
         condition: service_started
@@ -131,10 +131,46 @@ services:
       retries: 3
       start_period: 40s
 
+  # ── MongoDB Backup (DR strategy) ─────────────────────────────────────────────
+  # Runs mongodump daily at 02:00 UTC; retains 7 days of backups.
+  # Mount a host directory to ./backups or use a named volume for persistence.
+  mongo-backup:
+    image: mongo:7.0
+    container_name: recruitpro-mongo-backup
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_backups:/backups
+    networks:
+      - recruitpro-network
+    # crond runs mongodump daily at 02:00 UTC and purges dumps older than 7 days
+    entrypoint: >
+      /bin/bash -c "
+        while true; do
+          TIMESTAMP=$$(date +%Y%m%d_%H%M%S);
+          mongodump
+            --host mongodb:27017
+            --username $$MONGO_INITDB_ROOT_USERNAME
+            --password $$MONGO_INITDB_ROOT_PASSWORD
+            --authenticationDatabase admin
+            --db recruitpro
+            --out /backups/$$TIMESTAMP
+            --gzip;
+          find /backups -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null || true;
+          echo \"[backup] Dump completed: $$TIMESTAMP\";
+          sleep 86400;
+        done
+      "
+
 volumes:
   mongodb_data:
   mongodb_config:
   redis_data:
+  mongo_backups:
 
 networks:
   recruitpro-network:

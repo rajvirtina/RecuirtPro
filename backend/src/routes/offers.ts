@@ -22,7 +22,7 @@ router.get('/:id', getOfferById); // Candidates can view their own offer
 router.put('/:id', authorize(UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYER), updateOffer);
 router.put('/:id/status', updateOfferStatus); // Candidates can accept/reject
 router.post('/:id/generate-letter', authorize(UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYER), generateOfferLetter);
-// Download offer as PDF
-router.get('/:id/pdf', authorize(UserRole.ADMIN, UserRole.HR, UserRole.EMPLOYER), downloadOfferPDF);
+// Download offer as PDF — candidates can download their own offer letter
+router.get('/:id/pdf', downloadOfferPDF);
 
 export default router;

@@ -8,6 +8,23 @@ export interface IPipelineStage {
   emailTemplateId?: mongoose.Types.ObjectId | null;
 }
 
+export interface ICompanySSOConfig {
+  enabled: boolean;
+  type: 'oidc' | 'saml';
+  /** OIDC: well-known discovery URL, e.g. https://accounts.google.com */
+  oidcDiscoveryUrl?: string;
+  oidcClientId?: string;
+  oidcClientSecret?: string;
+  /** SAML: IdP single-sign-on service URL */
+  samlEntryPoint?: string;
+  samlIssuer?: string;
+  samlCert?: string;
+  /** Restrict SSO logins to these email domains (e.g. ['acme.com']) */
+  allowedEmailDomains?: string[];
+  /** Role assigned to new users created via SSO (default: 'hr') */
+  defaultRole?: 'hr' | 'employer' | 'interviewer';
+}
+
 export interface ICompanyDocument extends Document {
   name: string;
   slug: string;
@@ -58,6 +75,7 @@ export interface ICompanyDocument extends Document {
     smsEnabled?: boolean;
     dailyDigest?: boolean;
   };
+  sso?: ICompanySSOConfig;
   emailVerified: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
@@ -186,6 +204,18 @@ const companySchema = new Schema<ICompanyDocument>(
       emailOnStageChange: { type: Boolean, default: true },
       smsEnabled: { type: Boolean, default: false },
       dailyDigest: { type: Boolean, default: false },
+    },
+    sso: {
+      enabled:             { type: Boolean, default: false },
+      type:                { type: String, enum: ['oidc', 'saml'], default: 'oidc' },
+      oidcDiscoveryUrl:    { type: String },
+      oidcClientId:        { type: String },
+      oidcClientSecret:    { type: String, select: false },
+      samlEntryPoint:      { type: String },
+      samlIssuer:          { type: String },
+      samlCert:            { type: String, select: false },
+      allowedEmailDomains: [{ type: String }],
+      defaultRole:         { type: String, enum: ['hr', 'employer', 'interviewer'], default: 'hr' },
     },
     status: {
       type: String,

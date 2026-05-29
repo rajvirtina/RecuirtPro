@@ -2,6 +2,21 @@ import { Request, Response, NextFunction } from 'express';
 import { sendError } from '../utils/response';
 import logger from '../utils/logger';
 
+function captureSentry(err: any, req: Request) {
+  try {
+    // Lazy-import so Sentry is optional; no crash if package is absent
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Sentry = require('@sentry/node');
+    if (Sentry?.captureException && err.statusCode !== 404) {
+      Sentry.withScope((scope: any) => {
+        scope.setTag('path', req.path);
+        scope.setTag('method', req.method);
+        Sentry.captureException(err);
+      });
+    }
+  } catch { /* Sentry not installed — silent */ }
+}
+
 /**
  * Error handler middleware
  */
@@ -13,6 +28,11 @@ export const errorHandler = (
 ): Response => {
   let error = { ...err };
   error.message = err.message;
+
+  // Report 5xx errors to Sentry (4xx are expected, not bugs)
+  if (!err.statusCode || err.statusCode >= 500) {
+    captureSentry(err, req);
+  }
 
   // Log error
   logger.error(`Error: ${err.message}`, {

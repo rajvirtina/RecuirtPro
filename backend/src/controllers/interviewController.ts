@@ -119,12 +119,20 @@ export const scheduleInterview = async (
       const candidateUser = await User.findById(candidateId).select('firstName email phone').lean();
       const jobDoc = await Job.findById(jobId).select('title').lean();
       if (candidateUser && jobDoc) {
+        // Resolve panel user emails so interviewers also receive reminders
+        const panelUserIds = (panel ?? []).map((p: any) => p.userId ?? p).filter(Boolean);
+        const panelUsers = panelUserIds.length > 0
+          ? await User.find({ _id: { $in: panelUserIds } }).select('email firstName').lean()
+          : [];
+        const panelMembers = panelUsers.map((u: any) => ({ email: u.email, name: u.firstName }));
+
         void enqueueInterviewReminder({
           _id:          interview._id.toString(),
           scheduledTime: new Date(scheduledTime),
           candidateId:  { phone: (candidateUser as any).phone, email: (candidateUser as any).email, firstName: (candidateUser as any).firstName },
           jobId:        { title: (jobDoc as any).title },
           meetingLink:  meetingLink,
+          panel:        panelMembers,
         });
       }
     }

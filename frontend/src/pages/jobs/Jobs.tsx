@@ -20,10 +20,11 @@ function Icon({ d, className = 'w-4 h-4' }: { d: string; className?: string }) {
 }
 
 const FILTER_TABS = [
-  { label: 'All',       value: '' },
-  { label: 'Published', value: 'published' },
-  { label: 'Draft',     value: 'draft' },
-  { label: 'Closed',    value: 'closed' },
+  { label: 'All',              value: '' },
+  { label: 'Published',        value: 'published' },
+  { label: 'Pending Approval', value: 'pending_approval' },
+  { label: 'Draft',            value: 'draft' },
+  { label: 'Closed',           value: 'closed' },
 ];
 
 function formatSalary(min?: number, max?: number): string {

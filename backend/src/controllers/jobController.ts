@@ -3,8 +3,9 @@ import mongoose from "mongoose";
 import { Job, Application, Company } from "../models";
 import { sendSuccess, sendError, sendPaginatedResponse, clampPagination } from "../utils/response";
 import logger from "../utils/logger";
-import { JobStatus, AuthRequest } from "../types";
+import { JobStatus, UserRole, AuthRequest } from "../types";
 import { isSuperAdmin, getTenantCompanyId } from "../middleware/auth";
+import { triggerPendingPortalPostings } from "../services/jobPortalService";
 
 export const getJobs = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
@@ -284,10 +285,12 @@ export const updateJob = async (req: AuthRequest, res: Response, next: NextFunct
 
 // Valid status transitions enforced at controller level
 const JOB_STATUS_TRANSITIONS: Record<string, string[]> = {
-  draft:      ['published', 'on_hold'],
-  published:  ['on_hold', 'closed'],
-  on_hold:    ['published', 'closed', 'draft'],
-  closed:     [], // terminal
+  draft:            ['published', 'on_hold', 'pending_approval'],
+  pending_approval: ['published', 'draft'],   // admin/employer: approve or push back
+  published:        ['on_hold', 'closed'],
+  on_hold:          ['published', 'closed', 'draft'],
+  expired:          ['published'],
+  closed:           [],
 };
 
 export const updateJobStatus = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -303,17 +306,26 @@ export const updateJobStatus = async (req: AuthRequest, res: Response, next: Nex
       return;
     }
 
-    const newStatus = req.body.status as string;
+    let newStatus = req.body.status as string;
     const currentStatus = job.status as string;
-    const allowed = JOB_STATUS_TRANSITIONS[currentStatus] ?? [];
 
+    // HR submitting for "published" automatically enters the approval queue
+    // Admin and Employer can publish directly
+    if (
+      newStatus === JobStatus.PUBLISHED &&
+      req.user?.role === UserRole.HR
+    ) {
+      newStatus = JobStatus.PENDING_APPROVAL;
+    }
+
+    const allowed = JOB_STATUS_TRANSITIONS[currentStatus] ?? [];
     if (!allowed.includes(newStatus)) {
       sendError(res, `Cannot transition from '${currentStatus}' to '${newStatus}'. Allowed: ${allowed.join(', ') || 'none (terminal state)'}`, 400);
       return;
     }
 
-    // Require description before publishing
-    if (newStatus === JobStatus.PUBLISHED) {
+    // Require description before publishing or submitting for approval
+    if (newStatus === JobStatus.PUBLISHED || newStatus === JobStatus.PENDING_APPROVAL) {
       const descText = ((job as any).description || '').replace(/<[^>]*>/g, '').trim();
       if (!descText || descText.length < 10) {
         sendError(res, 'Job description is required before publishing (at least 10 characters).', 400);
@@ -325,18 +337,84 @@ export const updateJobStatus = async (req: AuthRequest, res: Response, next: Nex
     await job.save();
     logger.info(`[updateJobStatus] Job ${job._id} transitioned ${currentStatus} → ${newStatus} by ${req.user?.email}`);
 
-    // GAP-04: Auto-post to any pending portals when job is published
+    // Auto-post to any pending portals when job is published
     if (newStatus === JobStatus.PUBLISHED) {
       setImmediate(() => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { triggerPendingPortalPostings } = require('../services/jobPortalService') as typeof import('../services/jobPortalService');
-          void triggerPendingPortalPostings(String(job._id));
-        } catch { /* non-fatal */ }
+        void triggerPendingPortalPostings(String(job._id)).catch(() => {});
       });
     }
 
-    sendSuccess(res, { job }, 'Job status updated');
+    const message =
+      newStatus === JobStatus.PENDING_APPROVAL
+        ? 'Job submitted for approval'
+        : 'Job status updated';
+    sendSuccess(res, { job }, message);
+  } catch (error) { next(error); }
+};
+
+/**
+ * @desc    Approve a job that is pending approval — publishes it immediately
+ * @route   PATCH /api/v1/jobs/:id/approve
+ * @access  Private (Employer, Admin only)
+ */
+export const approveJob = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) { sendError(res, 'Job not found', 404); return; }
+
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && job.companyId.toString() !== tenantId) {
+      sendError(res, "You don't have permission to approve this job", 403);
+      return;
+    }
+
+    if ((job as any).status !== JobStatus.PENDING_APPROVAL) {
+      sendError(res, `Job is not pending approval (current status: ${(job as any).status})`, 400);
+      return;
+    }
+
+    (job as any).status = JobStatus.PUBLISHED;
+    (job as any).approvedBy  = req.user?._id;
+    (job as any).approvedAt  = new Date();
+    await job.save();
+    logger.info(`[approveJob] Job ${job._id} approved and published by ${req.user?.email}`);
+
+    setImmediate(() => {
+      void triggerPendingPortalPostings(String(job._id)).catch(() => {});
+    });
+
+    sendSuccess(res, { job }, 'Job approved and published');
+  } catch (error) { next(error); }
+};
+
+/**
+ * @desc    Reject job approval — returns job to draft with optional remarks
+ * @route   PATCH /api/v1/jobs/:id/reject-approval
+ * @access  Private (Employer, Admin only)
+ */
+export const rejectJobApproval = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) { sendError(res, 'Job not found', 404); return; }
+
+    const tenantId = getTenantCompanyId(req.user);
+    if (tenantId && job.companyId.toString() !== tenantId) {
+      sendError(res, "You don't have permission to reject this job", 403);
+      return;
+    }
+
+    if ((job as any).status !== JobStatus.PENDING_APPROVAL) {
+      sendError(res, `Job is not pending approval (current status: ${(job as any).status})`, 400);
+      return;
+    }
+
+    (job as any).status = JobStatus.DRAFT;
+    if (req.body.remarks) {
+      (job as any).approvalRemarks = req.body.remarks;
+    }
+    await job.save();
+    logger.info(`[rejectJobApproval] Job ${job._id} approval rejected by ${req.user?.email}`);
+    sendSuccess(res, { job }, 'Job approval rejected — returned to draft');
   } catch (error) { next(error); }
 };
 

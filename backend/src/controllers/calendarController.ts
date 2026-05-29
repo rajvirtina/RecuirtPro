@@ -245,17 +245,20 @@ export const createCalendarEvent = async (
 
     // Create event based on provider
     let eventId: string;
-    let teamsJoinUrl: string | undefined;
+    let autoMeetingLink: string | undefined;
 
     switch (integration.provider) {
-      case CalendarProvider.GOOGLE:
-        eventId = await createGoogleCalendarEvent(interview, integration);
+      case CalendarProvider.GOOGLE: {
+        const result = await createGoogleCalendarEvent(interview, integration);
+        eventId = result.eventId;
+        autoMeetingLink = result.meetLink;
         break;
+      }
 
       case CalendarProvider.MICROSOFT: {
         const result = await createMicrosoftCalendarEvent(interview, integration);
         eventId = result.eventId;
-        teamsJoinUrl = result.joinUrl;
+        autoMeetingLink = result.joinUrl;
         break;
       }
 
@@ -267,11 +270,11 @@ export const createCalendarEvent = async (
         return sendError(res, 'Unsupported calendar provider', 400);
     }
 
-    // Update interview with calendar info (and Teams join URL if generated)
+    // Update interview with calendar info (and auto-generated meeting link if present)
     interview.calendarEventId = eventId;
     interview.calendarProvider = integration.provider;
-    if (teamsJoinUrl) {
-      interview.meetingLink = teamsJoinUrl;
+    if (autoMeetingLink) {
+      interview.meetingLink = autoMeetingLink;
     }
     await interview.save();
 
@@ -279,8 +282,10 @@ export const createCalendarEvent = async (
 
     return sendSuccess(
       res,
-      { eventId, ...(teamsJoinUrl ? { meetingLink: teamsJoinUrl } : {}) },
-      teamsJoinUrl ? 'Calendar event created with Teams meeting link' : 'Calendar event created successfully'
+      { eventId, ...(autoMeetingLink ? { meetingLink: autoMeetingLink } : {}) },
+      autoMeetingLink
+        ? 'Calendar event created with meeting link'
+        : 'Calendar event created successfully'
     );
   } catch (error: any) {
     logger.error('Error in createCalendarEvent:', error);
@@ -516,7 +521,10 @@ async function refreshAccessToken(integration: any) {
   }
 }
 
-async function createGoogleCalendarEvent(interview: any, integration: any): Promise<string> {
+async function createGoogleCalendarEvent(
+  interview: any,
+  integration: any
+): Promise<{ eventId: string; meetLink?: string }> {
   // SEC-11: Decrypt access token for API call
   const accessToken = integration.getDecryptedAccessToken?.() || integration.accessToken;
   const event = {
@@ -536,15 +544,28 @@ async function createGoogleCalendarEvent(interview: any, integration: any): Prom
       { email: interview.candidateId.email },
       ...interview.panel.map((p: any) => ({ email: p.email })),
     ],
+    // Auto-generate a Google Meet link (requires conferenceDataVersion=1 query param)
+    conferenceData: {
+      createRequest: {
+        requestId: `${interview._id}-${Date.now()}`,
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
+    },
   };
 
   const response = await axios.post(
-    'https://www.googleapis.com/calendar/v3/calendars/primary/events',
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
     event,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
-  return response.data.id;
+  const meetLink: string | undefined =
+    response.data?.hangoutLink ||
+    response.data?.conferenceData?.entryPoints?.find(
+      (ep: any) => ep.entryPointType === 'video'
+    )?.uri;
+
+  return { eventId: response.data.id, meetLink };
 }
 
 async function createMicrosoftCalendarEvent(interview: any, integration: any): Promise<{ eventId: string; joinUrl?: string }> {

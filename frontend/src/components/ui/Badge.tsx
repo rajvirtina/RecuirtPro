@@ -52,6 +52,7 @@ export function statusVariant(status: string): BadgeVariant {
     on_hold:             'gray',
     withdrawn:           'gray',
     published:           'green',
+    pending_approval:    'yellow',
     draft:               'yellow',
     closed:              'gray',
     expired:             'gray',

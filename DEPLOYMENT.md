@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Node.js 18+ installed
-- MongoDB 6.0+ (or MongoDB Atlas account)
+- MongoDB 7.0+ (or MongoDB Atlas account)
 - Redis (optional but recommended)
 - AWS Account (for S3 file storage)
 - Domain name and SSL certificate

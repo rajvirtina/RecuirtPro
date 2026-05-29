@@ -19,11 +19,12 @@ export enum UserStatus {
 
 // Job Status
 export enum JobStatus {
-  DRAFT = 'draft',
-  PUBLISHED = 'published',
-  CLOSED = 'closed',
-  ON_HOLD = 'on_hold',
-  EXPIRED = 'expired',
+  DRAFT            = 'draft',
+  PENDING_APPROVAL = 'pending_approval',
+  PUBLISHED        = 'published',
+  CLOSED           = 'closed',
+  ON_HOLD          = 'on_hold',
+  EXPIRED          = 'expired',
 }
 
 // Job Type

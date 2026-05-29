@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -7,17 +7,29 @@ import { Input } from '../../components/ui/Input';
 type UserType = 'employee' | 'employer';
 
 export default function Login() {
-  const navigate = useNavigate();
-  const login    = useAuthStore((state) => state.login);
-  const [loading, setLoading]           = useState(false);
-  const [error, setError]               = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab]       = useState<UserType>('employee');
-  const [formData, setFormData]         = useState({ email: '', password: '' });
+  const navigate       = useNavigate();
+  const [searchParams] = useSearchParams();
+  const login          = useAuthStore((state) => state.login);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState(searchParams.get('error') ?? '');
+  const [showPassword, setShowPassword]   = useState(false);
+  const [activeTab, setActiveTab]         = useState<UserType>('employee');
+  const [formData, setFormData]           = useState({ email: '', password: '' });
+  const [showSSO, setShowSSO]             = useState(false);
+  const [ssoSlug, setSSOSlug]             = useState('');
+  const [ssoLoading, setSSOLoading]       = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
+  };
+
+  const handleSSOLogin = () => {
+    const slug = ssoSlug.trim().toLowerCase();
+    if (!slug) return;
+    setSSOLoading(true);
+    const apiBase = import.meta.env.VITE_API_URL?.replace('/api', '') ?? 'http://localhost:5001';
+    window.location.href = `${apiBase}/api/v1/auth/sso/${slug}/initiate`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -148,6 +160,54 @@ export default function Login() {
           {!loading && `Sign in as ${activeTab === 'employee' ? 'Candidate' : 'Employer'}`}
         </Button>
       </form>
+
+      {/* SSO divider */}
+      <div className="mt-6 flex items-center gap-3">
+        <div className="flex-1 border-t border-neutral-200" />
+        <span className="text-xs text-neutral-400 shrink-0">or</span>
+        <div className="flex-1 border-t border-neutral-200" />
+      </div>
+
+      {!showSSO ? (
+        <button
+          type="button"
+          onClick={() => setShowSSO(true)}
+          className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-neutral-200 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
+        >
+          <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+          Sign in with SSO
+        </button>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <Input
+            label="Company Slug"
+            placeholder="your-company-slug"
+            value={ssoSlug}
+            onChange={(e) => setSSOSlug(e.target.value)}
+            autoFocus
+            helperText="The identifier your admin configured for SSO"
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              className="flex-1"
+              loading={ssoLoading}
+              onClick={handleSSOLogin}
+              disabled={!ssoSlug.trim()}
+            >
+              Continue with SSO
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => { setShowSSO(false); setSSOSlug(''); }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <p className="mt-6 text-center text-sm text-neutral-500">
