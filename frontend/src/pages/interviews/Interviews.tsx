@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { StatusBadge } from '../../components/ui/Badge';
@@ -9,6 +10,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyInterviews } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
 import { toast } from 'sonner';
+import { staggerContainer, staggerItem } from '../../lib/motion';
 
 interface Interview {
   _id: string;
@@ -84,8 +86,15 @@ export default function Interviews() {
     }
   };
 
+  const reduced = useReducedMotion();
+
   return (
-    <div className="p-6 space-y-5 animate-fade-in">
+    <motion.div
+      className="p-6 space-y-5"
+      initial={reduced ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
       {/* Header */}
       <div className="page-header">
         <div>
@@ -122,14 +131,25 @@ export default function Interviews() {
             <EmptyInterviews />
           </div>
         ) : (
-          interviews.map((iv) => {
+          <motion.div
+            className="space-y-3"
+            key={filter}
+            variants={reduced ? undefined : staggerContainer(0.06)}
+            initial="hidden"
+            animate="visible"
+          >
+          {interviews.map((iv) => {
             const dt = formatDateTime(iv.scheduledTime);
             const candidateName = iv.candidate
               ? `${iv.candidate.firstName} ${iv.candidate.lastName}`
               : '';
 
             return (
-              <div key={iv._id} className="card hover:border-primary-200 hover:shadow-sm transition-all duration-150">
+              <motion.div
+                key={iv._id}
+                className="card hover:border-primary-200 hover:shadow-sm transition-all duration-150"
+                variants={reduced ? undefined : staggerItem}
+              >
                 <div className="p-5">
                   <div className="flex items-start gap-4">
                     {/* Date block */}
@@ -244,9 +264,10 @@ export default function Interviews() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
-          })
+          })}
+          </motion.div>
         )}
       </div>
 
@@ -260,6 +281,6 @@ export default function Interviews() {
         onConfirm={handleConfirmCancel}
         onCancel={() => setCancelTarget(null)}
       />
-    </div>
+    </motion.div>
   );
 }

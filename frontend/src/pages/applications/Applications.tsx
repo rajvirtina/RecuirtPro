@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { Application } from '../../types';
@@ -12,6 +13,7 @@ import { EmptyApplications } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
 import { useDebounce } from '../../hooks/useDebounce';
 import { toast } from 'sonner';
+import { staggerContainer, staggerItem, slideDownVariants } from '../../lib/motion';
 
 const STATUS_TABS = [
   { label: 'All',         value: '' },
@@ -254,8 +256,15 @@ export default function Applications() {
   const allSelected = displayed.length > 0 && selected.size === displayed.length;
 
   /* ── Render ──────────────────────────────────────────────── */
+  const reduced = useReducedMotion();
+
   return (
-    <div className="p-6 space-y-5 animate-fade-in">
+    <motion.div
+      className="p-6 space-y-5"
+      initial={reduced ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
       {/* Header */}
       <div className="page-header flex-wrap gap-3">
         <div>
@@ -364,8 +373,15 @@ export default function Applications() {
         </div>
 
         {/* Smart filters panel */}
+        <AnimatePresence>
         {isEmployer && showFilters && (
-          <div className="card card-md animate-fade-in">
+          <motion.div
+            className="card card-md"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-neutral-700">AI-Powered Filters</h3>
               {hasSmartFilters && (
@@ -454,8 +470,9 @@ export default function Applications() {
                 )}
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
 
       {/* Table */}
@@ -501,7 +518,12 @@ export default function Applications() {
               <span />
             </div>
 
-            <div className="divide-y divide-neutral-100">
+            <motion.div
+              className="divide-y divide-neutral-100"
+              variants={reduced ? undefined : staggerContainer(0.04)}
+              initial="hidden"
+              animate="visible"
+            >
               {displayed.map((app: any) => {
                 const candidateName = isEmployer
                   ? `${app.candidateId?.firstName ?? ''} ${app.candidateId?.lastName ?? ''}`.trim() || 'Candidate'
@@ -516,7 +538,11 @@ export default function Applications() {
                 const source    = app.source as string | undefined;
 
                 return (
-                  <div key={app._id} className="group hover:bg-neutral-50 transition-colors">
+                  <motion.div
+                    key={app._id}
+                    className="group hover:bg-neutral-50 transition-colors"
+                    variants={reduced ? undefined : staggerItem}
+                  >
                     <div
                       className={`flex md:grid items-center gap-4 px-5 py-4 ${
                         isEmployer
@@ -617,10 +643,10 @@ export default function Applications() {
                         )}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
           </>
         )}
       </div>
@@ -636,6 +662,6 @@ export default function Applications() {
         onConfirm={handleWithdraw}
         onCancel={() => setWithdrawTarget(null)}
       />
-    </div>
+    </motion.div>
   );
 }

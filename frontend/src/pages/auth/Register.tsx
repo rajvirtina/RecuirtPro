@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../services/api';
 import { Input } from '../../components/ui/Input';
 import { CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+import { scaleVariants, slideDownVariants, staggerContainer, staggerItem } from '../../lib/motion';
 
 interface InvitationData {
   email: string;
@@ -167,12 +169,18 @@ export default function Register() {
 
   const isCandidate = formData.role === 'candidate';
   const showCompanyField = !invitationToken && isCandidate;
+  const reduced = useReducedMotion();
 
   // ── Email verification pending screen ───────────────────────────
   if (verificationPending) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center space-y-5">
+        <motion.div
+          className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center space-y-5"
+          variants={reduced ? undefined : scaleVariants}
+          initial="hidden"
+          animate="visible"
+        >
           <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto">
             <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
@@ -200,32 +208,48 @@ export default function Register() {
           >
             Back to Sign In
           </a>
-        </div>
+        </motion.div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
+      <motion.div
+        className="max-w-md w-full space-y-8"
+        variants={reduced ? undefined : staggerContainer(0.08)}
+        initial="hidden"
+        animate="visible"
+      >
+        <motion.div variants={reduced ? undefined : staggerItem}>
           <h2 className="mt-6 text-center text-4xl font-extrabold text-gray-900">
             Create your account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             {invitationToken ? 'Complete your registration' : 'Join RecuirtPro and streamline your recruitment process'}
           </p>
-        </div>
+        </motion.div>
 
         {/* Invitation Info Banner */}
+        <AnimatePresence>
         {verifyingToken && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <motion.div
+            className="bg-blue-50 border border-blue-200 rounded-lg p-4"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden" animate="visible" exit="exit"
+          >
             <p className="text-blue-700 text-center">Verifying invitation...</p>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
+        <AnimatePresence>
         {invitationData && !verifyingToken && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <motion.div
+            className="bg-green-50 border border-green-200 rounded-lg p-4"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden" animate="visible" exit="exit"
+          >
             <div className="flex items-start">
               <CheckCircleIcon className="h-5 w-5 text-green-500 mt-0.5 mr-2" />
               <div>
@@ -235,11 +259,17 @@ export default function Register() {
                 </p>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
+        <AnimatePresence>
         {error && invitationToken && !invitationData && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <motion.div
+            className="bg-red-50 border border-red-200 rounded-lg p-4"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden" animate="visible" exit="exit"
+          >
             <div className="flex items-start">
               <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mt-0.5 mr-2" />
               <div>
@@ -250,15 +280,28 @@ export default function Register() {
                 </Link>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
-        <form className="mt-8 space-y-6 bg-white p-8 rounded-xl shadow-lg" onSubmit={handleSubmit}>
+        <motion.form
+          className="mt-8 space-y-6 bg-white p-8 rounded-xl shadow-lg"
+          onSubmit={handleSubmit}
+          variants={reduced ? undefined : scaleVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          <AnimatePresence>
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+            <motion.div
+              className="bg-red-50 border-l-4 border-red-500 p-4 rounded"
+              variants={reduced ? undefined : slideDownVariants}
+              initial="hidden" animate="visible" exit="exit"
+            >
               <p className="text-sm text-red-700">{error}</p>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
 
           <div className="grid grid-cols-2 gap-4">
             <Input
@@ -431,8 +474,8 @@ export default function Register() {
               </Link>
             </p>
           </div>
-        </form>
-      </div>
+        </motion.form>
+      </motion.div>
     </div>
   );
 }

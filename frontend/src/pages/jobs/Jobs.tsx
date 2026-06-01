@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { toast } from 'sonner';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
@@ -10,6 +11,7 @@ import { Input } from '../../components/ui/Input';
 import { EmptyJobs } from '../../components/ui/EmptyState';
 import { SkeletonCard } from '../../components/ui/Skeleton';
 import { useDebounce } from '../../hooks/useDebounce';
+import { staggerContainer, staggerItem } from '../../lib/motion';
 
 function Icon({ d, className = 'w-4 h-4' }: { d: string; className?: string }) {
   return (
@@ -218,8 +220,15 @@ export default function Jobs() {
     }
   };
 
+  const reduced = useReducedMotion();
+
   return (
-    <div className="p-6 space-y-5 animate-fade-in">
+    <motion.div
+      className="p-6 space-y-5"
+      initial={reduced ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
       {/* Header */}
       <div className="page-header flex-wrap gap-4">
         <div>
@@ -286,11 +295,19 @@ export default function Jobs() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
+        <motion.div
+          className="space-y-3"
+          key={`${statusFilter}-${debouncedSearch}`}
+          variants={reduced ? undefined : staggerContainer(0.05)}
+          initial="hidden"
+          animate="visible"
+        >
           {displayed.map((job) => (
-            <JobCard key={job._id} job={job} isEmployer={isEmployer} onDuplicate={isEmployer ? handleDuplicate : undefined} />
+            <motion.div key={job._id} variants={reduced ? undefined : staggerItem}>
+              <JobCard job={job} isEmployer={isEmployer} onDuplicate={isEmployer ? handleDuplicate : undefined} />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       {/* Pagination */}
@@ -317,6 +334,6 @@ export default function Jobs() {
           </Button>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

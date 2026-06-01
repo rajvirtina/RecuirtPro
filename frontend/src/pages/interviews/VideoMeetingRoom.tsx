@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
+import { recordingPulse, scaleVariants, fadeVariants } from '../../lib/motion';
 
 interface Interview {
   _id: string;
@@ -140,6 +142,8 @@ export default function VideoMeetingRoom() {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploadingRecording, setIsUploadingRecording] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -800,6 +804,12 @@ export default function VideoMeetingRoom() {
     }
   };
 
+  const handleMouseMove = () => {
+    setControlsVisible(true);
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    controlsTimerRef.current = setTimeout(() => setControlsVisible(false), 3000);
+  };
+
   const cleanup = () => {
     // Stop active recording before leaving (uploads the blob if recording was in progress)
     stopRecordingRef.current();
@@ -831,13 +841,31 @@ export default function VideoMeetingRoom() {
     hasJoinedRoomRef.current = false;
   };
 
+  const reduced = useReducedMotion();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto"></div>
-          <p className="mt-4 text-gray-300">Joining meeting...</p>
-        </div>
+        <motion.div
+          className="text-center"
+          initial={reduced ? false : { opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, ease: [0, 0, 0.2, 1] }}
+        >
+          <motion.div
+            className="rounded-full h-14 w-14 border-2 border-indigo-500 border-t-transparent mx-auto"
+            animate={reduced ? {} : { rotate: 360 }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+          />
+          <motion.p
+            className="mt-5 text-gray-300 text-sm font-medium"
+            initial={reduced ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.3 }}
+          >
+            Joining meeting…
+          </motion.p>
+        </motion.div>
       </div>
     );
   }
@@ -846,7 +874,12 @@ export default function VideoMeetingRoom() {
   if (mediaError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 p-6">
-        <div className="max-w-md w-full bg-gray-800 rounded-xl shadow-lg p-8 text-center space-y-5 border border-gray-700">
+        <motion.div
+          className="max-w-md w-full bg-gray-800 rounded-xl shadow-lg p-8 text-center space-y-5 border border-gray-700"
+          variants={reduced ? undefined : scaleVariants}
+          initial="hidden"
+          animate="visible"
+        >
           <div className="w-16 h-16 bg-red-900/40 rounded-full flex items-center justify-center mx-auto">
             <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -872,7 +905,7 @@ export default function VideoMeetingRoom() {
           <p className="text-xs text-gray-500">
             If camera/microphone access is blocked, click the 🔒 lock icon in your browser's address bar and allow access, then retry.
           </p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -881,7 +914,7 @@ export default function VideoMeetingRoom() {
   const candidateName = getCandidateName(interview);
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
+    <div className="min-h-screen bg-gray-900 flex flex-col" onMouseMove={handleMouseMove}>
       {/* Panel size warning banner */}
       {panelWarning && (
         <div className={`px-4 py-2 text-sm font-medium text-center flex-shrink-0 ${
@@ -901,12 +934,25 @@ export default function VideoMeetingRoom() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-semibold text-white">{jobTitle}</h1>
+            <AnimatePresence>
             {isRecording && (
-              <span className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full text-xs font-medium">
-                <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+              <motion.span
+                className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-full text-xs font-medium"
+                initial={reduced ? false : { opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              >
+                <motion.span
+                  className="w-2 h-2 bg-white rounded-full"
+                  variants={reduced ? undefined : recordingPulse}
+                  initial="rest"
+                  animate="pulsing"
+                />
                 Recording
-              </span>
+              </motion.span>
             )}
+            </AnimatePresence>
             {isUploadingRecording && (
               <span className="flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded-full text-xs font-medium">
                 <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
@@ -973,9 +1019,19 @@ export default function VideoMeetingRoom() {
           </div>
 
           {/* Remote Participants — all of them, unlimited */}
+          <AnimatePresence>
           {Array.from(participants.values()).map((participant) => (
-            <RemoteVideo key={participant.socketId} participant={participant} />
+            <motion.div
+              key={participant.socketId}
+              initial={reduced ? false : { opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+            >
+              <RemoteVideo participant={participant} />
+            </motion.div>
           ))}
+          </AnimatePresence>
 
           {/* Waiting placeholder — only when no one else has joined yet */}
           {participants.size === 0 && (
@@ -1033,8 +1089,12 @@ export default function VideoMeetingRoom() {
         )}
       </div>
 
-      {/* Controls */}
-      <div className="bg-gray-800 border-t border-gray-700 px-6 py-4 flex-shrink-0">
+      {/* Controls — auto-hides after 3 s of inactivity */}
+      <motion.div
+        className="bg-gray-800 border-t border-gray-700 px-6 py-4 flex-shrink-0"
+        animate={reduced ? {} : { opacity: controlsVisible ? 1 : 0, y: controlsVisible ? 0 : 8 }}
+        transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+      >
         <div className="flex items-center justify-center gap-4">
           <button
             onClick={toggleMicrophone}
@@ -1109,7 +1169,7 @@ export default function VideoMeetingRoom() {
             </button>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
