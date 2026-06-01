@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import apiClient from '../services/api';
 import { StatCard } from '../components/ui/StatCard';
@@ -9,6 +10,7 @@ import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { SkeletonPage } from '../components/ui/Skeleton';
 import { EmptyApplications } from '../components/ui/EmptyState';
+import { staggerContainer, staggerItem, dur, ease } from '../lib/motion';
 
 /* ── Icon helpers ──────────────────────────────────────────────── */
 function Icon({ d, className = 'w-5 h-5' }: { d: string; className?: string }) {
@@ -54,10 +56,16 @@ function PipelineBar({ stages }: { stages: { label: string; count: number; color
 /* ── Candidate Dashboard ──────────────────────────────────────── */
 function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
   const navigate = useNavigate();
+  const reduced = useReducedMotion();
   const recentApps: any[] = stats?.recentApplications || [];
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
+    <motion.div
+      className="p-6 space-y-6"
+      initial={reduced ? undefined : { opacity: 0, y: 8 }}
+      animate={reduced ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: dur.base, ease: ease.enter }}
+    >
       {/* Page header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
@@ -180,13 +188,14 @@ function CandidateDashboard({ user, stats }: { user: any; stats: any }) {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 /* ── Employer Dashboard ───────────────────────────────────────── */
 function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
   const navigate = useNavigate();
+  const reduced = useReducedMotion();
 
   const pipelineStages = [
     { label: 'Applied',   count: stats?.pipeline?.applied    ?? stats?.overview?.totalApplications ?? 0,    color: 'bg-info-500' },
@@ -202,7 +211,12 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
   ).slice(0, 5);
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
+    <motion.div
+      className="p-6 space-y-6"
+      initial={reduced ? undefined : { opacity: 0, y: 8 }}
+      animate={reduced ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: dur.base, ease: ease.enter }}
+    >
       {/* Page header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
@@ -289,7 +303,12 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
               <p className="text-xs text-neutral-500 mt-1">No applications need immediate attention.</p>
             </div>
           ) : (
-            <div className="divide-y divide-neutral-100">
+            <motion.div
+              className="divide-y divide-neutral-100"
+              variants={staggerContainer(0.05)}
+              initial="hidden"
+              animate="visible"
+            >
               {needsAction.map((app: any) => {
                 const candidateName = app.candidateId
                   ? `${app.candidateId.firstName ?? ''} ${app.candidateId.lastName ?? ''}`
@@ -298,8 +317,8 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
                   (Date.now() - new Date(app.appliedAt || app.createdAt).getTime()) / 86400000
                 );
                 return (
+                  <motion.div key={app._id} variants={staggerItem}>
                   <Link
-                    key={app._id}
                     to={`/applications/${app._id}`}
                     className="flex items-center gap-4 px-6 py-4 hover:bg-neutral-50 transition-colors group"
                   >
@@ -315,9 +334,10 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
                     <StatusBadge status={app.status} />
                     <Icon d="M9 5l7 7-7 7" className="w-4 h-4 text-neutral-300 group-hover:text-neutral-500" />
                   </Link>
+                  </motion.div>
                 );
               })}
-            </div>
+            </motion.div>
           )}
         </div>
 
@@ -357,7 +377,7 @@ function EmployerDashboard({ user, stats }: { user: any; stats: any }) {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 

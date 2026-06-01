@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import apiClient from '../../services/api';
 
 interface Violation {
@@ -45,6 +46,7 @@ interface Interview {
 }
 
 export default function ProctoringDashboard() {
+  const reduced = useReducedMotion();
   const [activeInterviews, setActiveInterviews] = useState<Interview[]>([]);
   const [recentViolations, setRecentViolations] = useState<Violation[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -420,40 +422,50 @@ export default function ProctoringDashboard() {
                 No violations detected
               </div>
             ) : (
-              recentViolations.map((violation) => (
-                <div key={violation._id} className={`p-4 border-l-4 ${getSeverityColor(violation.severity)}`}>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium">
-                          {getEventTypeLabel(violation.eventType)}
-                        </span>
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(violation.severity)}`}>
-                          {violation.severity}
-                        </span>
+              <AnimatePresence initial={false}>
+                {recentViolations.map((violation) => (
+                  <motion.div
+                    key={violation._id}
+                    className={`p-4 border-l-4 ${getSeverityColor(violation.severity)} ${violation.severity === 'critical' ? 'animate-attention' : ''}`}
+                    initial={reduced ? undefined : { opacity: 0, y: -12 }}
+                    animate={reduced ? undefined : { opacity: 1, y: 0 }}
+                    exit={reduced ? undefined : { opacity: 0, height: 0, overflow: 'hidden' }}
+                    transition={{ duration: 0.22, ease: [0, 0, 0.2, 1] }}
+                    layout
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium">
+                            {getEventTypeLabel(violation.eventType)}
+                          </span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getSeverityColor(violation.severity)}`}>
+                            {violation.severity}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{violation.description}</p>
+                        {violation.metadata?.details && (
+                          <p className="text-xs text-gray-500 mt-1">{violation.metadata.details}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-2">
+                          {new Date(violation.timestamp).toLocaleString()}
+                        </p>
                       </div>
-                      <p className="text-sm text-gray-700 mt-1">{violation.description}</p>
-                      {violation.metadata?.details && (
-                        <p className="text-xs text-gray-500 mt-1">{violation.metadata.details}</p>
+                      {!violation.reviewed && (
+                        <button
+                          onClick={() => {
+                            const comments = prompt('Review comments:');
+                            if (comments) reviewViolation(violation._id, comments);
+                          }}
+                          className="ml-4 text-sm text-indigo-600 hover:text-indigo-800"
+                        >
+                          Review
+                        </button>
                       )}
-                      <p className="text-xs text-gray-400 mt-2">
-                        {new Date(violation.timestamp).toLocaleString()}
-                      </p>
                     </div>
-                    {!violation.reviewed && (
-                      <button
-                        onClick={() => {
-                          const comments = prompt('Review comments:');
-                          if (comments) reviewViolation(violation._id, comments);
-                        }}
-                        className="ml-4 text-sm text-indigo-600 hover:text-indigo-800"
-                      >
-                        Review
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             )}
           </div>
         </div>

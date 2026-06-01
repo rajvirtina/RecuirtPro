@@ -1,9 +1,11 @@
 /**
  * QuestionCard
  * Displays the current interview question with type badge, text, and timing hint.
+ * Animates in from the right and out to the left (slide) on question change,
+ * driven by AnimatePresence + key in the parent.
  */
 
-import React from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 
 export interface Question {
   id: string;
@@ -39,12 +41,19 @@ export default function QuestionCard({
   totalQuestions,
   elapsedQuestionSec,
 }: Props) {
+  const reduced = useReducedMotion();
   const meta  = TYPE_META[question.type] ?? { label: question.type.replace(/_/g, ' ').toUpperCase(), color: 'text-neutral-600 bg-neutral-100 border-neutral-200' };
   const suggestedMin = Math.ceil(question.expectedDurationSeconds / 60);
   const isOverTime = elapsedQuestionSec != null && elapsedQuestionSec > question.expectedDurationSeconds * 1.4;
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full">
+    <motion.div
+      className="bg-white rounded-2xl shadow-lg p-8 max-w-2xl w-full"
+      initial={reduced ? undefined : { opacity: 0, x: 32 }}
+      animate={reduced ? undefined : { opacity: 1, x: 0 }}
+      exit={reduced ? undefined : { opacity: 0, x: -32 }}
+      transition={{ duration: 0.28, ease: [0, 0, 0.2, 1] }}
+    >
       {/* Type badge */}
       <span className={`inline-block text-xs font-mono font-semibold uppercase tracking-widest px-2.5 py-1 rounded-md border mb-5 ${meta.color}`}>
         {meta.label}
@@ -76,6 +85,6 @@ export default function QuestionCard({
           <span>Q{questionNumber}/{totalQuestions}</span>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

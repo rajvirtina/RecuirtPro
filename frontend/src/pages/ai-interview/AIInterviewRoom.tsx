@@ -18,6 +18,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import confetti from 'canvas-confetti';
 import { toast } from 'sonner';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 
 import QuestionCard, { Question } from './components/QuestionCard';
 import VoiceRecorder             from './components/VoiceRecorder';
@@ -278,9 +279,14 @@ function RecommendationBadge({ rec }: { rec: string }) {
   };
   const m = map[rec] ?? { label: rec, cls: 'bg-neutral-100 text-neutral-700 border-neutral-300' };
   return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full border text-xs font-bold ${m.cls}`}>
+    <motion.span
+      className={`inline-flex items-center px-3 py-1 rounded-full border text-xs font-bold ${m.cls}`}
+      initial={{ scale: 0.5, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+    >
       {m.label}
-    </span>
+    </motion.span>
   );
 }
 
@@ -289,6 +295,7 @@ function RecommendationBadge({ rec }: { rec: string }) {
 export default function AIInterviewRoom() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [state, dispatch] = useReducer(reducer, initialState);
+  const reduced = useReducedMotion();
 
   // ── Timer state ─────────────────────────────────────────────────────────────
   const [elapsedSec, setElapsedSec]     = useState(0);
@@ -601,7 +608,12 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (phase === 'initialising') return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center gap-5">
+    <motion.div
+      className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center gap-5"
+      initial={reduced ? undefined : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.25 }}
+    >
       {/* Skeleton top bar */}
       <div className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-neutral-100 animate-pulse" />
 
@@ -615,7 +627,7 @@ export default function AIInterviewRoom() {
           ))}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -623,7 +635,12 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (phase === 'error') return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4">
+    <motion.div
+      className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4"
+      initial={reduced ? undefined : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
       <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center space-y-5">
         <div className="w-14 h-14 bg-error-50 border border-error-200 rounded-full flex items-center justify-center mx-auto">
           <svg className="w-7 h-7 text-error-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -650,7 +667,7 @@ export default function AIInterviewRoom() {
           </a>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -686,7 +703,12 @@ export default function AIInterviewRoom() {
 
     // Default: show interview overview + single-click consent (no proctoring)
     return (
-      <div className="min-h-screen bg-neutral-50 flex flex-col">
+      <motion.div
+        className="min-h-screen bg-neutral-50 flex flex-col"
+        initial={reduced ? undefined : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0, 0, 0.2, 1] }}
+      >
         {/* Minimal top bar */}
         <header className="h-14 bg-white border-b border-neutral-100 flex items-center px-6 gap-3 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-primary-100 flex items-center justify-center shrink-0">
@@ -767,7 +789,7 @@ export default function AIInterviewRoom() {
             </p>
           </div>
         </main>
-      </div>
+      </motion.div>
     );
   }
 
@@ -776,7 +798,12 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (phase === 'briefing') return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4 gap-8">
+    <motion.div
+      className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4 gap-8"
+      initial={reduced ? undefined : { opacity: 0, scale: 0.97 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, ease: [0, 0, 0.2, 1] }}
+    >
       <div className="max-w-sm w-full space-y-7 text-center">
 
         {/* Role overview */}
@@ -814,7 +841,7 @@ export default function AIInterviewRoom() {
           </p>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -822,7 +849,12 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (phase === 'completed') return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col">
+    <motion.div
+      className="min-h-screen bg-neutral-50 flex flex-col"
+      initial={reduced ? undefined : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0, 0, 0.2, 1] }}
+    >
       <header className="h-14 bg-white border-b border-neutral-100 flex items-center justify-center px-6 shrink-0">
         <p className="text-sm font-semibold text-neutral-700">
           {session?.companyName} — {session?.jobTitle}
@@ -927,7 +959,7 @@ export default function AIInterviewRoom() {
           </p>
         </div>
       </main>
-    </div>
+    </motion.div>
   );
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -935,7 +967,13 @@ export default function AIInterviewRoom() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (phase === 'submitting' || phase === 'evaluating') return (
-    <div className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4 gap-6">
+    <motion.div
+      key="evaluating"
+      className="min-h-screen bg-neutral-50 flex flex-col items-center justify-center px-4 gap-6"
+      initial={reduced ? undefined : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
+    >
 
       {phase === 'evaluating' && lastScores ? (
         /* Show per-question scores while loading next question */
@@ -988,7 +1026,7 @@ export default function AIInterviewRoom() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -997,7 +1035,12 @@ export default function AIInterviewRoom() {
 
   return (
     <ProctoringMonitor sessionId={sessionId!} enabled={session?.proctoringEnabled ?? false}>
-    <div className="min-h-screen bg-neutral-50 flex flex-col">
+    <motion.div
+      className="min-h-screen bg-neutral-50 flex flex-col"
+      initial={reduced ? undefined : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, ease: [0, 0, 0.2, 1] }}
+    >
 
       {/* ─── Top bar ─────────────────────────────────────────────────────────── */}
       <header className="h-14 bg-white border-b border-neutral-100 flex items-center px-4 sm:px-6 z-20 shrink-0">
@@ -1059,15 +1102,18 @@ export default function AIInterviewRoom() {
           </div>
         )}
 
-        {/* Question card */}
-        {currentQuestion && (
-          <QuestionCard
-            question={currentQuestion}
-            questionNumber={questionNumber}
-            totalQuestions={totalQuestions}
-            elapsedQuestionSec={questionSec}
-          />
-        )}
+        {/* Question card — slides in for each new question */}
+        <AnimatePresence mode="wait" initial={false}>
+          {currentQuestion && (
+            <QuestionCard
+              key={currentQuestion.id}
+              question={currentQuestion}
+              questionNumber={questionNumber}
+              totalQuestions={totalQuestions}
+              elapsedQuestionSec={questionSec}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Response area */}
         <div className="max-w-2xl w-full space-y-3">
@@ -1179,12 +1225,23 @@ export default function AIInterviewRoom() {
       </footer>
 
       {/* ─── Flag / Report Issue dialog ──────────────────────────────────────── */}
+      <AnimatePresence>
       {showFlagDialog && (
-        <div
+        <motion.div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowFlagDialog(false); }}
         >
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4">
+          <motion.div
+            className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full space-y-4"
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 4 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-neutral-900">Report an Issue</h3>
               <button
@@ -1225,14 +1282,28 @@ export default function AIInterviewRoom() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ─── Disconnected overlay ─────────────────────────────────────────────── */}
+      <AnimatePresence>
       {phase === 'disconnected' && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center space-y-5">
+        <motion.div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center space-y-5"
+            initial={{ opacity: 0, scale: 0.92, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+          >
             <div className="w-14 h-14 bg-warning-50 border border-warning-200 rounded-full flex items-center justify-center mx-auto">
               <svg className="w-7 h-7 text-warning-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -1260,10 +1331,11 @@ export default function AIInterviewRoom() {
             >
               Reconnect Now
             </button>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
-    </div>
+      </AnimatePresence>
+    </motion.div>
     </ProctoringMonitor>
   );
 }
