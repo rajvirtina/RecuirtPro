@@ -787,36 +787,58 @@ export const sendInterviewInvitationEmail = async (
 
     if (!interview) { sendError(res, 'Interview not found', 404); return; }
 
-    const candidate  = interview.candidateId as any;
-    const job        = interview.jobId as any;
-    const company    = interview.companyId as any;
+    // P2-02: only scheduled/confirmed interviews should receive invitations
+    const interviewStatus = (interview as any).status || '';
+    if (!['scheduled', 'confirmed', 'pending'].includes(interviewStatus)) {
+      sendError(res, `Cannot send invitation for an interview with status: ${interviewStatus}`, 400); return;
+    }
 
-    const frontendUrl    = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const platformName   = process.env.PLATFORM_NAME || 'RecuirtPro';
-    const supportEmail   = process.env.SUPPORT_EMAIL || 'support@recruirtpro.com';
+    const candidate = interview.candidateId as any;
+    const job       = interview.jobId as any;
+    const company   = interview.companyId as any;
 
-    // System check routes through /system-check/:interviewId?redirect=<room>
+    // P0-05: Idempotency — block resends within 5-minute cooldown window
+    const RESEND_COOLDOWN_MS = 5 * 60 * 1000;
+    const lastSentAt = (interview as any).invitationSentAt;
+    if (lastSentAt) {
+      const msSinceLast = Date.now() - new Date(lastSentAt).getTime();
+      if (msSinceLast < RESEND_COOLDOWN_MS) {
+        const waitMin = Math.ceil((RESEND_COOLDOWN_MS - msSinceLast) / 60_000);
+        sendError(res, `Invitation already sent recently. Please wait ${waitMin} minute(s) before resending.`, 429);
+        return;
+      }
+    }
+
+    // P1-06: Validate IANA timezone — reject garbage values silently
+    const rawTz = req.body.timezone;
+    let safeTimezone = 'UTC';
+    if (rawTz) {
+      try { new Intl.DateTimeFormat('en', { timeZone: rawTz }); safeTimezone = rawTz; }
+      catch { logger.warn(`[Email Invite] Invalid timezone "${rawTz}" — falling back to UTC`); }
+    }
+
+    const frontendUrl  = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const platformName = process.env.PLATFORM_NAME || 'RecuirtPro';
+    const supportEmail = process.env.SUPPORT_EMAIL || 'support@recruirtpro.com';
+
     const systemCheckUrl = `${frontendUrl}/system-check/${interviewId}`;
     const roomJoinUrl    = `${frontendUrl}/interviews/${interviewId}/room`;
-    const jobDescUrl     = job?._id
-      ? `${frontendUrl}/jobs/${job._id}`
-      : undefined;
+    const jobDescUrl     = job?._id ? `${frontendUrl}/jobs/${job._id}` : undefined;
 
     const scheduledAt = interview.scheduledTime ? new Date(interview.scheduledTime as any) : new Date();
     const dateStr     = scheduledAt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
     const timeStr     = scheduledAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    // Render template from emailTemplates
     const { emailTemplates } = require('../utils/emailTemplates') as typeof import('../utils/emailTemplates');
     const html = emailTemplates.aiInterviewInvitation({
-      candidateName:    candidate.firstName,
-      positionTitle:    job?.title || 'the open position',
-      companyName:      company?.name || 'our company',
-      interviewDate:    dateStr,
-      interviewTime:    timeStr,
-      interviewTimezone: req.body.timezone || 'UTC',
+      candidateName:     candidate.firstName,
+      positionTitle:     job?.title || 'the open position',
+      companyName:       company?.name || 'our company',
+      interviewDate:     dateStr,
+      interviewTime:     timeStr,
+      interviewTimezone: safeTimezone,
       systemCheckUrl,
-      rawJoinUrl:       roomJoinUrl,
+      rawJoinUrl:        roomJoinUrl,
       jobDescriptionUrl: jobDescUrl,
       supportEmail,
       platformName,
@@ -826,8 +848,14 @@ export const sendInterviewInvitationEmail = async (
 
     await sendEmail({ to: candidate.email, subject, html });
 
+    // P0-05: Persist audit trail so HR dashboard can show "Last sent: X" and prevent duplicates
+    await Interview.findByIdAndUpdate(interviewId, {
+      $set:  { invitationSentAt: new Date(), invitationStatus: 'sent' },
+      $push: { invitationLog: { sentAt: new Date(), sentBy: req.user?._id, sentTo: candidate.email, timezone: safeTimezone } },
+    });
+
     logger.info(`[AI Interview] Invitation email sent → ${candidate.email} for interview ${interviewId}`);
-    sendSuccess(res, { sentTo: candidate.email }, 'Invitation email sent');
+    sendSuccess(res, { sentTo: candidate.email, sentAt: new Date().toISOString() }, 'Invitation email sent');
   } catch (error: any) {
     logger.error('sendInterviewInvitationEmail error:', error);
     sendError(res, error.message || 'Failed to send invitation', 500);
@@ -877,14 +905,23 @@ export const getInterviewReport = async (
 
     if (!analysis) { sendError(res, 'Report not yet generated for this session', 400); return; }
 
-    // ── Normalise raw 0–100 analysis scores to 0–10 scale ────────────────────
-    const norm = (v: number) => parseFloat(((v ?? 0) / 10).toFixed(1));
-    const techScore = norm(analysis.technicalScore);
-    const commScore = norm(analysis.communicationScore);
-    const confScore = norm(analysis.confidenceScore);
-    const overScore = norm(analysis.overallScore);
+    // ── P0-01: Scale-safe normaliser — handles both 0-100 and 0-10 LLM outputs ──
+    const normScore = (v: unknown, field: string): number => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v ?? '0'));
+      if (isNaN(n)) { logger.warn(`[Report] Non-numeric score for "${field}": ${v} — defaulting to 0`); return 0; }
+      const on10 = n > 10 ? n / 10 : n;
+      return parseFloat(Math.min(10, Math.max(0, on10)).toFixed(1));
+    };
 
-    // ── Derive per-skill gap label ────────────────────────────────────────────
+    const techScore = normScore(analysis.technicalScore,     'technicalScore');
+    const commScore = normScore(analysis.communicationScore, 'communicationScore');
+    const confScore = normScore(analysis.confidenceScore,    'confidenceScore');
+    const overScore = normScore(analysis.overallScore,       'overallScore');
+    const passRate  = analysis.questionsAnswered > 0
+      ? analysis.questionsPassed / analysis.questionsAnswered
+      : 0;
+
+    // ── Gap label ──────────────────────────────────────────────────────────────
     const gapLabel = (actual: number, expected: number): string => {
       const d = actual - expected;
       if (d >= 0) return 'Above';
@@ -894,136 +931,190 @@ export const getInterviewReport = async (
       return 'Below -2.0';
     };
 
-    // ── Build technical skill cards (one per question type assessed) ──────────
-    const questionTypes = [...new Set((session.questions || []).map((q: any) => q.type))];
-    const techExpected = 7.0;
+    // ── P1-02: Context-aware quality note (not a generic tier label) ──────────
+    const deriveQualityNote = (rawScore: number, skillType: string): string => {
+      const s = rawScore > 10 ? rawScore / 10 : rawScore;
+      const label = skillType ? ` of ${skillType}` : '';
+      if (s >= 7) return `Demonstrated clear, practical understanding${label} with well-structured reasoning.`;
+      if (s >= 4) return `Showed basic grasp${label} — deeper real-world examples would strengthen the answer.`;
+      return `Response lacked depth${label} — key concepts or practical evidence were absent.`;
+    };
+
+    // ── P0-06: Distinct per-skill comment generator ───────────────────────────
+    const skillComment = (qtype: string, avgScore: number, responses: any[]): string => {
+      const distinct = responses.find(
+        (r: any) => r.feedback && r.feedback !== analysis!.summary && r.feedback.length > 20
+      );
+      if (distinct) return distinct.feedback;
+      const tier = avgScore >= 8 ? 'strong' : avgScore >= 6 ? 'solid' : avgScore >= 4 ? 'basic' : 'limited';
+      const n = responses.length;
+      return `Demonstrated ${tier} ${qtype} knowledge across ${n} question${n !== 1 ? 's' : ''}. ` +
+        (avgScore >= 6
+          ? 'Practical examples and structured answers were evident.'
+          : 'Responses were primarily theoretical — practical depth was not demonstrated.');
+    };
+
+    // ── P2-06: Build questionId map for safe Q&A pairing ─────────────────────
+    const questionById = new Map(
+      (session.questions || []).map((q: any) => [q.id, q])
+    );
+
+    // ── Technical skills ──────────────────────────────────────────────────────
+    const techExpected  = 7.0;
+    const questionTypes = [...new Set((session.questions || []).map((q: any) => q.type as string))];
 
     const technicalSkills = questionTypes.length > 0
-      ? questionTypes.map((qtype: any) => {
-          const relResponses = (session.responses || []).filter((_: any, i: number) =>
-            (session.questions[i] as any)?.type === qtype
+      ? questionTypes.map((qtype) => {
+          const relResponses = (session.responses || []).filter((r: any) =>
+            (questionById.get(r.questionId) as any)?.type === qtype
           ) as any[];
-          const avgScore = relResponses.length > 0
-            ? parseFloat((relResponses.reduce((s: number, r: any) => s + (r.scores?.overall ?? 5), 0) / relResponses.length / 10).toFixed(1))
-            : techScore;
-          const proficiency =
-            avgScore >= 8 ? 'Advanced'
+          const rawAvg = relResponses.length > 0
+            ? relResponses.reduce((s: number, r: any) => s + (r.scores?.overall ?? 5), 0) / relResponses.length
+            : analysis!.technicalScore ?? 50;
+          const avgScore = normScore(rawAvg, `tech.${qtype}`);
+
+          // P0-02: read explicit typeDemonstrated from LLM if available; score-threshold is a fallback only
+          const explicitType = relResponses.find((r: any) => r.typeDemonstrated)?.typeDemonstrated;
+          const typeDemo = explicitType
+            || (avgScore >= 7 ? 'Hands-on' : avgScore >= 4 ? 'Theoretical' : 'Not Assessed');
+
+          const proficiency = avgScore >= 8 ? 'Advanced'
             : avgScore >= 6 ? 'Intermediate'
             : avgScore >= 3 ? 'Beginner'
             : 'No exposure';
+
           return {
             skill_name:               qtype.charAt(0).toUpperCase() + qtype.slice(1),
             score:                    avgScore,
-            years_experience:         0, // candidate-reported; not yet collected in v1
-            type_demonstrated:        avgScore >= 6 ? 'Hands-on' : 'Theoretical',
+            years_experience:         relResponses.find((r: any) => r.yearsExperienceClaimed != null)
+              ?.yearsExperienceClaimed ?? 0,
+            type_demonstrated:        typeDemo,
             proficiency_demonstrated: proficiency,
             expected_score:           techExpected,
             gap:                      parseFloat((avgScore - techExpected).toFixed(1)),
             gap_label:                gapLabel(avgScore, techExpected),
             jd_required:              true,
             assessed:                 true,
-            ai_comment: relResponses.length > 0
-              ? (relResponses.find((r: any) => r.feedback)?.feedback || analysis.summary || '')
-              : 'Not assessed during this session.',
+            ai_comment:               skillComment(qtype, avgScore, relResponses),
           };
         })
       : [{
           skill_name:               'Technical Knowledge',
           score:                    techScore,
           years_experience:         0,
-          type_demonstrated:        techScore >= 6 ? 'Hands-on' : 'Theoretical',
+          type_demonstrated:        techScore >= 7 ? 'Hands-on' : techScore >= 4 ? 'Theoretical' : 'Not Assessed',
           proficiency_demonstrated: techScore >= 8 ? 'Advanced' : techScore >= 6 ? 'Intermediate' : techScore >= 3 ? 'Beginner' : 'No exposure',
           expected_score:           techExpected,
           gap:                      parseFloat((techScore - techExpected).toFixed(1)),
           gap_label:                gapLabel(techScore, techExpected),
           jd_required:              true,
           assessed:                 true,
-          ai_comment:               analysis.summary || '',
+          ai_comment:               skillComment('technical', techScore, []),
         }];
 
-    // ── FutureMug 7 behavioral dimensions ────────────────────────────────────
+    // ── P0-07: FutureMug 7 behavioral dimensions — independent signals ────────
+    // Use LLM sub-scores if available (Prompt A output); else derive from distinct weighted blends
+    const sub = (analysis as any).behavioralSubScores || {};
+    const b = {
+      industryAwareness:  sub.industryAwareness  != null ? normScore(sub.industryAwareness,  'industryAwareness')  : parseFloat(Math.min(10, 0.7 * techScore + 0.3 * overScore).toFixed(1)),
+      engineeringMindset: sub.engineeringMindset != null ? normScore(sub.engineeringMindset, 'engineeringMindset') : parseFloat(Math.min(10, 0.6 * techScore + 0.4 * confScore).toFixed(1)),
+      attitude:           sub.attitude           != null ? normScore(sub.attitude,           'attitude')           : parseFloat(Math.min(10, 0.5 * overScore + 0.5 * confScore).toFixed(1)),
+      teamWork:           sub.teamWork           != null ? normScore(sub.teamWork,            'teamWork')           : parseFloat(Math.min(10, 0.7 * commScore + 0.3 * overScore).toFixed(1)),
+      problemSolving:     sub.problemSolving     != null ? normScore(sub.problemSolving,      'problemSolving')     : parseFloat(Math.min(10, 0.5 * techScore + 0.5 * (passRate * 10)).toFixed(1)),
+      analyticalSkill:    sub.analyticalSkill    != null ? normScore(sub.analyticalSkill,     'analyticalSkill')    : parseFloat(Math.min(10, 0.5 * techScore + 0.3 * confScore + 0.2 * commScore).toFixed(1)),
+    };
+
     const behavioralSkills = [
-      {
-        skill_name:     'Communication',
-        score:          commScore,
-        expected_score: 7.0,
-        ai_comment:     analysis.strengths?.[0] || 'Communication observed across all responses.',
-      },
-      {
-        skill_name:     'Industry Awareness',
-        score:          parseFloat(Math.max(0, techScore - 0.5).toFixed(1)),
-        expected_score: 6.0,
-        ai_comment:     'Assessed from depth and currency of technical answers.',
-      },
-      {
-        skill_name:     'Engineering Mindset',
-        score:          techScore,
-        expected_score: 7.0,
-        ai_comment:     'Evaluated through approach to technical and situational questions.',
-      },
-      {
-        skill_name:     'Attitude',
-        score:          overScore,
-        expected_score: 7.0,
-        ai_comment:     'Inferred from engagement and response quality throughout the session.',
-      },
-      {
-        skill_name:     'Team Work',
-        score:          commScore,
-        expected_score: 7.0,
-        ai_comment:     'Assessed from behavioural responses involving collaboration scenarios.',
-      },
-      {
-        skill_name:     'Problem Solving',
-        score:          techScore,
-        expected_score: 7.0,
-        ai_comment:     analysis.improvements?.[0] || 'Evaluated through situational and technical questions.',
-      },
-      {
-        skill_name:     'Analytical Skill',
-        score:          parseFloat(((techScore + confScore) / 2).toFixed(1)),
-        expected_score: 6.0,
-        ai_comment:     'Derived from structured reasoning observed in technical answers.',
-      },
+      { skill_name: 'Communication',      score: commScore,           expected_score: 7.0, ai_comment: analysis.strengths?.[0] || 'Communication observed across all responses.' },
+      { skill_name: 'Industry Awareness', score: b.industryAwareness, expected_score: 6.0, ai_comment: 'Assessed from depth and currency of technical answers relative to current industry practices.' },
+      { skill_name: 'Engineering Mindset',score: b.engineeringMindset,expected_score: 7.0, ai_comment: 'Evaluated through approach to technical and situational questions — structured thinking and design awareness.' },
+      { skill_name: 'Attitude',           score: b.attitude,          expected_score: 7.0, ai_comment: 'Inferred from confidence and overall engagement quality across the session.' },
+      { skill_name: 'Team Work',          score: b.teamWork,          expected_score: 7.0, ai_comment: 'Assessed from behavioural responses involving collaboration, conflict, and communication scenarios.' },
+      { skill_name: 'Problem Solving',    score: b.problemSolving,    expected_score: 7.0, ai_comment: analysis.improvements?.[0] || 'Evaluated through situational questions and pass rate on technical problems.' },
+      { skill_name: 'Analytical Skill',   score: b.analyticalSkill,   expected_score: 6.0, ai_comment: 'Derived from structured reasoning, technical clarity, and confidence signals observed in answers.' },
     ];
 
-    // ── Build Q&A transcript ──────────────────────────────────────────────────
+    // ── P0-04 + P2-06: Q&A transcript — null timestamps, questionId-keyed pairing ──
+    const enrichedTimestamps: Record<string, number> = (session as any).videoTimestamps || {};
+    const qaAnnotations: any[] = (analysis as any).qaAnnotations || [];
+
     const qaTranscript = (session.responses || []).map((r: any, i: number) => {
-      const q = (session.questions[i] || {}) as any;
+      const q = questionById.get(r.questionId) || (session.questions[i] as any) || {};
       const qs = r.scores?.overall ?? 0;
+      const annotation = qaAnnotations.find((a: any) => a.questionIndex === i);
       return {
-        question_number:    i + 1,
-        question_text:      q.text || '',
-        answer_text:        r.responseText || r.transcription || '[No response recorded]',
-        answer_quality_note: qs >= 7
-          ? 'Strong, well-structured answer with clear examples.'
-          : qs >= 4
-          ? 'Adequate response — could benefit from deeper practical examples.'
-          : 'Limited or unclear response — key points were missing.',
-        skills_assessed:    q.type ? [q.type] : [],
-        timestamp_seconds:  0,
+        question_number:     i + 1,
+        question_text:       q.text || '',
+        answer_text:         r.responseText || r.transcription || '[No response recorded]',
+        answer_quality_note: annotation?.answerQualityNote || deriveQualityNote(qs, q.type),
+        skills_assessed:     q.type ? [q.type] : [],
+        // P0-04: null when not yet enriched — UI hides jump link when null
+        timestamp_seconds:   enrichedTimestamps[String(i)] ?? null,
+        video_enriched:      (session as any).videoEnriched === true,
       };
     });
 
-    // ── Unassessed JD skills ──────────────────────────────────────────────────
-    const requiredSkills: string[] = job?.skills || session.requiredSkills || [];
+    // ── Unassessed JD skills — P1-05: weight from job model if available ──────
+    const requiredSkills: any[] = job?.skills || session.requiredSkills || [];
     const assessedTypes = new Set(technicalSkills.map((s: any) => s.skill_name.toLowerCase()));
     const unassessedJdSkills = requiredSkills
-      .filter((s: string) => !assessedTypes.has(s.toLowerCase()))
-      .map((skill: string) => ({ skill, jd_importance: 'Critical', hiring_risk: 'High' }));
+      .filter((s: any) => {
+        const name = typeof s === 'string' ? s : s?.name || '';
+        return !assessedTypes.has(name.toLowerCase());
+      })
+      .map((s: any) => {
+        const name   = typeof s === 'string' ? s : s?.name || String(s);
+        const weight = typeof s === 'object' ? (s?.weight || 'must_have') : 'must_have';
+        return {
+          skill:         name,
+          jd_importance: weight === 'must_have' ? 'Critical' : weight === 'preferred' ? 'High' : 'Medium',
+          hiring_risk:   weight === 'must_have' ? 'High'     : 'Medium',
+        };
+      });
 
+    // ── P0-03: Full recMap including strong_no_hire ────────────────────────────
     const recMap: Record<string, string> = {
-      strong_hire: 'Strong Hire',
-      hire:        'Hire',
-      hold:        'Hold',
-      reject:      'No Hire',
+      strong_hire:    'Strong Hire',
+      hire:           'Hire',
+      hold:           'Hold',
+      no_hire:        'No Hire',
+      reject:         'No Hire',         // legacy alias
+      strong_no_hire: 'Strong No Hire',
     };
+    const rawRec = (analysis.recommendation || '').toLowerCase().replace(/[\s-]+/g, '_');
+    const recommendation = recMap[rawRec] ?? (() => {
+      logger.warn(`[Report] Unknown recommendation value: "${rawRec}" — defaulting to Hold`);
+      return 'Hold';
+    })();
+
+    // ── P1-04: Hiring-team next-steps playbook (not candidate improvement areas) ─
+    const nextStepsPlaybook: Record<string, string[]> = {
+      'Strong Hire':    ['Proceed directly to offer stage', 'Conduct reference checks with 2 previous managers', 'Prepare competitive offer letter with expedited timeline'],
+      'Hire':           ['Schedule final technical coding round (focus: hands-on implementation)', 'Conduct reference checks', 'Review compensation expectations vs. band'],
+      'Hold':           [
+        unassessedJdSkills.length > 0
+          ? `Schedule follow-up interview targeting: ${unassessedJdSkills.slice(0, 3).map(s => s.skill).join(', ')}`
+          : 'Schedule follow-up interview to address identified gaps',
+        'Request candidate to submit a take-home coding exercise',
+        'Reassess within 2 weeks',
+      ],
+      'No Hire':        ['Send structured rejection email with 1–2 specific feedback points', 'Archive application — eligible for re-application in 6 months'],
+      'Strong No Hire': ['Send rejection email immediately', 'Do not advance to any further stage', 'Flag for recruiter review if fundamental misrepresentation was detected'],
+    };
+
+    // ── P1-03: Rationale distinct from summary ────────────────────────────────
+    const explicitRationale = (analysis as any).recommendation_rationale;
+    const topGap = unassessedJdSkills[0]?.skill || (technicalSkills.find((s: any) => s.gap < -1)?.skill_name) || '';
+    const rationale = explicitRationale
+      || `Recommendation: ${recommendation}. Overall score ${overScore.toFixed(1)}/10 against a 7.0+ target. `
+      + (topGap ? `Primary gap: ${topGap} was not sufficiently demonstrated. ` : '')
+      + `Confidence based on ${analysis.questionsAnswered} answered question${analysis.questionsAnswered !== 1 ? 's' : ''}.`;
 
     const report = {
       report_metadata: {
         candidate_name:         `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim(),
-        candidate_email:        candidate?.email  || '',
-        candidate_phone:        candidate?.phone  || '',
+        candidate_email:        candidate?.email || '',
+        candidate_phone:        candidate?.phone || '',
         position:               job?.title || session.jobTitle || '',
         company:                company?.name || '',
         interview_date:         session.completedAt
@@ -1033,8 +1124,10 @@ export const getInterviewReport = async (
           ? `${panelMember.firstName} ${panelMember.lastName}`
           : 'AI System',
         report_generated_at:    new Date().toISOString(),
+        // P2-05: only expose recording URL when non-null and non-empty
         recording_url:          (session as any).recordingUrl || null,
         candidate_snapshot_url: (session as any).snapshotUrl  || null,
+        video_enrichment_status: (session as any).videoEnriched ? 'complete' : 'pending',
       },
       overall: {
         rating_score:      overScore,
@@ -1045,14 +1138,15 @@ export const getInterviewReport = async (
       areas_of_improvement:       analysis.improvements || [],
       technical_skills:           technicalSkills,
       behavioral_skills:          behavioralSkills,
-      behavioral_summary_comment: `The candidate demonstrated ${commScore >= 7 ? 'strong' : commScore >= 4 ? 'adequate' : 'limited'} communication throughout the session. ${analysis.summary}`,
+      behavioral_summary_comment: analysis.summary || '',
       qa_transcript:              qaTranscript,
       unassessed_jd_skills:       unassessedJdSkills,
       hiring_recommendation: {
-        recommendation:       recMap[analysis.recommendation] || 'Hold',
-        confidence:           overScore >= 7 ? 'High' : overScore >= 4 ? 'Medium' : 'Low',
-        rationale:            analysis.summary || '',
-        suggested_next_steps: analysis.improvements?.slice(0, 3) || [],
+        recommendation,
+        confidence:           (analysis as any).recommendation_confidence
+          || (overScore >= 7 ? 'High' : overScore >= 4 ? 'Medium' : 'Low'),
+        rationale,
+        suggested_next_steps: nextStepsPlaybook[recommendation] || ['Review report and decide next step'],
       },
     };
 

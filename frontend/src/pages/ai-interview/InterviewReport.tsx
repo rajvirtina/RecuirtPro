@@ -20,16 +20,17 @@ import apiClient from '../../services/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ReportMetadata {
-  candidate_name:         string;
-  candidate_email:        string;
-  candidate_phone:        string;
-  position:               string;
-  company:                string;
-  interview_date:         string;
-  interviewer:            string;
-  report_generated_at:    string;
-  recording_url:          string | null;
-  candidate_snapshot_url: string | null;
+  candidate_name:          string;
+  candidate_email:         string;
+  candidate_phone:         string;
+  position:                string;
+  company:                 string;
+  interview_date:          string;
+  interviewer:             string;
+  report_generated_at:     string;
+  recording_url:           string | null;
+  candidate_snapshot_url:  string | null;
+  video_enrichment_status: 'complete' | 'pending';
 }
 
 interface OverallSection {
@@ -65,7 +66,8 @@ interface QAItem {
   answer_text:         string;
   answer_quality_note: string;
   skills_assessed:     string[];
-  timestamp_seconds:   number;
+  timestamp_seconds:   number | null; // null = not yet enriched by video engine
+  video_enriched:      boolean;
 }
 
 interface UnassessedSkill {
@@ -337,7 +339,8 @@ function QAAccordion({ items, recordingUrl }: { items: QAItem[]; recordingUrl: s
                         {s}
                       </span>
                     ))}
-                    {recordingUrl && item.timestamp_seconds > 0 && (
+                    {/* P0-04: only show jump link when timestamp has been enriched */}
+                    {recordingUrl && item.video_enriched && item.timestamp_seconds != null && (
                       <a
                         href={`${recordingUrl}?t=${item.timestamp_seconds}`}
                         target="_blank"
@@ -444,6 +447,7 @@ export default function InterviewReport() {
               <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${rb.bg} ${rb.text} shadow`}>
                 {overall.rating_label}
               </span>
+              {/* P2-05: only render when recording URL is confirmed non-null */}
               {meta.recording_url && (
                 <a
                   href={meta.recording_url}
@@ -452,6 +456,9 @@ export default function InterviewReport() {
                   className="text-xs bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full transition-colors"
                 >
                   ▶ Watch Recording
+                  {meta.video_enrichment_status === 'pending' && (
+                    <span className="ml-1.5 text-yellow-200 text-[9px]">(processing…)</span>
+                  )}
                 </a>
               )}
             </div>
@@ -561,6 +568,23 @@ export default function InterviewReport() {
           </p>
         )}
       </Section>
+
+      {/* P2-05: gated on non-null recording URL */}
+      {meta.recording_url && (
+        <Section title="Interview Recording" icon="📹">
+          <video
+            src={meta.recording_url}
+            controls
+            className="w-full rounded-lg bg-black"
+            style={{ maxHeight: 360 }}
+          />
+          {meta.video_enrichment_status === 'pending' && (
+            <p className="text-xs text-amber-600 mt-2">
+              ⏳ Video enrichment (timestamps + annotations) is still processing. Refresh the report after a few minutes to enable Q&amp;A jump links.
+            </p>
+          )}
+        </Section>
+      )}
 
       {/* ── SECTION 6: Candidate Interview Snapshot ── */}
       {meta.candidate_snapshot_url && (
