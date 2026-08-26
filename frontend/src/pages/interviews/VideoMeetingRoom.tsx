@@ -284,16 +284,19 @@ export default function VideoMeetingRoom() {
         }
       }
 
-      // Start the interview if not already started (skip for unauthenticated/token access)
-      if ((user || joinToken) && (interviewData.status === 'scheduled' || interviewData.status === 'confirmed')) {
-        if (user) {
-          const startResponse = await apiClient.post(`/interviews/${id}/start`);
-          if (startResponse.success) setInterview(startResponse.data);
-        }
+      const isHR = user && user.role !== 'candidate';
+
+      // Start the interview if it hasn't been started yet (HR/panel only — not token guests)
+      if (isHR && (interviewData.status === 'scheduled' || interviewData.status === 'confirmed')) {
+        const startResponse = await apiClient.post(`/interviews/${id}/start`);
+        if (startResponse.success) setInterview(startResponse.data);
       } else if (interviewData.status === 'completed') {
-        setMediaError('This interview has already been completed.');
-        setLoading(false);
-        return;
+        // HR/Employer can still review a completed interview room; only block candidates
+        if (!isHR) {
+          setMediaError('This interview has already been completed.');
+          setLoading(false);
+          return;
+        }
       } else if (interviewData.status === 'cancelled') {
         setMediaError('This interview has been cancelled.');
         setLoading(false);

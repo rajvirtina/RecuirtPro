@@ -244,6 +244,7 @@ export default function InterviewDetail() {
       setLoading(true);
       const response = await apiClient.get(`/interviews/${id}`);
       setInterview(response.data as any);
+      setMessage({ type: '', text: '' }); // clear any stale error from previous actions
     } catch (error: any) {
       setMessage({
         type: 'error',
@@ -403,11 +404,17 @@ export default function InterviewDetail() {
 
       {message.text && (
         <div
-          className={`mb-6 p-4 rounded-lg ${
+          className={`mb-6 p-4 rounded-lg flex items-center justify-between gap-3 ${
             message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
           }`}
         >
-          {message.text}
+          <span>{message.text}</span>
+          <button
+            onClick={() => setMessage({ type: '', text: '' })}
+            className="text-current opacity-60 hover:opacity-100 text-lg leading-none flex-shrink-0"
+          >
+            ×
+          </button>
         </div>
       )}
 
