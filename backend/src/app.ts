@@ -104,15 +104,14 @@ app.use(helmet());
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
+      // Allow requests with no origin (mobile apps, Postman, curl)
       if (!origin) return callback(null, true);
-      
-      // In development, allow all origins
-      if (config.env === 'development') {
+
+      // Always allow localhost origins regardless of NODE_ENV
+      if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
-      
-      // In production, check against whitelist
+
       if (config.corsOrigin.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
@@ -121,7 +120,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Requested-With'],
   })
 );
 app.use(mongoSanitize());

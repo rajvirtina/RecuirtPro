@@ -18,6 +18,38 @@ const recordingUpload = multer({
 
 const router = Router();
 
+// ─── Direct scheduling by email + public join-token access ────────────────────
+
+router.post(
+  '/direct-schedule',
+  protect,
+  authorize(UserRole.EMPLOYER, UserRole.HR, UserRole.ADMIN),
+  [
+    body('candidateEmail').isEmail().normalizeEmail().withMessage('Valid candidate email is required'),
+    body('jobId').notEmpty().isMongoId().withMessage('Valid job ID is required'),
+    body('scheduledTime').notEmpty().isISO8601().withMessage('Valid scheduled time is required'),
+    body('duration').optional().isInt({ min: 15, max: 480 }),
+    body('round').optional().isIn(['L1', 'L2', 'L3', 'HR', 'technical', 'managerial']),
+    body('mode').optional().isIn(['onsite', 'online', 'hybrid']),
+    body('candidateFirstName').optional().isString().trim(),
+    body('candidateLastName').optional().isString().trim(),
+    body('panel').optional().isArray(),
+  ],
+  validate,
+  interviewController.scheduleDirectInterview
+);
+
+// Public endpoint — validates join token, no auth required
+router.get(
+  '/:id/public',
+  [
+    param('id').isMongoId().withMessage('Valid interview ID is required'),
+    query('token').notEmpty().withMessage('token is required'),
+  ],
+  validate,
+  interviewController.getPublicInterviewInfo
+);
+
 /**
  * @swagger
  * /api/v1/interviews:

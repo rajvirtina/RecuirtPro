@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import apiClient from '../../services/api';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'sonner';
-import { recordingPulse, scaleVariants, fadeVariants } from '../../lib/motion';
+import { recordingPulse, scaleVariants } from '../../lib/motion';
 
 interface Interview {
   _id: string;
@@ -127,7 +127,12 @@ const ICE_SERVERS: RTCConfiguration = {
 export default function VideoMeetingRoom() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const user = useAuthStore((state) => state.user);
+  const [searchParams] = useSearchParams();
+  const joinToken = searchParams.get('token');        // public token from email link
+  const user            = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  // authReady: proceed once we know if visitor has a session or is a token-only guest
+  const authReady = !!joinToken || isAuthenticated;
   
   const [interview, setInterview] = useState<Interview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -161,14 +166,16 @@ export default function VideoMeetingRoom() {
   const stopRecordingRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (id) {
-      initializeMeeting();
-    }
+    // Wait until we know auth state before fetching interview data.
+    // Without this guard, HR users hit the API before useAuthStore.user resolves
+    // and the room logic runs as if unauthenticated.
+    if (!id || !authReady) return;
+    initializeMeeting();
 
     return () => {
       cleanup();
     };
-  }, [id]);
+  }, [id, authReady]);
 
   // Attach the local stream to the video element once both are available.
   // The video element only exists in the DOM after loading=false, so we cannot
@@ -249,42 +256,48 @@ export default function VideoMeetingRoom() {
       peerConnectionsRef.current.clear();
       hasJoinedRoomRef.current = false;
       
-      // Fetch interview details
-      const response = await apiClient.get(`/interviews/${id}`);
-      if (response.success && response.data) {
-        const interviewData = response.data;
-        setInterview(interviewData);
-        
-        // Check if proctoring is enabled and system check is required
-        if (interviewData.proctoringEnabled && user?.role === 'candidate') {
-          const systemCheckCompleted = interviewData.metadata?.systemCheckCompleted;
-          
-          if (!systemCheckCompleted) {
-            console.log('⚠️ Proctoring enabled but system check not completed. Redirecting...');
-            navigate(`/proctoring-check/${id}`, { replace: true });
-            return;
-          }
-          
-          console.log('✅ System check completed. Proceeding to meeting room...');
+      // Fetch interview details — public endpoint when candidate arrives via join token
+      let interviewData: Interview | null = null;
+      if (joinToken && !user) {
+        const pubRes = await apiClient.get(`/interviews/${id}/public?token=${joinToken}`);
+        if (pubRes.success && pubRes.data) {
+          interviewData = pubRes.data as Interview;
         }
+      } else {
+        const response = await apiClient.get(`/interviews/${id}`);
+        if (response.success && response.data) interviewData = response.data;
+      }
 
-        // Start the interview if not already started
-        if (interviewData.status === 'scheduled' || interviewData.status === 'confirmed') {
-          console.log('🚀 Starting interview...');
-          const startResponse = await apiClient.post(`/interviews/${id}/start`);
-          if (startResponse.success) {
-            console.log('✅ Interview started successfully');
-            setInterview(startResponse.data);
-          }
-        } else if (interviewData.status === 'completed') {
-          setMediaError('This interview has already been completed.');
-          setLoading(false);
-          return;
-        } else if (interviewData.status === 'cancelled') {
-          setMediaError('This interview has been cancelled.');
-          setLoading(false);
+      if (!interviewData) {
+        setMediaError('Interview not found or access denied.');
+        setLoading(false);
+        return;
+      }
+      setInterview(interviewData);
+
+      // Check if proctoring is enabled and system check is required
+      if (interviewData.proctoringEnabled && (user?.role === 'candidate' || (!user && joinToken))) {
+        const systemCheckCompleted = interviewData.metadata?.systemCheckCompleted;
+        if (!systemCheckCompleted) {
+          navigate(`/proctoring-check/${id}?token=${joinToken || ''}`, { replace: true });
           return;
         }
+      }
+
+      // Start the interview if not already started (skip for unauthenticated/token access)
+      if ((user || joinToken) && (interviewData.status === 'scheduled' || interviewData.status === 'confirmed')) {
+        if (user) {
+          const startResponse = await apiClient.post(`/interviews/${id}/start`);
+          if (startResponse.success) setInterview(startResponse.data);
+        }
+      } else if (interviewData.status === 'completed') {
+        setMediaError('This interview has already been completed.');
+        setLoading(false);
+        return;
+      } else if (interviewData.status === 'cancelled') {
+        setMediaError('This interview has been cancelled.');
+        setLoading(false);
+        return;
       }
 
       // Get user media with full permission + device-enumeration check
@@ -359,9 +372,10 @@ export default function VideoMeetingRoom() {
       return;
     }
 
-    const token = localStorage.getItem('token');
+    // Use JWT for authenticated users; fall back to joinToken for public-link candidates
+    const socketAuth = localStorage.getItem('token') || joinToken;
     const socket = io(SOCKET_URL, {
-      auth: { token },
+      auth: { token: socketAuth },
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
@@ -377,7 +391,9 @@ export default function VideoMeetingRoom() {
         console.log('Joining meeting room for the first time');
         socket.emit('join-meeting', {
           interviewId: id,
-          userName: `${user?.firstName} ${user?.lastName}`,
+          userName: user
+            ? `${user.firstName} ${user.lastName}`
+            : (interview?.candidate ? `${(interview.candidate as any).firstName} ${(interview.candidate as any).lastName}` : 'Candidate'),
           userRole: user?.role,
         });
       } else {

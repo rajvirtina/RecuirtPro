@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams, useParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuthStore } from '../../store/authStore';
 import { apiClient } from '../../services/api';
@@ -27,6 +27,7 @@ export default function Register() {
   const navigate = useNavigate();
   const register = useAuthStore((state) => state.register);
   const [searchParams] = useSearchParams();
+  const { companySlug: slugFromPath } = useParams<{ companySlug?: string }>();
   const invitationToken = searchParams.get('token');
 
   const [loading, setLoading] = useState(false);
@@ -48,7 +49,7 @@ export default function Register() {
     confirmPassword: '',
     role: 'candidate',
     invitationToken: invitationToken || '',
-    companySlug: '',
+    companySlug: slugFromPath || '',
   });
 
   useEffect(() => {
@@ -92,6 +93,10 @@ export default function Register() {
       setLookingUpCompany(false);
     }
   };
+
+  // Auto-lookup when slug comes from URL path — placed after lookupCompany definition
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (slugFromPath) lookupCompany(slugFromPath); }, [slugFromPath]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -229,6 +234,45 @@ export default function Register() {
             {invitationToken ? 'Complete your registration' : 'Join RecuirtPro and streamline your recruitment process'}
           </p>
         </motion.div>
+
+        {/* Company banner — shown when slug is pre-filled from URL */}
+        {slugFromPath && companyLookup && (
+          <motion.div
+            className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-3"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden" animate="visible"
+          >
+            {companyLookup.logo && (
+              <img src={companyLookup.logo} alt={companyLookup.name} className="h-10 w-10 rounded-lg object-contain border border-indigo-100 bg-white" />
+            )}
+            <div>
+              <p className="text-xs text-indigo-500 font-semibold uppercase tracking-wider">Registering for</p>
+              <p className="text-base font-bold text-indigo-900">{companyLookup.name}</p>
+            </div>
+            <CheckCircleIcon className="h-5 w-5 text-indigo-400 ml-auto flex-shrink-0" />
+          </motion.div>
+        )}
+        {slugFromPath && lookingUpCompany && (
+          <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-2">
+            <svg className="animate-spin h-4 w-4 text-indigo-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Looking up company…
+          </div>
+        )}
+        {slugFromPath && companyLookupError && !lookingUpCompany && (
+          <motion.div
+            className="bg-red-50 border border-red-200 rounded-xl p-4"
+            variants={reduced ? undefined : slideDownVariants}
+            initial="hidden" animate="visible"
+          >
+            <p className="text-sm font-medium text-red-700 flex items-center gap-2">
+              <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0" />
+              Company code <strong>{slugFromPath}</strong> was not found. Please contact your recruiter for a valid link.
+            </p>
+          </motion.div>
+        )}
 
         {/* Invitation Info Banner */}
         <AnimatePresence>
@@ -375,6 +419,7 @@ export default function Register() {
                   onChange={handleChange}
                   error={companyLookupError || undefined}
                   placeholder="e.g. ambiquest or techiworld"
+                  disabled={!!slugFromPath}
                 />
                 {lookingUpCompany && (
                   <div className="absolute inset-y-0 right-3 flex items-center">

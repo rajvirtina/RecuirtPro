@@ -65,6 +65,8 @@ export interface IInterviewDocument extends Document {
   cancellationReason?: string;
   cancelledBy?: mongoose.Types.ObjectId;
   cancelledAt?: Date;
+  joinToken?: string;         // public token for unauthenticated room access (candidate email link)
+  directScheduled?: boolean;  // true when HR scheduled without prior application
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -228,6 +230,8 @@ const interviewSchema = new Schema<IInterviewDocument>(
       ref: 'User',
     },
     cancelledAt: Date,
+    joinToken: { type: String, index: true, sparse: true },
+    directScheduled: { type: Boolean, default: false },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

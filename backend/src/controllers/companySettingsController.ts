@@ -42,7 +42,16 @@ export const getPublicBranding = async (req: Request, res: Response) => {
 export const getCompanySettings = async (req: AuthRequest, res: Response) => {
   try {
     const companyId = getTenantCompanyId(req.user);
-    if (!companyId) return sendError(res, 'No company associated', 400);
+
+    // Superadmin has no company — return empty settings rather than an error
+    if (!companyId) {
+      return sendSuccess(res, {
+        name: null, slug: null, email: null, website: null,
+        industry: null, size: null,
+        branding: {}, settings: {}, notifications: {},
+        defaultPipelineStages: [],
+      }, 'No company context');
+    }
 
     const company = await Company.findById(companyId).lean();
     if (!company) return sendError(res, 'Company not found', 404);

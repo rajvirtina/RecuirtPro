@@ -464,11 +464,11 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Fetch company branding
+  // Fetch company branding — skip for superadmin who has no company
   const { data: companyData } = useQuery({
     queryKey: ['companySettings'],
     queryFn: () => apiClient.get('/companies/settings').then(r => r.data.data),
-    enabled: !!user && user.role !== 'candidate',
+    enabled: !!user && user.role !== 'candidate' && !!(user as any).companyId,
     staleTime: 5 * 60 * 1000,
   });
 

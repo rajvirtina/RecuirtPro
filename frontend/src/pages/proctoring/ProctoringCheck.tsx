@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import apiClient from '../../services/api';
 
 interface SystemCheck {
@@ -29,6 +29,8 @@ interface CheckResult {
 export default function ProctoringCheck() {
   const { interviewId } = useParams<{ interviewId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const joinToken = searchParams.get('token');  // passed from email link
   const hasRunChecksRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -445,9 +447,10 @@ export default function ProctoringCheck() {
         console.log('✅ Check passed! Navigating to interview room...');
         setCheckPassed(true);
         
-        // Navigate to interview room (not detail page to avoid loop)
-        console.log('🎯 Navigating to:', `/interviews/${interviewId}/room`);
-        navigate(`/interviews/${interviewId}/room`, { replace: true });
+        // Carry join token into room URL so unauthenticated candidates can enter
+        const roomPath = `/interviews/${interviewId}/room${joinToken ? `?token=${joinToken}` : ''}`;
+        console.log('🎯 Navigating to:', roomPath);
+        navigate(roomPath, { replace: true });
       } else {
         console.error('❌ Verification failed - success is not true');
         console.error('❌ Success value:', response.success);

@@ -99,6 +99,7 @@ function App() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/register/:companySlug" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/complete-registration" element={<CompleteRegistration />} />
@@ -113,6 +114,9 @@ function App() {
 
       {/* Proctoring check - Public route */}
       <Route path="/proctoring-check/:interviewId" element={<ProctoringCheck />} />
+
+      {/* Interview room - Public with join token OR protected for HR/panel */}
+      <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
 
       {/* Company-specific job listings - Public route */}
       <Route path="/company/:slug/jobs" element={<CompanyJobs />} />
@@ -153,7 +157,6 @@ function App() {
         <Route path="/interviewer-dashboard" element={<RoleGuard roles={['interviewer']}><InterviewerDashboard /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />
-        <Route path="/interviews/:id/room" element={<VideoMeetingRoom />} />
         <Route path="/questions" element={<RoleGuard roles={['admin', 'hr', 'employer']}><Questions /></RoleGuard>} />
         <Route path="/sourcing" element={<RoleGuard roles={['admin', 'hr', 'employer']}><CandidateSourcing /></RoleGuard>} />
         <Route path="/offers" element={<RoleGuard roles={['admin', 'hr', 'employer']}><OfferManagement /></RoleGuard>} />

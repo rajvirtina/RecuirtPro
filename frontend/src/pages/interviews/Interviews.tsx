@@ -11,6 +11,7 @@ import { EmptyInterviews } from '../../components/ui/EmptyState';
 import { SkeletonRow } from '../../components/ui/Skeleton';
 import { toast } from 'sonner';
 import { staggerContainer, staggerItem } from '../../lib/motion';
+import DirectScheduleModal from './DirectScheduleModal';
 
 interface Interview {
   _id: string;
@@ -55,6 +56,8 @@ export default function Interviews() {
   const [filter, setFilter]           = useState('');
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
   const [cancelling, setCancelling]   = useState(false);
+  const [showDirectSchedule, setShowDirectSchedule] = useState(false);
+  const [jobs, setJobs]               = useState<{ _id: string; title: string }[]>([]);
 
   const fetchInterviews = useCallback(async () => {
     try {
@@ -70,6 +73,15 @@ export default function Interviews() {
   }, [filter]);
 
   useEffect(() => { fetchInterviews(); }, [fetchInterviews]);
+
+  // Load jobs for direct schedule modal (HR/Employer only)
+  useEffect(() => {
+    if (isEmployer) {
+      apiClient.get('/jobs?status=published&limit=100')
+        .then(r => setJobs((r.data as any) || []))
+        .catch(() => {});
+    }
+  }, [isEmployer]);
 
   const handleConfirmCancel = async () => {
     if (!cancelTarget) return;
@@ -101,6 +113,11 @@ export default function Interviews() {
           <h1 className="page-title">{isEmployer ? 'Interview Schedule' : 'My Interviews'}</h1>
           <p className="page-subtitle">Manage and join interview sessions</p>
         </div>
+        {isEmployer && (
+          <Button onClick={() => setShowDirectSchedule(true)} variant="primary" size="sm">
+            + Schedule by Email
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -280,6 +297,13 @@ export default function Interviews() {
         loading={cancelling}
         onConfirm={handleConfirmCancel}
         onCancel={() => setCancelTarget(null)}
+      />
+
+      <DirectScheduleModal
+        open={showDirectSchedule}
+        onClose={() => setShowDirectSchedule(false)}
+        onScheduled={fetchInterviews}
+        jobs={jobs}
       />
     </motion.div>
   );

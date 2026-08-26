@@ -90,6 +90,7 @@ export const scheduleInterview = async (
       proctoringLevel: proctoringLevel && ['none', 'basic', 'enhanced'].includes(proctoringLevel)
         ? proctoringLevel
         : mode === 'online' ? 'basic' : 'none',
+      joinToken: crypto.randomBytes(32).toString('hex'),
     });
 
     // Update application status
@@ -790,6 +791,11 @@ export const notifyInterviewParties = async (
       hour: '2-digit', minute: '2-digit',
     });
 
+    // Generate / refresh joinToken (idempotent — keep existing so links stay valid)
+    if (!(interview as any).joinToken) {
+      (interview as any).joinToken = crypto.randomBytes(32).toString('hex');
+    }
+
     // Generate feedback tokens for each panel member (idempotent — don't overwrite existing)
     for (const member of interview.panel as any[]) {
       if (!member.feedbackToken) {
@@ -802,6 +808,9 @@ export const notifyInterviewParties = async (
 
     // ── Candidate notification ─────────────────────────────────────────────────
     if (candidate?.email) {
+      const joinToken = (interview as any).joinToken;
+      const proctoringUrl = `${frontendUrl}/proctoring-check/${interview._id}?token=${joinToken}`;
+      const roomUrl       = `${frontendUrl}/interviews/${interview._id}/room?token=${joinToken}`;
       try {
         await sendEmail({
           to: candidate.email,
@@ -813,7 +822,8 @@ export const notifyInterviewParties = async (
             interviewDate:  dateStr,
             interviewTime:  timeStr,
             interviewType:  interview.round || 'Interview',
-            interviewLink:  interview.meetingLink || `${frontendUrl}/proctoring-check/${interview._id}`,
+            interviewLink:  proctoringUrl,
+            roomLink:       roomUrl,
           },
         });
       } catch (e: any) {
@@ -947,5 +957,215 @@ export const uploadRecording = async (
   } catch (error: any) {
     logger.error('Error in uploadRecording:', error);
     return sendError(res, error.message || 'Error saving recording', 500);
+  }
+};
+
+// ─── Public: validate join token (no auth required) ──────────────────────────
+
+/**
+ * @desc  Return minimal interview info when candidate presents their joinToken
+ * @route GET /api/v1/interviews/:id/public?token=xxx
+ * @access Public
+ */
+export const getPublicInterviewInfo = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const { id } = req.params;
+    const { token } = req.query as { token?: string };
+
+    if (!token) return sendError(res, 'Join token is required', 400);
+
+    const interview = await Interview.findById(id)
+      .populate('jobId', 'title')
+      .populate('candidateId', 'firstName lastName email')
+      .populate('companyId', 'name')
+      .select('+joinToken')
+      .lean();
+
+    if (!interview) return sendError(res, 'Interview not found', 404);
+    if (interview.joinToken !== token) return sendError(res, 'Invalid join token', 403);
+    if (interview.status === 'cancelled') return sendError(res, 'This interview has been cancelled', 400);
+
+    const job = interview.jobId as any;
+    const candidate = interview.candidateId as any;
+    const company = interview.companyId as any;
+
+    return sendSuccess(res, {
+      _id:              interview._id,
+      jobTitle:         job?.title || 'Interview',
+      candidateName:    candidate ? `${candidate.firstName} ${candidate.lastName}` : 'Candidate',
+      candidateEmail:   candidate?.email,
+      companyName:      company?.name,
+      scheduledTime:    interview.scheduledTime,
+      duration:         interview.duration,
+      round:            interview.round,
+      status:           interview.status,
+      proctoringEnabled: interview.proctoringEnabled,
+      metadata:         interview.metadata,
+    }, 'Interview info retrieved');
+  } catch (error: any) {
+    logger.error('getPublicInterviewInfo error:', error);
+    return sendError(res, 'Failed to retrieve interview info', 500);
+  }
+};
+
+// ─── Direct scheduling: HR schedules by candidate email ──────────────────────
+
+/**
+ * @desc  HR schedules an interview directly via candidate email (no prior application required)
+ * @route POST /api/v1/interviews/direct-schedule
+ * @access Private (HR/Admin/Employer)
+ */
+export const scheduleDirectInterview = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void | Response> => {
+  try {
+    const {
+      candidateEmail,
+      candidateFirstName = 'Candidate',
+      candidateLastName  = '',
+      jobId,
+      scheduledTime,
+      duration    = 60,
+      round       = 'L1',
+      mode        = 'online',
+      notes,
+      panel       = [],
+      proctoringLevel,
+    } = req.body;
+
+    if (!candidateEmail || !jobId || !scheduledTime) {
+      return sendError(res, 'candidateEmail, jobId, and scheduledTime are required', 400);
+    }
+
+    if (new Date(scheduledTime) <= new Date()) {
+      return sendError(res, 'Interview must be scheduled in the future', 400);
+    }
+
+    const tenantId = getTenantCompanyId(req.user);
+
+    // Resolve job
+    const job = await Job.findById(jobId).lean();
+    if (!job) return sendError(res, 'Job not found', 404);
+    if (tenantId && (job as any).companyId?.toString() !== tenantId) {
+      return sendError(res, 'Not authorized for this job', 403);
+    }
+    const companyId = (job as any).companyId;
+
+    // Find or create candidate user
+    let candidate = await User.findOne({ email: candidateEmail.toLowerCase() });
+    let candidateCreated = false;
+    if (!candidate) {
+      const tempPassword = crypto.randomBytes(12).toString('base64url');
+      candidate = await User.create({
+        firstName:     candidateFirstName,
+        lastName:      candidateLastName,
+        email:         candidateEmail.toLowerCase(),
+        password:      tempPassword,
+        role:          'candidate',
+        status:        'active',
+        emailVerified: false,
+        companyId:     null,
+      });
+      candidateCreated = true;
+    }
+
+    // Find or create placeholder application
+    let application = await Application.findOne({
+      jobId,
+      candidateId: candidate._id,
+    });
+    if (!application) {
+      application = await Application.create({
+        jobId,
+        candidateId: candidate._id,
+        companyId,
+        status:      ApplicationStatus.INTERVIEW_SCHEDULED,
+        appliedAt:   new Date(),
+        source:      'direct_schedule',
+        statusHistory: [{
+          status:    ApplicationStatus.INTERVIEW_SCHEDULED,
+          changedAt: new Date(),
+          changedBy: req.user?._id,
+          remarks:   'Direct interview scheduling by HR',
+        }],
+      });
+    } else {
+      application.status = ApplicationStatus.INTERVIEW_SCHEDULED;
+      await application.save();
+    }
+
+    const joinToken = crypto.randomBytes(32).toString('hex');
+
+    const interview = await Interview.create({
+      jobId,
+      candidateId:  candidate._id,
+      applicationId: application._id,
+      companyId,
+      scheduledTime,
+      duration,
+      mode,
+      round,
+      roundNumber: 1,
+      panel,
+      status:           InterviewStatus.SCHEDULED,
+      scheduledBy:      req.user?._id,
+      createdBy:        req.user?._id,
+      timezone:         'Asia/Kolkata',
+      isOnline:         mode === 'online',
+      candidateConfirmed: false,
+      rescheduleCount:  0,
+      proctoringEnabled: mode === 'online',
+      proctoringLevel:  proctoringLevel || (mode === 'online' ? 'basic' : 'none'),
+      directScheduled:  true,
+      joinToken,
+      notes,
+    });
+
+    // Send invitation email to candidate
+    const frontendUrl = process.env.FRONTEND_URL || 'https://hiring.ambiquest.com';
+    const proctoringUrl = `${frontendUrl}/proctoring-check/${interview._id}?token=${joinToken}`;
+    const roomUrl       = `${frontendUrl}/interviews/${interview._id}/room?token=${joinToken}`;
+    const scheduledDate = new Date(scheduledTime);
+    const dateStr = scheduledDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const timeStr = scheduledDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    try {
+      await sendEmail({
+        to:       candidate.email,
+        subject:  `Interview Scheduled: ${(job as any).title}`,
+        template: 'interviewScheduled',
+        data: {
+          candidateName:  `${candidate.firstName} ${candidate.lastName}`.trim(),
+          jobTitle:       (job as any).title,
+          interviewDate:  dateStr,
+          interviewTime:  timeStr,
+          interviewType:  round,
+          interviewLink:  proctoringUrl,
+          roomLink:       roomUrl,
+          isDirectSchedule: true,
+          candidateCreated,
+          loginUrl: `${frontendUrl}/login`,
+        },
+      });
+    } catch (emailErr: any) {
+      logger.warn(`Direct schedule email failed for ${candidate.email}: ${emailErr.message}`);
+    }
+
+    logger.info(`Direct interview scheduled: ${interview._id} for ${candidate.email}`);
+
+    return sendSuccess(res, {
+      interview:        interview.toObject(),
+      candidateCreated,
+      proctoringUrl,
+      roomUrl,
+      joinToken,
+    }, 'Interview scheduled and candidate notified', 201);
+  } catch (error: any) {
+    logger.error('scheduleDirectInterview error:', error);
+    return sendError(res, error.message || 'Failed to schedule interview', 500);
   }
 };
