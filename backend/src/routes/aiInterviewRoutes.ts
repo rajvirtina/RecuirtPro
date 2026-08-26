@@ -8,6 +8,9 @@ import {
   completeSession,
   flagSession,
   getSessionForReview,
+  sendInterviewInvitationEmail,
+  getInterviewReport,
+  enrichVideoReport,
 } from '../controllers/aiInterviewController';
 import { protect, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validator';
@@ -117,6 +120,42 @@ router.post(
   ],
   validate,
   flagSession
+);
+
+// ─── Prompt 1: Send interview invitation email ────────────────────────────────
+
+router.post(
+  '/:interviewId/send-invitation',
+  protect,
+  authorize(UserRole.HR, UserRole.ADMIN, UserRole.EMPLOYER),
+  [
+    param('interviewId').isMongoId().withMessage('Valid interviewId is required'),
+    body('timezone').optional().isString().isLength({ max: 50 }),
+  ],
+  validate,
+  sendInterviewInvitationEmail
+);
+
+// ─── Prompt 3: Full AI report ─────────────────────────────────────────────────
+
+router.get(
+  '/:interviewId/report',
+  protect,
+  authorize(UserRole.HR, UserRole.ADMIN, UserRole.EMPLOYER),
+  [param('interviewId').isMongoId().withMessage('Valid interviewId is required')],
+  validate,
+  getInterviewReport
+);
+
+// ─── Prompt 4: Video enrichment ───────────────────────────────────────────────
+
+router.post(
+  '/:interviewId/enrich-video',
+  protect,
+  authorize(UserRole.HR, UserRole.ADMIN, UserRole.EMPLOYER),
+  [param('interviewId').isMongoId().withMessage('Valid interviewId is required')],
+  validate,
+  enrichVideoReport
 );
 
 export default router;

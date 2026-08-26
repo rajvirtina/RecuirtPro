@@ -563,4 +563,71 @@ export const emailTemplates = {
     </body>
     </html>
   `,
+
+  // ─── Prompt 1: AI Interview Invitation ────────────────────────────────────
+  aiInterviewInvitation: (data: EmailData) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interview Invitation — ${data.positionTitle}</title>
+<style>
+  body{margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;}
+  .wrap{max-width:600px;margin:32px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.10);}
+  .hero{background:linear-gradient(135deg,#0d9488 0%,#0f766e 100%);padding:36px 32px;text-align:center;color:#fff;}
+  .hero h1{margin:0 0 6px;font-size:22px;font-weight:700;letter-spacing:-0.3px;}
+  .hero p{margin:0;font-size:13px;opacity:0.85;}
+  .body{padding:32px;}
+  .greeting{font-size:16px;color:#111827;margin:0 0 18px;}
+  .divider{border:none;border-top:2px solid #e5e7eb;margin:24px 0;}
+  .info-grid{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px 24px;margin:0 0 24px;}
+  .info-row{display:flex;align-items:flex-start;gap:10px;margin:0 0 10px;font-size:14px;color:#1f2937;}
+  .info-row:last-child{margin:0;}
+  .info-icon{font-size:16px;flex-shrink:0;width:22px;text-align:center;}
+  .info-label{font-weight:600;min-width:80px;}
+  .cta-wrap{text-align:center;margin:28px 0;}
+  .cta-btn{display:inline-block;padding:14px 36px;background:#0d9488;color:#fff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:700;letter-spacing:0.2px;}
+  .no-software{background:#eff6ff;border-left:4px solid #3b82f6;border-radius:4px;padding:12px 16px;font-size:13px;color:#1e40af;margin:0 0 24px;}
+  .jd-link{font-size:13px;color:#6b7280;text-align:center;margin:0 0 24px;}
+  .jd-link a{color:#0d9488;text-decoration:underline;}
+  .closing{font-size:14px;color:#374151;line-height:1.7;}
+  .footer{background:#f9fafb;border-top:1px solid #e5e7eb;text-align:center;padding:20px 32px;font-size:12px;color:#9ca3af;}
+  .footer a{color:#0d9488;text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <h1>${data.platformName}</h1>
+    <p>AI-Powered Interview Platform</p>
+  </div>
+  <div class="body">
+    <p class="greeting">Dear ${data.candidateName},</p>
+    <p style="font-size:15px;color:#374151;margin:0 0 20px;">We are delighted to invite you to a <strong>Video Interview</strong> for an exciting opportunity at <strong>${data.companyName}</strong>.</p>
+    <hr class="divider" />
+    <div class="info-grid">
+      <div class="info-row"><span class="info-icon">📌</span><span class="info-label">Position:</span><span><strong>${data.positionTitle}</strong></span></div>
+      <div class="info-row"><span class="info-icon">🏢</span><span class="info-label">Company:</span><span><strong>${data.companyName}</strong></span></div>
+      <div class="info-row"><span class="info-icon">📅</span><span class="info-label">Date:</span><span><strong>${data.interviewDate}</strong></span></div>
+      <div class="info-row"><span class="info-icon">🕒</span><span class="info-label">Time:</span><span><strong>${data.interviewTime} ${data.interviewTimezone}</strong></span></div>
+    </div>
+    <div class="cta-wrap">
+      <a href="${data.systemCheckUrl}" class="cta-btn">▶&nbsp; Click Here to Join the Interview</a>
+      <p style="font-size:11px;color:#9ca3af;margin:8px 0 0;">Routes through system check → interview room</p>
+    </div>
+    <div class="no-software">
+      ℹ️&nbsp; <strong>No additional software required.</strong> This interview runs entirely in your browser — no Skype, Zoom, or downloads needed.
+    </div>
+    ${data.jobDescriptionUrl ? `<p class="jd-link">📄 View the full Job Description: <a href="${data.jobDescriptionUrl}">${data.jobDescriptionUrl}</a></p>` : ''}
+    <hr class="divider" />
+    <p class="closing">We look forward to meeting you. Please ensure your camera and microphone are working before joining. Best of luck, <strong>${data.candidateName}</strong>!</p>
+    <p class="closing" style="margin-top:16px;">Warm regards,<br /><strong>${data.platformName} Interview Platform</strong><br /><a href="mailto:${data.supportEmail}" style="color:#0d9488;">${data.supportEmail}</a></p>
+  </div>
+  <div class="footer">
+    <p>&copy; 2025 ${data.platformName}. All rights reserved.</p>
+    <p>Questions? Contact us at <a href="mailto:${data.supportEmail}">${data.supportEmail}</a></p>
+  </div>
+</div>
+</body>
+</html>`,
 };

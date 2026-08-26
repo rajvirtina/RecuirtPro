@@ -44,6 +44,8 @@ import Analytics from './pages/Analytics';
 import ProctoringCheck from './pages/proctoring/ProctoringCheck';
 import AIInterviewRoom from './pages/ai-interview/AIInterviewRoom';
 import AIScoreComparison from './pages/ai-interview/AIScoreComparison';
+import SystemCheck from './pages/ai-interview/SystemCheck';
+import InterviewReport from './pages/ai-interview/InterviewReport';
 import ProctoringDashboard from './pages/proctoring/ProctoringDashboard';
 import CandidateSelfSchedule from './pages/schedule/CandidateSelfSchedule';
 import InterviewerScorecard from './pages/interviews/InterviewerScorecard';
@@ -118,6 +120,9 @@ function App() {
       {/* AI Interview Room - Public route, session token is the credential */}
       <Route path="/ai-interview/:sessionId" element={<AIInterviewRoom />} />
 
+      {/* Pre-join system diagnostics — public, interview ID is the credential */}
+      <Route path="/system-check/:interviewId" element={<SystemCheck />} />
+
       {/* Candidate self-scheduling - Public route, token is the credential */}
       <Route path="/schedule/:token" element={<CandidateSelfSchedule />} />
 
@@ -144,6 +149,7 @@ function App() {
         <Route path="/applications/:id" element={<RoleGuard roles={['admin', 'hr', 'employer', 'candidate']}><ApplicationDetail /></RoleGuard>} />
         <Route path="/applications/:id/ai-report" element={<RoleGuard roles={['admin', 'hr', 'employer', 'interviewer']}><AIAssessmentReport /></RoleGuard>} />
         <Route path="/ai-scores" element={<RoleGuard roles={['admin', 'hr', 'employer']}><AIScoreComparison /></RoleGuard>} />
+        <Route path="/ai-interview/:interviewId/report" element={<RoleGuard roles={['admin', 'hr', 'employer']}><InterviewReport /></RoleGuard>} />
         <Route path="/interviewer-dashboard" element={<RoleGuard roles={['interviewer']}><InterviewerDashboard /></RoleGuard>} />
         <Route path="/interviews" element={<Interviews />} />
         <Route path="/interviews/:id" element={<InterviewDetail />} />

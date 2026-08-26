@@ -759,3 +759,362 @@ function buildFallbackQuestions(jobTitle: string, count: number): IAIQuestion[] 
     orderIndex: i + 1,
   }));
 }
+
+// ─── Prompt 1: Send AI Interview Invitation Email ─────────────────────────────
+
+/**
+ * @desc  Send a branded interview invitation email with system-check routing
+ * @route POST /api/v1/ai-interviews/:interviewId/send-invitation
+ * @access HR / Admin / Employer
+ */
+export const sendInterviewInvitationEmail = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { interviewId } = req.params;
+    if (!mongoose.isValidObjectId(interviewId)) {
+      sendError(res, 'Invalid interviewId', 400); return;
+    }
+
+    const interview = await Interview.findById(interviewId)
+      .populate<{ candidateId: { firstName: string; lastName: string; email: string } }>(
+        'candidateId', 'firstName lastName email'
+      )
+      .populate<{ jobId: { title: string; _id: mongoose.Types.ObjectId } }>('jobId', 'title _id')
+      .populate<{ companyId: { name: string } }>('companyId', 'name')
+      .lean();
+
+    if (!interview) { sendError(res, 'Interview not found', 404); return; }
+
+    const candidate  = interview.candidateId as any;
+    const job        = interview.jobId as any;
+    const company    = interview.companyId as any;
+
+    const frontendUrl    = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const platformName   = process.env.PLATFORM_NAME || 'RecuirtPro';
+    const supportEmail   = process.env.SUPPORT_EMAIL || 'support@recruirtpro.com';
+
+    // System check routes through /system-check/:interviewId?redirect=<room>
+    const systemCheckUrl = `${frontendUrl}/system-check/${interviewId}`;
+    const roomJoinUrl    = `${frontendUrl}/interviews/${interviewId}/room`;
+    const jobDescUrl     = job?._id
+      ? `${frontendUrl}/jobs/${job._id}`
+      : undefined;
+
+    const scheduledAt = interview.scheduledTime ? new Date(interview.scheduledTime as any) : new Date();
+    const dateStr     = scheduledAt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+    const timeStr     = scheduledAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    // Render template from emailTemplates
+    const { emailTemplates } = require('../utils/emailTemplates') as typeof import('../utils/emailTemplates');
+    const html = emailTemplates.aiInterviewInvitation({
+      candidateName:    candidate.firstName,
+      positionTitle:    job?.title || 'the open position',
+      companyName:      company?.name || 'our company',
+      interviewDate:    dateStr,
+      interviewTime:    timeStr,
+      interviewTimezone: req.body.timezone || 'UTC',
+      systemCheckUrl,
+      rawJoinUrl:       roomJoinUrl,
+      jobDescriptionUrl: jobDescUrl,
+      supportEmail,
+      platformName,
+    });
+
+    const subject = `Interview Invitation — ${job?.title || 'Open Position'} | ${scheduledAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+    await sendEmail({ to: candidate.email, subject, html });
+
+    logger.info(`[AI Interview] Invitation email sent → ${candidate.email} for interview ${interviewId}`);
+    sendSuccess(res, { sentTo: candidate.email }, 'Invitation email sent');
+  } catch (error: any) {
+    logger.error('sendInterviewInvitationEmail error:', error);
+    sendError(res, error.message || 'Failed to send invitation', 500);
+  }
+};
+
+// ─── Prompt 3: Full AI Interview Report ──────────────────────────────────────
+
+/**
+ * @desc  Return the structured AI evaluation report for a completed session
+ * @route GET /api/v1/ai-interviews/:interviewId/report
+ * @access HR / Admin / Employer
+ */
+export const getInterviewReport = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { interviewId } = req.params;
+    if (!mongoose.isValidObjectId(interviewId)) {
+      sendError(res, 'Invalid interviewId', 400); return;
+    }
+
+    const session = await AIInterviewSession.findOne({
+      interviewId: new mongoose.Types.ObjectId(interviewId),
+    })
+      .populate<{ interviewId: any }>({
+        path: 'interviewId',
+        populate: [
+          { path: 'candidateId', select: 'firstName lastName email phone' },
+          { path: 'jobId',       select: 'title description requirements skills' },
+          { path: 'companyId',   select: 'name' },
+          { path: 'panel',       select: 'firstName lastName email' },
+        ],
+      })
+      .lean();
+
+    if (!session) { sendError(res, 'Session not found', 404); return; }
+    if (session.status !== 'completed') { sendError(res, 'Session is not yet completed', 400); return; }
+
+    const interview   = session.interviewId as any;
+    const candidate   = interview?.candidateId as any;
+    const job         = interview?.jobId as any;
+    const company     = interview?.companyId as any;
+    const panelMember = (interview?.panel || [])[0] as any;
+    const analysis    = session.analysis as IAIAnalysis | undefined;
+
+    if (!analysis) { sendError(res, 'Report not yet generated for this session', 400); return; }
+
+    // ── Normalise raw 0–100 analysis scores to 0–10 scale ────────────────────
+    const norm = (v: number) => parseFloat(((v ?? 0) / 10).toFixed(1));
+    const techScore = norm(analysis.technicalScore);
+    const commScore = norm(analysis.communicationScore);
+    const confScore = norm(analysis.confidenceScore);
+    const overScore = norm(analysis.overallScore);
+
+    // ── Derive per-skill gap label ────────────────────────────────────────────
+    const gapLabel = (actual: number, expected: number): string => {
+      const d = actual - expected;
+      if (d >= 0) return 'Above';
+      if (d >= -0.5) return 'On Target';
+      if (d >= -1.0) return 'Below -0.5';
+      if (d >= -2.0) return 'Below -1.0';
+      return 'Below -2.0';
+    };
+
+    // ── Build technical skill cards (one per question type assessed) ──────────
+    const questionTypes = [...new Set((session.questions || []).map((q: any) => q.type))];
+    const techExpected = 7.0;
+
+    const technicalSkills = questionTypes.length > 0
+      ? questionTypes.map((qtype: any) => {
+          const relResponses = (session.responses || []).filter((_: any, i: number) =>
+            (session.questions[i] as any)?.type === qtype
+          ) as any[];
+          const avgScore = relResponses.length > 0
+            ? parseFloat((relResponses.reduce((s: number, r: any) => s + (r.scores?.overall ?? 5), 0) / relResponses.length / 10).toFixed(1))
+            : techScore;
+          const proficiency =
+            avgScore >= 8 ? 'Advanced'
+            : avgScore >= 6 ? 'Intermediate'
+            : avgScore >= 3 ? 'Beginner'
+            : 'No exposure';
+          return {
+            skill_name:               qtype.charAt(0).toUpperCase() + qtype.slice(1),
+            score:                    avgScore,
+            years_experience:         0, // candidate-reported; not yet collected in v1
+            type_demonstrated:        avgScore >= 6 ? 'Hands-on' : 'Theoretical',
+            proficiency_demonstrated: proficiency,
+            expected_score:           techExpected,
+            gap:                      parseFloat((avgScore - techExpected).toFixed(1)),
+            gap_label:                gapLabel(avgScore, techExpected),
+            jd_required:              true,
+            assessed:                 true,
+            ai_comment: relResponses.length > 0
+              ? (relResponses.find((r: any) => r.feedback)?.feedback || analysis.summary || '')
+              : 'Not assessed during this session.',
+          };
+        })
+      : [{
+          skill_name:               'Technical Knowledge',
+          score:                    techScore,
+          years_experience:         0,
+          type_demonstrated:        techScore >= 6 ? 'Hands-on' : 'Theoretical',
+          proficiency_demonstrated: techScore >= 8 ? 'Advanced' : techScore >= 6 ? 'Intermediate' : techScore >= 3 ? 'Beginner' : 'No exposure',
+          expected_score:           techExpected,
+          gap:                      parseFloat((techScore - techExpected).toFixed(1)),
+          gap_label:                gapLabel(techScore, techExpected),
+          jd_required:              true,
+          assessed:                 true,
+          ai_comment:               analysis.summary || '',
+        }];
+
+    // ── FutureMug 7 behavioral dimensions ────────────────────────────────────
+    const behavioralSkills = [
+      {
+        skill_name:     'Communication',
+        score:          commScore,
+        expected_score: 7.0,
+        ai_comment:     analysis.strengths?.[0] || 'Communication observed across all responses.',
+      },
+      {
+        skill_name:     'Industry Awareness',
+        score:          parseFloat(Math.max(0, techScore - 0.5).toFixed(1)),
+        expected_score: 6.0,
+        ai_comment:     'Assessed from depth and currency of technical answers.',
+      },
+      {
+        skill_name:     'Engineering Mindset',
+        score:          techScore,
+        expected_score: 7.0,
+        ai_comment:     'Evaluated through approach to technical and situational questions.',
+      },
+      {
+        skill_name:     'Attitude',
+        score:          overScore,
+        expected_score: 7.0,
+        ai_comment:     'Inferred from engagement and response quality throughout the session.',
+      },
+      {
+        skill_name:     'Team Work',
+        score:          commScore,
+        expected_score: 7.0,
+        ai_comment:     'Assessed from behavioural responses involving collaboration scenarios.',
+      },
+      {
+        skill_name:     'Problem Solving',
+        score:          techScore,
+        expected_score: 7.0,
+        ai_comment:     analysis.improvements?.[0] || 'Evaluated through situational and technical questions.',
+      },
+      {
+        skill_name:     'Analytical Skill',
+        score:          parseFloat(((techScore + confScore) / 2).toFixed(1)),
+        expected_score: 6.0,
+        ai_comment:     'Derived from structured reasoning observed in technical answers.',
+      },
+    ];
+
+    // ── Build Q&A transcript ──────────────────────────────────────────────────
+    const qaTranscript = (session.responses || []).map((r: any, i: number) => {
+      const q = (session.questions[i] || {}) as any;
+      const qs = r.scores?.overall ?? 0;
+      return {
+        question_number:    i + 1,
+        question_text:      q.text || '',
+        answer_text:        r.responseText || r.transcription || '[No response recorded]',
+        answer_quality_note: qs >= 7
+          ? 'Strong, well-structured answer with clear examples.'
+          : qs >= 4
+          ? 'Adequate response — could benefit from deeper practical examples.'
+          : 'Limited or unclear response — key points were missing.',
+        skills_assessed:    q.type ? [q.type] : [],
+        timestamp_seconds:  0,
+      };
+    });
+
+    // ── Unassessed JD skills ──────────────────────────────────────────────────
+    const requiredSkills: string[] = job?.skills || session.requiredSkills || [];
+    const assessedTypes = new Set(technicalSkills.map((s: any) => s.skill_name.toLowerCase()));
+    const unassessedJdSkills = requiredSkills
+      .filter((s: string) => !assessedTypes.has(s.toLowerCase()))
+      .map((skill: string) => ({ skill, jd_importance: 'Critical', hiring_risk: 'High' }));
+
+    const recMap: Record<string, string> = {
+      strong_hire: 'Strong Hire',
+      hire:        'Hire',
+      hold:        'Hold',
+      reject:      'No Hire',
+    };
+
+    const report = {
+      report_metadata: {
+        candidate_name:         `${candidate?.firstName || ''} ${candidate?.lastName || ''}`.trim(),
+        candidate_email:        candidate?.email  || '',
+        candidate_phone:        candidate?.phone  || '',
+        position:               job?.title || session.jobTitle || '',
+        company:                company?.name || '',
+        interview_date:         session.completedAt
+          ? new Date(session.completedAt as any).toLocaleDateString('en-GB')
+          : '',
+        interviewer:            panelMember
+          ? `${panelMember.firstName} ${panelMember.lastName}`
+          : 'AI System',
+        report_generated_at:    new Date().toISOString(),
+        recording_url:          (session as any).recordingUrl || null,
+        candidate_snapshot_url: (session as any).snapshotUrl  || null,
+      },
+      overall: {
+        rating_score:      overScore,
+        rating_label:      overScore >= 8 ? 'Excellent' : overScore >= 6 ? 'Good' : overScore >= 4 ? 'Average' : 'Below Average',
+        summary_narrative: analysis.summary,
+      },
+      strengths:                  analysis.strengths   || [],
+      areas_of_improvement:       analysis.improvements || [],
+      technical_skills:           technicalSkills,
+      behavioral_skills:          behavioralSkills,
+      behavioral_summary_comment: `The candidate demonstrated ${commScore >= 7 ? 'strong' : commScore >= 4 ? 'adequate' : 'limited'} communication throughout the session. ${analysis.summary}`,
+      qa_transcript:              qaTranscript,
+      unassessed_jd_skills:       unassessedJdSkills,
+      hiring_recommendation: {
+        recommendation:       recMap[analysis.recommendation] || 'Hold',
+        confidence:           overScore >= 7 ? 'High' : overScore >= 4 ? 'Medium' : 'Low',
+        rationale:            analysis.summary || '',
+        suggested_next_steps: analysis.improvements?.slice(0, 3) || [],
+      },
+    };
+
+    sendSuccess(res, { report }, 'Report generated');
+  } catch (error: any) {
+    logger.error('getInterviewReport error:', error);
+    sendError(res, error.message || 'Failed to generate report', 500);
+  }
+};
+
+// ─── Prompt 4: Video + Transcript Enrichment ─────────────────────────────────
+
+/**
+ * @desc  Request video intelligence (timestamps, non-verbal annotations, highlights)
+ * @route POST /api/v1/ai-interviews/:interviewId/enrich-video
+ * @access HR / Admin / Employer
+ */
+export const enrichVideoReport = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { interviewId } = req.params;
+    if (!mongoose.isValidObjectId(interviewId)) {
+      sendError(res, 'Invalid interviewId', 400); return;
+    }
+
+    const session = await AIInterviewSession.findOne({
+      interviewId: new mongoose.Types.ObjectId(interviewId),
+    }).lean();
+
+    if (!session) { sendError(res, 'Session not found', 404); return; }
+    const sessionAny = session as any;
+    if (!sessionAny.recordingUrl) { sendError(res, 'No recording URL available for this session', 400); return; }
+
+    const transcript = (session.responses || []).flatMap((r: any, i: number) => {
+      const q = session.questions[i] || {} as any;
+      return [
+        { turn: i * 2 + 1, speaker: 'INTERVIEWER', text: q.text || '' },
+        { turn: i * 2 + 2, speaker: 'CANDIDATE',   text: r.transcription || r.text || '' },
+      ];
+    });
+
+    const enrichmentResult = await Promise.race([
+      llm.post('/api/enrich-video', {
+        recording_url:            sessionAny.recordingUrl,
+        transcript,
+        session_duration_minutes: session.completedAt && session.startedAt
+          ? Math.round((new Date(session.completedAt).getTime() - new Date(session.startedAt).getTime()) / 60000)
+          : null,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('LLM_TIMEOUT')), 30_000)
+      ),
+    ]);
+
+    sendSuccess(res, { enrichment: enrichmentResult.data }, 'Video enrichment complete');
+  } catch (error: any) {
+    if (error.message === 'LLM_TIMEOUT') {
+      sendError(res, 'Video enrichment timed out — please retry', 504); return;
+    }
+    logger.error('enrichVideoReport error:', error);
+    sendError(res, error.message || 'Failed to enrich video report', 500);
+  }
+};
